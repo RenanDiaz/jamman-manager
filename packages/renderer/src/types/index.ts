@@ -36,6 +36,7 @@ export interface Patch {
         Metadata: string[];
       };
     };
+    wavPath: string;
   }[];
 }
 

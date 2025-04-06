@@ -7,7 +7,7 @@ import { hardwareAccelerationMode } from "./modules/HardwareAccelerationModule.j
 import { autoUpdater } from "./modules/AutoUpdater.js";
 import { allowInternalOrigins } from "./modules/BlockNotAllowdOrigins.js";
 import { allowExternalUrls } from "./modules/ExternalUrls.js";
-import { dialog, ipcMain } from "electron";
+import { app, dialog, ipcMain, protocol } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import * as xml2js from "xml2js";
@@ -56,6 +56,14 @@ export async function initApp(initConfig: AppInitConfig) {
       )
     );
 
+  app.whenReady().then(() => {
+    protocol.registerFileProtocol("jamman", (request, callback) => {
+      const url = request.url.replace("jamman://", "");
+      const decodedPath = decodeURIComponent(url);
+      callback({ path: decodedPath });
+    });
+  });
+
   ipcMain.handle("dialog:selectFolder", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory"],
@@ -94,11 +102,18 @@ export async function initApp(initConfig: AppInitConfig) {
               phraseDir,
               "phrase.xml"
             );
+            const phraseWavPath = path.join(
+              patchDirPath,
+              phraseDir,
+              "phrase.wav"
+            );
+
             const phraseXml = fs.readFileSync(phraseXmlPath, "utf-8");
             const phraseData = await parser.parseStringPromise(phraseXml);
             return {
               dir: phraseDir,
               data: phraseData,
+              wavPath: phraseWavPath,
             };
           })
         );
@@ -112,6 +127,11 @@ export async function initApp(initConfig: AppInitConfig) {
     );
 
     return patches;
+  });
+
+  ipcMain.handle("phrase:getAudioURL", async (_event, filePath: string) => {
+    if (!fs.existsSync(filePath)) return null;
+    return `jamman://${encodeURIComponent(filePath)}`;
   });
 
   await moduleRunner;

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
   readPatches: (folderPath: string) =>
     ipcRenderer.invoke("patches:read", folderPath),
+  getAudioURL: (wavPath: string) =>
+    ipcRenderer.invoke("phrase:getAudioURL", wavPath),
 });
 
 export { sha256sum, versions, send };
