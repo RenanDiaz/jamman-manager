@@ -14,6 +14,27 @@ import * as xml2js from "xml2js";
 import { v4 as uuidv4 } from "uuid";
 import * as fse from "fs-extra";
 
+type PhraseForm = {
+  name: string;
+  beatsPerMinute: number;
+  beatsPerMeasure: number;
+  isLoop: boolean;
+  isReversed: boolean;
+  wavPath: string;
+};
+
+type PatchForm = {
+  basePath: string;
+  directory: string;
+  patchName: string;
+  rhythmType: string;
+  stopMode: string;
+  settingsVersion?: string;
+  patchID?: string;
+  patchOriginID?: string;
+  phrases: PhraseForm[];
+};
+
 export async function initApp(initConfig: AppInitConfig) {
   const moduleRunner = createModuleRunner()
     .init(
@@ -147,7 +168,7 @@ export async function initApp(initConfig: AppInitConfig) {
       : result.filePaths[0];
   });
 
-  ipcMain.handle("patches:create", async (_event, data) => {
+  ipcMain.handle("patches:create", async (_event, data: PatchForm) => {
     const { basePath, directory, patchName, rhythmType, stopMode, phrases } =
       data;
 
@@ -161,7 +182,7 @@ export async function initApp(initConfig: AppInitConfig) {
     // 1. Write patch.xml
     const patchXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
-<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManManager" version="1">
+<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
   <PatchName>${patchName}</PatchName>
   <RhythmType>${rhythmType}</RhythmType>
   <StopMode>${stopMode}</StopMode>
@@ -207,7 +228,7 @@ export async function initApp(initConfig: AppInitConfig) {
     return true;
   });
 
-  ipcMain.handle("patches:update", async (_event, data) => {
+  ipcMain.handle("patches:update", async (_event, data: PatchForm) => {
     const {
       basePath,
       directory,
@@ -228,7 +249,7 @@ export async function initApp(initConfig: AppInitConfig) {
 
     const patchXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
-<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManManager" version="1">
+<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
   <PatchName>${patchName}</PatchName>
   <RhythmType>${rhythmType}</RhythmType>
   <StopMode>${stopMode}</StopMode>

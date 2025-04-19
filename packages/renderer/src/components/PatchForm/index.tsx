@@ -111,8 +111,8 @@ export const PatchForm: FC<Props> = ({
     }
 
     if (isEditing && !!initialData) {
-      const patchID = initialData.data.JamManPatch.ID[0];
-      const patchOriginID = initialData.data.JamManPatch.OriginID[0];
+      const patchID = initialData.data.JamManPatch.ID?.[0];
+      const patchOriginID = initialData.data.JamManPatch.OriginID?.[0];
       const settingsVersion = initialData.data.JamManPatch.SettingsVersion[0];
       await window.electronAPI.updatePatch({
         basePath,
@@ -202,22 +202,22 @@ export const PatchForm: FC<Props> = ({
               onChange={(e) => setRhythmType(e.target.value as RhythmType)}
               placeholder="Rhythm Type"
             >
-              <option value={RhythmType.Silence}>Off</option>
-              <option value={RhythmType.WoodBlocks}>Wood Blocks</option>
-              <option value={RhythmType.Sticks}>Sticks</option>
-              <option value={RhythmType.Click}>Click</option>
+              <option value={RhythmType.Silence}>Silence (Off)</option>
+              <option value={RhythmType.WoodBlocks}>Wood Blocks (r1)</option>
+              <option value={RhythmType.Sticks}>Sticks (r2)</option>
+              <option value={RhythmType.Click}>Click (r3)</option>
               <option value={RhythmType.AlternativeKickAndHighHat}>
-                Alternative Kick + HH
+                Alternative Kick + HH (r4)
               </option>
               <option value={RhythmType.StudioKickAndHighHat}>
-                Studio Kick + HH
+                Studio Kick + HH (r5)
               </option>
               <option value={RhythmType.TechnoKickAndHighHat}>
-                Techno Kick + HH
+                Techno Kick + HH (r6)
               </option>
-              <option value={RhythmType.Cowbell}>Cowbell</option>
-              <option value={RhythmType.Conga}>Conga</option>
-              <option value={RhythmType.Tambourine}>Tambourine</option>
+              <option value={RhythmType.Cowbell}>Cowbell (r7)</option>
+              <option value={RhythmType.Conga}>Conga (r8)</option>
+              <option value={RhythmType.Tambourine}>Tambourine (r9)</option>
             </Input>
             <Label for="rythmType">Rhythm Type</Label>
           </FormGroup>
@@ -229,11 +229,13 @@ export const PatchForm: FC<Props> = ({
               value={stopMode}
               onChange={(e) => setStopMode(e.target.value as StopMode)}
             >
-              <option value={StopMode.StopInstantly}>Stop Instantly</option>
-              <option value={StopMode.StopAtEndOfLoop}>
-                Stop At End Of Loop
+              <option value={StopMode.StopInstantly}>
+                Stop Instantly (STOP)
               </option>
-              <option value={StopMode.FadeOut}>Fade Out</option>
+              <option value={StopMode.StopAtEndOfLoop}>
+                Stop At End Of Loop (FINISH)
+              </option>
+              <option value={StopMode.FadeOut}>Fade Out (FADE)</option>
             </Input>
             <Label for="stopMode">Stop Mode</Label>
           </FormGroup>
