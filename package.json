@@ -20,6 +20,7 @@
   "build": {
     "appId": "com.renandiazreyes.jammanmanager",
     "productName": "JamMan Manager",
+    "icon": "buildResources/icon.png",
     "files": [
       "packages/**/*",
       "node_modules/**/*",
