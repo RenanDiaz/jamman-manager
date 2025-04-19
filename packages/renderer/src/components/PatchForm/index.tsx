@@ -103,7 +103,6 @@ export const PatchForm: FC<Props> = ({
     if (
       !basePath ||
       !directory ||
-      !patchName ||
       phrases.length === 0 ||
       phrases.some((p) => !p.wavPath)
     ) {
