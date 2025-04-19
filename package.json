@@ -1,13 +1,14 @@
 {
-  "name": "root",
-  "description": "Secure boilerplate for Electron app based on Vite",
-  "version": "3.1.0",
-  "private": true,
+  "name": "jamman-manager",
+  "description": "JamMan patch editor and loop manager for Digitech JamMan Stereo",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": false,
   "type": "module",
   "author": {
-    "email": "kozackunisoft@gmail.com",
-    "name": "Alex Kozack",
-    "url": "https://kozack.me"
+    "name": "Renán Díaz Reyes",
+    "email": "renandiazreyes@gmail.com",
+    "url": "https://github.com/renandiazreyes"
   },
   "main": "packages/entry-point.mjs",
   "workspaces": [
@@ -15,6 +16,31 @@
   ],
   "engines": {
     "node": ">=23.0.0"
+  },
+  "build": {
+    "appId": "com.renandiazreyes.jammanmanager",
+    "productName": "JamMan Manager",
+    "files": [
+      "packages/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.music"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    }
   },
   "scripts": {
     "build": "npm run build -ws --if-present",
@@ -24,7 +50,8 @@
     "typecheck": "npm run typecheck -ws --if-present",
     "create-renderer": "cd packages && npm create vite@latest renderer",
     "integrate-renderer": "npm start --workspace @app/integrate-renderer",
-    "init": "npm run create-renderer && npm run integrate-renderer && npm install"
+    "init": "npm run create-renderer && npm run integrate-renderer && npm install",
+    "dist": "electron-builder"
   },
   "devDependencies": {
     "@npmcli/map-workspaces": "4.0.2",
@@ -32,7 +59,7 @@
     "@types/node": "22.14.0",
     "@types/xml2js": "^0.4.14",
     "electron": "35.1.4",
-    "electron-builder": "26.0.12",
+    "electron-builder": "^26.0.12",
     "glob": "11.0.1",
     "playwright": "^1.51.1"
   },
