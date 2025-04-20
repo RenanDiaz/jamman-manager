@@ -19,6 +19,7 @@ import {
 } from "reactstrap";
 import PhrasePlayer from "./components/PhrasePlayer";
 import PatchForm from "./components/PatchForm";
+import { CheckmarkIcon, CrossIcon } from "./utils/Images";
 
 const PATCH_FORM_ID = "create-patch-form";
 
@@ -156,6 +157,22 @@ function App() {
                     {patches.map((p, i) => {
                       const patch = p.data.JamManPatch;
                       const patchName = patch.PatchName?.[0] || "";
+                      const headersWidths = {
+                        xs: 5,
+                        sm: 3,
+                        md: 3,
+                        lg: 2,
+                        xl: 2,
+                        xxl: 1,
+                      };
+                      const valuesWidths = {
+                        xs: 7,
+                        sm: 9,
+                        md: 3,
+                        lg: 4,
+                        xl: 4,
+                        xxl: 3,
+                      };
 
                       return (
                         <AccordionItem key={i}>
@@ -167,58 +184,42 @@ function App() {
                           </AccordionHeader>
                           <AccordionBody accordionId={i.toString()}>
                             <Row className="mb-3 gy-2">
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...headersWidths}>
                                 <strong>Patch name:</strong>
                               </Col>
-                              <Col xs={7} sm={9} md={3} lg={4}>
-                                {patchName}
-                              </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...valuesWidths}>{patchName}</Col>
+                              <Col {...headersWidths}>
                                 <strong>Device:</strong>
                               </Col>
-                              <Col xs={7} sm={9} md={3} lg={4}>
-                                {patch.$.device}
-                              </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...valuesWidths}>{patch.$.device}</Col>
+                              <Col {...headersWidths}>
                                 <strong>ID:</strong>
                               </Col>
-                              <Col
-                                xs={7}
-                                sm={9}
-                                md={3}
-                                lg={4}
-                                className="text-truncate"
-                              >
+                              <Col {...valuesWidths} className="text-truncate">
                                 {patch.ID[0] || "N/A"}
                               </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...headersWidths}>
                                 <strong>Origin ID:</strong>
                               </Col>
-                              <Col
-                                xs={7}
-                                sm={9}
-                                md={3}
-                                lg={4}
-                                className="text-truncate"
-                              >
+                              <Col {...valuesWidths} className="text-truncate">
                                 {patch.OriginID?.[0] || "N/A"}
                               </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...headersWidths}>
                                 <strong>Rhythm Type:</strong>
                               </Col>
-                              <Col xs={7} sm={9} md={3} lg={4}>
+                              <Col {...valuesWidths}>
                                 {patch.RhythmType?.[0] || "N/A"}
                               </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...headersWidths}>
                                 <strong>Stop Mode:</strong>
                               </Col>
-                              <Col xs={7} sm={9} md={3} lg={4}>
+                              <Col {...valuesWidths}>
                                 {patch.StopMode?.[0] || "N/A"}
                               </Col>
-                              <Col xs={5} sm={3} md={3} lg={2}>
+                              <Col {...headersWidths}>
                                 <strong>Settings Ver.:</strong>
                               </Col>
-                              <Col xs={7} sm={9} md={3} lg={4}>
+                              <Col {...valuesWidths}>
                                 {patch.SettingsVersion?.[0] || "N/A"}
                               </Col>
                             </Row>
@@ -256,12 +257,18 @@ function App() {
                                         {phrase.BeatsPerMinute?.[0] || "N/A"}
                                       </td>
                                       <td>
-                                        {phrase.IsLoop[0] === "1" ? "✅" : "❌"}
+                                        {phrase.IsLoop[0] === "1" ? (
+                                          <CheckmarkIcon />
+                                        ) : (
+                                          <CrossIcon />
+                                        )}
                                       </td>
                                       <td>
-                                        {phrase.IsReversed[0] === "1"
-                                          ? "✅"
-                                          : "❌"}
+                                        {phrase.IsReversed[0] === "1" ? (
+                                          <CheckmarkIcon />
+                                        ) : (
+                                          <CrossIcon />
+                                        )}
                                       </td>
                                       <td>
                                         {phrase.BeatsPerMeasure?.[0] || "N/A"}

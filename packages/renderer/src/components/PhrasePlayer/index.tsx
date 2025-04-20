@@ -1,5 +1,7 @@
 import { FC, useState } from "react";
-import { Button } from "reactstrap";
+import { ButtonGroup } from "reactstrap";
+import { ImageButton } from "../../utils/Common";
+import { PauseIcon, PlayIcon, StopIcon } from "../../utils/Images";
 
 interface Props {
   wavPath: string;
@@ -33,18 +35,44 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
     }
   };
 
+  const handleStop = () => {
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      setIsPlaying(false);
+    }
+  };
+
   return (
-    <>
+    <ButtonGroup>
       {isPlaying ? (
-        <Button type="button" color="success" size="sm" onClick={handlePause}>
-          Pause
-        </Button>
+        <ImageButton
+          type="button"
+          title="Pause"
+          className="btn px-1"
+          onClick={handlePause}
+        >
+          <PauseIcon />
+        </ImageButton>
       ) : (
-        <Button type="button" color="success" size="sm" onClick={handlePlay}>
-          Play
-        </Button>
+        <ImageButton
+          type="button"
+          title="Play"
+          className="btn px-1"
+          onClick={handlePlay}
+        >
+          <PlayIcon />
+        </ImageButton>
       )}
-    </>
+      <ImageButton
+        type="button"
+        title="Stop"
+        className="btn px-1"
+        onClick={handleStop}
+      >
+        <StopIcon />
+      </ImageButton>
+    </ButtonGroup>
   );
 };
 
