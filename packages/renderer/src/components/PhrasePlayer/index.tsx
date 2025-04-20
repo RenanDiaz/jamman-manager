@@ -36,11 +36,11 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
   return (
     <>
       {isPlaying ? (
-        <Button type="button" color="primary" size="sm" onClick={handlePause}>
+        <Button type="button" color="success" size="sm" onClick={handlePause}>
           Pause
         </Button>
       ) : (
-        <Button type="button" color="primary" size="sm" onClick={handlePlay}>
+        <Button type="button" color="success" size="sm" onClick={handlePlay}>
           Play
         </Button>
       )}

@@ -301,7 +301,7 @@ export async function initApp(initConfig: AppInitConfig) {
         phrase.wavPath &&
         path.resolve(phrase.wavPath) !== path.resolve(destWav)
       ) {
-        fse.copyFileSync(phrase.wavPath, destWav);
+        fs.copyFileSync(phrase.wavPath, destWav);
       }
 
       const phraseXml = `
