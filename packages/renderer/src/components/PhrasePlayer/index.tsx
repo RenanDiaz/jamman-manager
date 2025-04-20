@@ -13,6 +13,12 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
 
   const handlePlay = async () => {
     if (!audio) {
+      const validation = await window.electronAPI.validateWav(wavPath);
+      if (!validation.valid) {
+        alert(`Invalid WAV file:\n${validation.error}`);
+        setAudio(null);
+        return;
+      }
       const url = await window.electronAPI.getAudioURL(wavPath);
       const audio = new Audio(url);
       audio.play();
@@ -22,6 +28,12 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       };
       audio.onplay = () => {
         setIsPlaying(true);
+      };
+      audio.onerror = () => {
+        setIsPlaying(false);
+        setAudio(null);
+        alert("Error playing audio");
+        console.error("Error playing audio:", audio.error);
       };
     } else {
       audio.play();

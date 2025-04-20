@@ -13,6 +13,7 @@ import * as path from "path";
 import * as xml2js from "xml2js";
 import { v4 as uuidv4 } from "uuid";
 import * as fse from "fs-extra";
+import * as mm from "music-metadata";
 
 type PhraseForm = {
   name: string;
@@ -155,6 +156,42 @@ export async function initApp(initConfig: AppInitConfig) {
   ipcMain.handle("phrase:getAudioURL", async (_event, filePath: string) => {
     if (!fs.existsSync(filePath)) return null;
     return `jamman://${encodeURIComponent(filePath)}`;
+  });
+
+  ipcMain.handle("audio:validateWav", async (_event, filePath: string) => {
+    if (!fs.existsSync(filePath)) {
+      return { valid: false, error: "File not found" };
+    }
+
+    try {
+      const metadata = await mm.parseFile(filePath);
+      const {
+        sampleRate,
+        numberOfChannels,
+        bitsPerSample,
+        duration,
+        container,
+      } = metadata.format;
+
+      const isValid =
+        container === "WAVE" &&
+        sampleRate === 44100 &&
+        bitsPerSample === 16 &&
+        (numberOfChannels === 1 || numberOfChannels === 2);
+
+      return {
+        valid: isValid,
+        sampleRate,
+        bitsPerSample,
+        numberOfChannels,
+        duration,
+        error: isValid
+          ? null
+          : "Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.",
+      };
+    } catch (err) {
+      return { valid: false, error: "Unable to parse WAV file." };
+    }
   });
 
   ipcMain.handle("dialog:selectFile", async () => {
@@ -327,13 +364,45 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle(
     "patches:delete",
-    async (_event, directory: string, basePath: string) => {
+    async (_event, basePath: string, directory: string) => {
       const patchPath = path.join(basePath, directory);
       if (!fs.existsSync(patchPath)) {
         throw new Error("Patch not found");
       }
 
       await fse.remove(patchPath);
+      return true;
+    }
+  );
+
+  ipcMain.handle(
+    "patches:reorder",
+    async (_event, basePath: string, newOrder: string[]) => {
+      const jammanPath = path.join(basePath);
+      const tempMap: Record<string, string> = {};
+
+      // 1. Temporary rename to avoid conflicts
+      for (let i = 0; i < newOrder.length; i++) {
+        const currentName = newOrder[i];
+        const originalPath = path.join(jammanPath, currentName);
+        const tempName = `__tmp_${currentName}`;
+        const tempPath = path.join(jammanPath, tempName);
+
+        if (!fs.existsSync(originalPath)) {
+          throw new Error(`Original patch folder not found: ${originalPath}`);
+        }
+
+        fs.renameSync(originalPath, tempPath);
+        tempMap[tempName] = `Patch${String(i + 1).padStart(2, "0")}`;
+      }
+
+      // 2. Rename all temporary folders to their final names
+      for (const [tempName, finalName] of Object.entries(tempMap)) {
+        const tempPath = path.join(jammanPath, tempName);
+        const finalPath = path.join(jammanPath, finalName);
+        fs.renameSync(tempPath, finalPath);
+      }
+
       return true;
     }
   );

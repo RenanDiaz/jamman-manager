@@ -20,8 +20,27 @@ import {
 import PhrasePlayer from "./components/PhrasePlayer";
 import PatchForm from "./components/PatchForm";
 import { CheckmarkIcon, CrossIcon } from "./utils/Images";
+import { PatchList } from "./components/PatchList";
 
 const PATCH_FORM_ID = "create-patch-form";
+
+const headersWidths = {
+  xs: 5,
+  sm: 3,
+  md: 3,
+  lg: 2,
+  xl: 2,
+  xxl: 1,
+};
+
+const valuesWidths = {
+  xs: 7,
+  sm: 9,
+  md: 3,
+  lg: 4,
+  xl: 4,
+  xxl: 3,
+};
 
 function App() {
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
@@ -29,7 +48,12 @@ function App() {
   const [patchFormModalIsOpen, setPatchFormModalIsOpen] =
     useState<boolean>(false);
   const [selectedPatch, setSelectedPatch] = useState<Patch>();
+  const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    document.body.setAttribute("data-bs-theme", "dark");
+  }, []);
 
   const loadPatches = async (folder: string, update?: boolean) => {
     try {
@@ -76,25 +100,39 @@ function App() {
     setSelectedPatch(undefined);
   };
 
-  const handleEditPatch = (patch: Patch) => {
+  const handleEditPatch = (directory: string) => {
+    const patch = patches.find(({ dir }) => dir === directory);
     setSelectedPatch(patch);
     setPatchFormModalIsOpen(true);
   };
 
-  const handleDeletePatch = async (patch: Patch) => {
+  const handleDeletePatch = async (directory: string) => {
     if (!currentFolder) return;
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${patch.dir}"?`
+      `Are you sure you want to delete "${directory}"?`
     );
     if (confirmed) {
-      await window.electronAPI.deletePatch(patch.dir, currentFolder);
+      await window.electronAPI.deletePatch(currentFolder, directory);
       loadPatches(currentFolder, true);
     }
   };
 
-  useEffect(() => {
-    document.body.setAttribute("data-bs-theme", "dark");
-  }, []);
+  const toggleSortingModal = () => {
+    setSortingModalIsOpen((prev) => !prev);
+  };
+
+  const handleReorder = async (newOrder: Patch[]) => {
+    setPatches(newOrder); // update state visually
+
+    if (!currentFolder) return;
+    // send to main process to rename folders
+    await window.electronAPI.reorderPatches(
+      currentFolder,
+      newOrder.map((p) => p.dir)
+    );
+
+    loadPatches(currentFolder, true);
+  };
 
   return (
     <Container fluid>
@@ -108,8 +146,13 @@ function App() {
           <Row className="flex-nowrap overflow-auto">
             <Col xs="auto">
               <FormGroup>
-                <Button type="button" color="success" onClick={handleLoad}>
-                  {loading ? "Loading..." : "Load Patches"}
+                <Button
+                  type="button"
+                  color="success"
+                  onClick={handleLoad}
+                  disabled={loading}
+                >
+                  Load Patches
                 </Button>
               </FormGroup>
             </Col>
@@ -128,6 +171,18 @@ function App() {
                   </FormGroup>
                 </Col>
                 <Col xs="auto">
+                  <FormGroup>
+                    <Button
+                      type="button"
+                      color="info"
+                      outline
+                      onClick={toggleSortingModal}
+                    >
+                      Sort Patches
+                    </Button>
+                  </FormGroup>
+                </Col>
+                <Col xs="auto" className="ms-auto">
                   <FormGroup>
                     <Button
                       type="button"
@@ -154,35 +209,19 @@ function App() {
               >
                 <Col>
                   <UncontrolledAccordion defaultOpen={[]} stayOpen>
-                    {patches.map((p, i) => {
-                      const patch = p.data.JamManPatch;
+                    {patches.map(({ data, dir, phrases }) => {
+                      const patch = data.JamManPatch;
                       const patchName = patch.PatchName?.[0] || "";
-                      const headersWidths = {
-                        xs: 5,
-                        sm: 3,
-                        md: 3,
-                        lg: 2,
-                        xl: 2,
-                        xxl: 1,
-                      };
-                      const valuesWidths = {
-                        xs: 7,
-                        sm: 9,
-                        md: 3,
-                        lg: 4,
-                        xl: 4,
-                        xxl: 3,
-                      };
 
                       return (
-                        <AccordionItem key={i}>
-                          <AccordionHeader targetId={i.toString()}>
-                            <strong>{p.dir}</strong>
+                        <AccordionItem key={dir}>
+                          <AccordionHeader targetId={dir}>
+                            <strong>{dir}</strong>
                             {!!patchName && (
-                              <span className="small ms-2">{patchName}</span>
+                              <small className="ms-2">{patchName}</small>
                             )}
                           </AccordionHeader>
-                          <AccordionBody accordionId={i.toString()}>
+                          <AccordionBody accordionId={dir}>
                             <Row className="mb-3 gy-2">
                               <Col {...headersWidths}>
                                 <strong>Patch name:</strong>
@@ -242,7 +281,7 @@ function App() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {p.phrases.map(
+                                {phrases.map(
                                   ({
                                     dir,
                                     data: { JamManPhrase: phrase },
@@ -286,13 +325,13 @@ function App() {
                                 <ButtonGroup>
                                   <Button
                                     color="primary"
-                                    onClick={() => handleEditPatch(p)}
+                                    onClick={() => handleEditPatch(dir)}
                                   >
                                     Edit
                                   </Button>
                                   <Button
                                     color="danger"
-                                    onClick={() => handleDeletePatch(p)}
+                                    onClick={() => handleDeletePatch(dir)}
                                   >
                                     Delete
                                   </Button>
@@ -342,6 +381,18 @@ function App() {
           </Button>
           <Button type="submit" form={PATCH_FORM_ID} color="primary">
             {!selectedPatch ? "Create" : "Save"}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal isOpen={sortingModalIsOpen} toggle={toggleSortingModal}>
+        <ModalHeader toggle={toggleSortingModal}>Sorting</ModalHeader>
+        <ModalBody>
+          <PatchList patches={patches} onReorder={handleReorder} />
+        </ModalBody>
+        <ModalFooter>
+          <Button color="secondary" onClick={toggleSortingModal}>
+            Close
           </Button>
         </ModalFooter>
       </Modal>

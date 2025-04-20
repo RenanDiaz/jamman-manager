@@ -31,16 +31,27 @@ interface PatchForm {
   phrases: PhraseForm[];
 }
 
+interface AudioValidationResult {
+  valid: boolean;
+  sampleRate?: number;
+  bitsPerSample?: number;
+  numberOfChannels?: number;
+  duration?: number;
+  error: string | null;
+}
+
 declare global {
   interface Window {
     electronAPI: {
       selectFolder: () => Promise<string>;
       readPatches: (folderPath: string) => Promise<Patch[]>;
       getAudioURL: (wavPath: string) => Promise<string>;
+      validateWav: (wavPath: string) => Promise<AudioValidationResult>;
       selectFile: () => Promise<string | null>;
       createPatch: (data: PatchForm) => Promise<void>;
       updatePatch: (data: PatchForm) => Promise<void>;
-      deletePatch(directory: string, basePath: string): Promise<void>;
+      deletePatch(basePath: string, directory: string): Promise<void>;
+      reorderPatches(basePath: string, patches: string[]): Promise<void>;
     };
   }
 }
