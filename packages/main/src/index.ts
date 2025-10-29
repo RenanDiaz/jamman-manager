@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as fse from 'fs-extra';
 import * as mm from 'music-metadata';
 import log from 'electron-log';
+import { lockManager } from './LockManager.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -393,20 +394,22 @@ export async function initApp(initConfig: AppInitConfig) {
     const { basePath, directory, patchName, rhythmType, stopMode, phrases } = data;
     const patchDir = path.join(basePath, directory);
 
-    try {
-      // Check if patch already exists
-      if (fs.existsSync(patchDir)) {
-        throw new Error(`Patch directory ${directory} already exists`);
-      }
+    // Use lock to prevent concurrent operations on the same patch
+    return lockManager.withLock(patchDir, async () => {
+      try {
+        // Check if patch already exists
+        if (fs.existsSync(patchDir)) {
+          throw new Error(`Patch directory ${directory} already exists`);
+        }
 
-      fse.ensureDirSync(patchDir);
+        fse.ensureDirSync(patchDir);
 
-      // Patch UUIDs
-      const patchId = uuidv4();
-      const patchOriginId = uuidv4();
+        // Patch UUIDs
+        const patchId = uuidv4();
+        const patchOriginId = uuidv4();
 
-      // 1. Write patch.xml
-      const patchXml = `
+        // 1. Write patch.xml
+        const patchXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
   <PatchName>${patchName}</PatchName>
@@ -418,25 +421,25 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPatch>`.trim();
 
-      fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
+        fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
 
-      // 2. Write each phrase folder and XML
-      for (const phrase of phrases) {
-        const phraseDir = path.join(patchDir, phrase.name);
-        fse.ensureDirSync(phraseDir);
+        // 2. Write each phrase folder and XML
+        for (const phrase of phrases) {
+          const phraseDir = path.join(patchDir, phrase.name);
+          fse.ensureDirSync(phraseDir);
 
-        const phraseId = uuidv4();
-        const originId = uuidv4();
+          const phraseId = uuidv4();
+          const originId = uuidv4();
 
-        // Copy WAV file
-        const wavDest = path.join(phraseDir, 'phrase.wav');
-        if (!fs.existsSync(phrase.wavPath)) {
-          throw new Error(`Source WAV file not found: ${phrase.wavPath}`);
-        }
-        fs.copyFileSync(phrase.wavPath, wavDest);
+          // Copy WAV file
+          const wavDest = path.join(phraseDir, 'phrase.wav');
+          if (!fs.existsSync(phrase.wavPath)) {
+            throw new Error(`Source WAV file not found: ${phrase.wavPath}`);
+          }
+          fs.copyFileSync(phrase.wavPath, wavDest);
 
-        // Write phrase.xml
-        const phraseXml = `
+          // Write phrase.xml
+          const phraseXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPhrase xmlns="http://schemas.digitech.com/JamMan/Phrase" version="1">
   <BeatsPerMinute>${phrase.beatsPerMinute}</BeatsPerMinute>
@@ -451,32 +454,33 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPhrase>`.trim();
 
-        fs.writeFileSync(path.join(phraseDir, 'phrase.xml'), phraseXml, 'utf-8');
-      }
-
-      log.info(`Successfully created patch: ${directory}`);
-
-      // Invalidate cache
-      patchCache.delete(basePath);
-
-      return true;
-    } catch (error) {
-      log.error(`Error creating patch ${directory}:`, error);
-
-      // Rollback: Remove the partially created directory
-      if (fs.existsSync(patchDir)) {
-        try {
-          fse.removeSync(patchDir);
-          log.info(`Rolled back partial patch creation: ${directory}`);
-        } catch (rollbackError) {
-          log.error(`Failed to rollback patch creation:`, rollbackError);
+          fs.writeFileSync(path.join(phraseDir, 'phrase.xml'), phraseXml, 'utf-8');
         }
-      }
 
-      throw new Error(
-        `Failed to create patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
+        log.info(`Successfully created patch: ${directory}`);
+
+        // Invalidate cache
+        patchCache.delete(basePath);
+
+        return true;
+      } catch (error) {
+        log.error(`Error creating patch ${directory}:`, error);
+
+        // Rollback: Remove the partially created directory
+        if (fs.existsSync(patchDir)) {
+          try {
+            fse.removeSync(patchDir);
+            log.info(`Rolled back partial patch creation: ${directory}`);
+          } catch (rollbackError) {
+            log.error(`Failed to rollback patch creation:`, rollbackError);
+          }
+        }
+
+        throw new Error(
+          `Failed to create patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    });
   });
 
   ipcMain.handle('patches:update', async (_event, data: PatchForm) => {
@@ -494,22 +498,24 @@ export async function initApp(initConfig: AppInitConfig) {
     const patchDir = path.join(basePath, directory);
     const backupDir = path.join(basePath, `__backup_${directory}_${Date.now()}`);
 
-    try {
-      // Validate patch exists
-      if (!fs.existsSync(patchDir)) {
-        throw new Error(`Patch directory ${directory} does not exist`);
-      }
+    // Use lock to prevent concurrent operations on the same patch
+    return lockManager.withLock(patchDir, async () => {
+      try {
+        // Validate patch exists
+        if (!fs.existsSync(patchDir)) {
+          throw new Error(`Patch directory ${directory} does not exist`);
+        }
 
-      // Create backup before modifying
-      fse.copySync(patchDir, backupDir);
-      log.info(`Created backup: ${backupDir}`);
+        // Create backup before modifying
+        fse.copySync(patchDir, backupDir);
+        log.info(`Created backup: ${backupDir}`);
 
-      // Overwrite patch.xml
-      const updatedPatchID = patchID || uuidv4();
-      const updatedOriginID = patchOriginID || uuidv4();
-      const updatedSettingsVersion = Number(settingsVersion || '0') + 1;
+        // Overwrite patch.xml
+        const updatedPatchID = patchID || uuidv4();
+        const updatedOriginID = patchOriginID || uuidv4();
+        const updatedSettingsVersion = Number(settingsVersion || '0') + 1;
 
-      const patchXml = `
+        const patchXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
   <PatchName>${patchName}</PatchName>
@@ -521,46 +527,46 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPatch>`.trim();
 
-      fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
+        fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
 
-      // Overwrite each phrase
-      const existingPhraseDirs = fs.readdirSync(patchDir).filter(d => /^Phrase[A-Z]$/.test(d));
+        // Overwrite each phrase
+        const existingPhraseDirs = fs.readdirSync(patchDir).filter(d => /^Phrase[A-Z]$/.test(d));
 
-      const updatedPhraseDirs = phrases.map((p: any) => p.name);
-      const toDelete = existingPhraseDirs.filter(d => !updatedPhraseDirs.includes(d));
+        const updatedPhraseDirs = phrases.map((p: any) => p.name);
+        const toDelete = existingPhraseDirs.filter(d => !updatedPhraseDirs.includes(d));
 
-      toDelete.forEach(phraseName => {
-        fse.removeSync(path.join(patchDir, phraseName));
-      });
+        toDelete.forEach(phraseName => {
+          fse.removeSync(path.join(patchDir, phraseName));
+        });
 
-      // 🔄 Write/Update phrases
-      for (const phrase of phrases) {
-        const phraseDir = path.join(patchDir, phrase.name);
-        fse.ensureDirSync(phraseDir);
+        // 🔄 Write/Update phrases
+        for (const phrase of phrases) {
+          const phraseDir = path.join(patchDir, phrase.name);
+          fse.ensureDirSync(phraseDir);
 
-        const phraseXmlPath = path.join(phraseDir, 'phrase.xml');
+          const phraseXmlPath = path.join(phraseDir, 'phrase.xml');
 
-        // Try to reuse existing ID and OriginID
-        let phraseId = uuidv4();
-        let originId = uuidv4();
+          // Try to reuse existing ID and OriginID
+          let phraseId = uuidv4();
+          let originId = uuidv4();
 
-        if (fs.existsSync(phraseXmlPath)) {
-          const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
-          const parsed = await new xml2js.Parser().parseStringPromise(existingPhraseXml);
-          phraseId = parsed.JamManPhrase?.ID?.[0] ?? phraseId;
-          originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
-        }
-
-        // If wavPath is not already in that location, copy it
-        const destWav = path.join(phraseDir, 'phrase.wav');
-        if (phrase.wavPath && path.resolve(phrase.wavPath) !== path.resolve(destWav)) {
-          if (!fs.existsSync(phrase.wavPath)) {
-            throw new Error(`Source WAV file not found: ${phrase.wavPath}`);
+          if (fs.existsSync(phraseXmlPath)) {
+            const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
+            const parsed = await new xml2js.Parser().parseStringPromise(existingPhraseXml);
+            phraseId = parsed.JamManPhrase?.ID?.[0] ?? phraseId;
+            originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
           }
-          fs.copyFileSync(phrase.wavPath, destWav);
-        }
 
-        const phraseXml = `
+          // If wavPath is not already in that location, copy it
+          const destWav = path.join(phraseDir, 'phrase.wav');
+          if (phrase.wavPath && path.resolve(phrase.wavPath) !== path.resolve(destWav)) {
+            if (!fs.existsSync(phrase.wavPath)) {
+              throw new Error(`Source WAV file not found: ${phrase.wavPath}`);
+            }
+            fs.copyFileSync(phrase.wavPath, destWav);
+          }
+
+          const phraseXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPhrase xmlns="http://schemas.digitech.com/JamMan/Phrase" version="1">
   <BeatsPerMinute>${phrase.beatsPerMinute}</BeatsPerMinute>
@@ -575,79 +581,83 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPhrase>`.trim();
 
-        fs.writeFileSync(phraseXmlPath, phraseXml, 'utf-8');
-      }
-
-      // Success - remove backup
-      fse.removeSync(backupDir);
-      log.info(`Successfully updated patch: ${directory}`);
-
-      // Invalidate cache
-      patchCache.delete(basePath);
-
-      return true;
-    } catch (error) {
-      log.error(`Error updating patch ${directory}:`, error);
-
-      // Rollback: Restore from backup
-      if (fs.existsSync(backupDir)) {
-        try {
-          fse.removeSync(patchDir);
-          fse.moveSync(backupDir, patchDir);
-          log.info(`Rolled back patch update: ${directory}`);
-        } catch (rollbackError) {
-          log.error(`Failed to rollback patch update:`, rollbackError);
+          fs.writeFileSync(phraseXmlPath, phraseXml, 'utf-8');
         }
-      }
 
-      throw new Error(
-        `Failed to update patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
+        // Success - remove backup
+        fse.removeSync(backupDir);
+        log.info(`Successfully updated patch: ${directory}`);
+
+        // Invalidate cache
+        patchCache.delete(basePath);
+
+        return true;
+      } catch (error) {
+        log.error(`Error updating patch ${directory}:`, error);
+
+        // Rollback: Restore from backup
+        if (fs.existsSync(backupDir)) {
+          try {
+            fse.removeSync(patchDir);
+            fse.moveSync(backupDir, patchDir);
+            log.info(`Rolled back patch update: ${directory}`);
+          } catch (rollbackError) {
+            log.error(`Failed to rollback patch update:`, rollbackError);
+          }
+        }
+
+        throw new Error(
+          `Failed to update patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    });
   });
 
   ipcMain.handle('patches:delete', async (_event, basePath: string, directory: string) => {
     const patchPath = path.join(basePath, directory);
     const backupDir = path.join(basePath, `__deleted_${directory}_${Date.now()}`);
 
-    try {
-      if (!fs.existsSync(patchPath)) {
-        throw new Error(`Patch not found: ${directory}`);
-      }
-
-      // Move to backup instead of immediate deletion for safety
-      fse.moveSync(patchPath, backupDir);
-      log.info(`Moved patch to backup before deletion: ${directory}`);
-
-      // Actually delete the backup after a short delay
-      setTimeout(() => {
-        if (fs.existsSync(backupDir)) {
-          fse.removeSync(backupDir);
-          log.info(`Permanently deleted patch backup: ${directory}`);
+    // Use lock to prevent concurrent operations on the same patch
+    return lockManager.withLock(patchPath, async () => {
+      try {
+        if (!fs.existsSync(patchPath)) {
+          throw new Error(`Patch not found: ${directory}`);
         }
-      }, 5000); // 5 second safety window
 
-      // Invalidate cache
-      patchCache.delete(basePath);
+        // Move to backup instead of immediate deletion for safety
+        fse.moveSync(patchPath, backupDir);
+        log.info(`Moved patch to backup before deletion: ${directory}`);
 
-      return true;
-    } catch (error) {
-      log.error(`Error deleting patch ${directory}:`, error);
+        // Actually delete the backup after a short delay
+        setTimeout(() => {
+          if (fs.existsSync(backupDir)) {
+            fse.removeSync(backupDir);
+            log.info(`Permanently deleted patch backup: ${directory}`);
+          }
+        }, 5000); // 5 second safety window
 
-      // Rollback: Restore from backup if it exists
-      if (fs.existsSync(backupDir) && !fs.existsSync(patchPath)) {
-        try {
-          fse.moveSync(backupDir, patchPath);
-          log.info(`Restored patch from backup: ${directory}`);
-        } catch (rollbackError) {
-          log.error(`Failed to restore deleted patch:`, rollbackError);
+        // Invalidate cache
+        patchCache.delete(basePath);
+
+        return true;
+      } catch (error) {
+        log.error(`Error deleting patch ${directory}:`, error);
+
+        // Rollback: Restore from backup if it exists
+        if (fs.existsSync(backupDir) && !fs.existsSync(patchPath)) {
+          try {
+            fse.moveSync(backupDir, patchPath);
+            log.info(`Restored patch from backup: ${directory}`);
+          } catch (rollbackError) {
+            log.error(`Failed to restore deleted patch:`, rollbackError);
+          }
         }
-      }
 
-      throw new Error(
-        `Failed to delete patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
+        throw new Error(
+          `Failed to delete patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    });
   });
 
   ipcMain.handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
@@ -655,62 +665,65 @@ export async function initApp(initConfig: AppInitConfig) {
     const tempMap: Record<string, string> = {};
     const originalState: Record<string, boolean> = {};
 
-    try {
-      // Validate all patches exist before starting
-      for (const patchName of newOrder) {
-        const patchPath = path.join(jammanPath, patchName);
-        if (!fs.existsSync(patchPath)) {
-          throw new Error(`Patch folder not found: ${patchName}`);
-        }
-        originalState[patchName] = true;
-      }
-
-      // 1. Temporary rename to avoid conflicts
-      for (let i = 0; i < newOrder.length; i++) {
-        const currentName = newOrder[i];
-        const originalPath = path.join(jammanPath, currentName);
-        const tempName = `__tmp_${currentName}`;
-        const tempPath = path.join(jammanPath, tempName);
-
-        fs.renameSync(originalPath, tempPath);
-        tempMap[tempName] = `Patch${String(i + 1).padStart(2, '0')}`;
-      }
-
-      // 2. Rename all temporary folders to their final names
-      for (const [tempName, finalName] of Object.entries(tempMap)) {
-        const tempPath = path.join(jammanPath, tempName);
-        const finalPath = path.join(jammanPath, finalName);
-        fs.renameSync(tempPath, finalPath);
-      }
-
-      log.info(`Successfully reordered ${newOrder.length} patches`);
-
-      // Invalidate cache
-      patchCache.delete(basePath);
-
-      return true;
-    } catch (error) {
-      log.error('Error reordering patches:', error);
-
-      // Rollback: Try to restore original names from temp
-      for (const [tempName] of Object.entries(tempMap)) {
-        const tempPath = path.join(jammanPath, tempName);
-        const originalName = tempName.replace('__tmp_', '');
-        const originalPath = path.join(jammanPath, originalName);
-
-        try {
-          if (fs.existsSync(tempPath)) {
-            fs.renameSync(tempPath, originalPath);
+    // Use lock on base path to prevent concurrent reordering operations
+    return lockManager.withLock(basePath, async () => {
+      try {
+        // Validate all patches exist before starting
+        for (const patchName of newOrder) {
+          const patchPath = path.join(jammanPath, patchName);
+          if (!fs.existsSync(patchPath)) {
+            throw new Error(`Patch folder not found: ${patchName}`);
           }
-        } catch (rollbackError) {
-          log.error(`Failed to rollback rename for ${originalName}:`, rollbackError);
+          originalState[patchName] = true;
         }
-      }
 
-      throw new Error(
-        `Failed to reorder patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
+        // 1. Temporary rename to avoid conflicts
+        for (let i = 0; i < newOrder.length; i++) {
+          const currentName = newOrder[i];
+          const originalPath = path.join(jammanPath, currentName);
+          const tempName = `__tmp_${currentName}`;
+          const tempPath = path.join(jammanPath, tempName);
+
+          fs.renameSync(originalPath, tempPath);
+          tempMap[tempName] = `Patch${String(i + 1).padStart(2, '0')}`;
+        }
+
+        // 2. Rename all temporary folders to their final names
+        for (const [tempName, finalName] of Object.entries(tempMap)) {
+          const tempPath = path.join(jammanPath, tempName);
+          const finalPath = path.join(jammanPath, finalName);
+          fs.renameSync(tempPath, finalPath);
+        }
+
+        log.info(`Successfully reordered ${newOrder.length} patches`);
+
+        // Invalidate cache
+        patchCache.delete(basePath);
+
+        return true;
+      } catch (error) {
+        log.error('Error reordering patches:', error);
+
+        // Rollback: Try to restore original names from temp
+        for (const [tempName] of Object.entries(tempMap)) {
+          const tempPath = path.join(jammanPath, tempName);
+          const originalName = tempName.replace('__tmp_', '');
+          const originalPath = path.join(jammanPath, originalName);
+
+          try {
+            if (fs.existsSync(tempPath)) {
+              fs.renameSync(tempPath, originalPath);
+            }
+          } catch (rollbackError) {
+            log.error(`Failed to rollback rename for ${originalName}:`, rollbackError);
+          }
+        }
+
+        throw new Error(
+          `Failed to reorder patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    });
   });
 
   await moduleRunner;
