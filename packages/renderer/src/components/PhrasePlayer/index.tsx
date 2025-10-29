@@ -1,7 +1,7 @@
-import { FC, useState } from "react";
-import { ButtonGroup } from "reactstrap";
-import { ImageButton } from "../../utils/Common";
-import { PauseIcon, PlayIcon, StopIcon } from "../../utils/Images";
+import { FC, useState } from 'react';
+import { ButtonGroup } from 'reactstrap';
+import { ImageButton } from '../../utils/Common';
+import { PauseIcon, PlayIcon, StopIcon } from '../../utils/Images';
 
 interface Props {
   wavPath: string;
@@ -32,8 +32,8 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       audio.onerror = () => {
         setIsPlaying(false);
         setAudio(null);
-        alert("Error playing audio");
-        console.error("Error playing audio:", audio.error);
+        alert('Error playing audio');
+        console.error('Error playing audio:', audio.error);
       };
     } else {
       audio.play();
@@ -58,30 +58,15 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
   return (
     <ButtonGroup>
       {isPlaying ? (
-        <ImageButton
-          type="button"
-          title="Pause"
-          className="btn px-1"
-          onClick={handlePause}
-        >
+        <ImageButton type="button" title="Pause" className="btn px-1" onClick={handlePause}>
           <PauseIcon />
         </ImageButton>
       ) : (
-        <ImageButton
-          type="button"
-          title="Play"
-          className="btn px-1"
-          onClick={handlePlay}
-        >
+        <ImageButton type="button" title="Play" className="btn px-1" onClick={handlePlay}>
           <PlayIcon />
         </ImageButton>
       )}
-      <ImageButton
-        type="button"
-        title="Stop"
-        className="btn px-1"
-        onClick={handleStop}
-      >
+      <ImageButton type="button" title="Stop" className="btn px-1" onClick={handleStop}>
         <StopIcon />
       </ImageButton>
     </ButtonGroup>

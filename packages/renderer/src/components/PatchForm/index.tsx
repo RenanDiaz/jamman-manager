@@ -1,4 +1,4 @@
-import { FC, FormEvent, useEffect, useState } from "react";
+import { FC, FormEvent, useEffect, useState } from 'react';
 import {
   Button,
   Card,
@@ -10,9 +10,9 @@ import {
   Input,
   Label,
   Row,
-} from "reactstrap";
-import { Patch, RhythmType, StopMode } from "../../types";
-import classNames from "classnames";
+} from 'reactstrap';
+import { Patch, RhythmType, StopMode } from '../../types';
+import classNames from 'classnames';
 
 type PhraseForm = {
   name: string;
@@ -31,17 +31,9 @@ interface Props {
   onSuccess: () => void;
 }
 
-export const PatchForm: FC<Props> = ({
-  formId,
-  basePath,
-  busyPatches,
-  initialData,
-  onSuccess,
-}) => {
-  const [patchName, setPatchName] = useState("");
-  const [rhythmType, setRhythmType] = useState<RhythmType>(
-    RhythmType.StudioKickAndHighHat
-  );
+export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialData, onSuccess }) => {
+  const [patchName, setPatchName] = useState('');
+  const [rhythmType, setRhythmType] = useState<RhythmType>(RhythmType.StudioKickAndHighHat);
   const [stopMode, setStopMode] = useState<StopMode>(StopMode.StopInstantly);
   const [phrases, setPhrases] = useState<PhraseForm[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -53,16 +45,14 @@ export const PatchForm: FC<Props> = ({
       setRhythmType(data.RhythmType[0] as RhythmType);
       setStopMode(data.StopMode[0] as StopMode);
       setPhrases(
-        initialData.phrases.map(
-          ({ dir, data: { JamManPhrase: data }, wavPath }) => ({
-            name: dir,
-            wavPath,
-            beatsPerMinute: Number(data.BeatsPerMinute[0]),
-            beatsPerMeasure: Number(data.BeatsPerMeasure[0]),
-            isLoop: data.IsLoop[0] === "1",
-            isReversed: data.IsReversed[0] === "1",
-          })
-        )
+        initialData.phrases.map(({ dir, data: { JamManPhrase: data }, wavPath }) => ({
+          name: dir,
+          wavPath,
+          beatsPerMinute: Number(data.BeatsPerMinute[0]),
+          beatsPerMeasure: Number(data.BeatsPerMeasure[0]),
+          isLoop: data.IsLoop[0] === '1',
+          isReversed: data.IsReversed[0] === '1',
+        })),
       );
     }
     setIsEditing(!!initialData);
@@ -74,7 +64,7 @@ export const PatchForm: FC<Props> = ({
       ...phrases,
       {
         name: `Phrase${nextChar}`,
-        wavPath: "",
+        wavPath: '',
         beatsPerMinute: 120,
         beatsPerMeasure: 4,
         isLoop: true,
@@ -100,13 +90,8 @@ export const PatchForm: FC<Props> = ({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const directory = (e.target as HTMLFormElement).directory.value;
-    if (
-      !basePath ||
-      !directory ||
-      phrases.length === 0 ||
-      phrases.some((p) => !p.wavPath)
-    ) {
-      alert("Please complete all fields and select WAV files.");
+    if (!basePath || !directory || phrases.length === 0 || phrases.some(p => !p.wavPath)) {
+      alert('Please complete all fields and select WAV files.');
       return;
     }
 
@@ -137,12 +122,12 @@ export const PatchForm: FC<Props> = ({
     }
 
     if (isEditing) {
-      alert("Patch updated successfully!");
+      alert('Patch updated successfully!');
     } else {
-      alert("Patch created successfully!");
+      alert('Patch created successfully!');
     }
     // Optionally reset
-    setPatchName("");
+    setPatchName('');
     setPhrases([]);
     setRhythmType(RhythmType.StudioKickAndHighHat);
     setStopMode(StopMode.StopInstantly);
@@ -155,17 +140,12 @@ export const PatchForm: FC<Props> = ({
       <CardBody>
         <Form onSubmit={handleSubmit} id={formId}>
           <FormGroup floating>
-            <Input
-              type="select"
-              id="directory"
-              placeholder="Directory"
-              disabled={isEditing}
-            >
+            <Input type="select" id="directory" placeholder="Directory" disabled={isEditing}>
               {isEditing ? (
                 <option value={initialData?.dir}>{initialData?.dir}</option>
               ) : (
                 Array.from({ length: 99 }, (_, i) => {
-                  const num = `${i + 1}`.padStart(2, "0");
+                  const num = `${i + 1}`.padStart(2, '0');
                   const dir = `Patch${num}`;
                   return (
                     <option
@@ -188,7 +168,7 @@ export const PatchForm: FC<Props> = ({
               type="text"
               id="patchName"
               value={patchName}
-              onChange={(e) => setPatchName(e.target.value)}
+              onChange={e => setPatchName(e.target.value)}
               placeholder="Patch Name"
             />
             <Label for="patchName">Patch Name</Label>
@@ -199,7 +179,7 @@ export const PatchForm: FC<Props> = ({
               type="select"
               id="rhythmType"
               value={rhythmType}
-              onChange={(e) => setRhythmType(e.target.value as RhythmType)}
+              onChange={e => setRhythmType(e.target.value as RhythmType)}
               placeholder="Rhythm Type"
             >
               <option value={RhythmType.Silence}>Silence (Off)</option>
@@ -209,12 +189,8 @@ export const PatchForm: FC<Props> = ({
               <option value={RhythmType.AlternativeKickAndHighHat}>
                 Alternative Kick + HH (r4)
               </option>
-              <option value={RhythmType.StudioKickAndHighHat}>
-                Studio Kick + HH (r5)
-              </option>
-              <option value={RhythmType.TechnoKickAndHighHat}>
-                Techno Kick + HH (r6)
-              </option>
+              <option value={RhythmType.StudioKickAndHighHat}>Studio Kick + HH (r5)</option>
+              <option value={RhythmType.TechnoKickAndHighHat}>Techno Kick + HH (r6)</option>
               <option value={RhythmType.Cowbell}>Cowbell (r7)</option>
               <option value={RhythmType.Conga}>Conga (r8)</option>
               <option value={RhythmType.Tambourine}>Tambourine (r9)</option>
@@ -227,14 +203,10 @@ export const PatchForm: FC<Props> = ({
               id="stopMode"
               placeholder="Stop Mode"
               value={stopMode}
-              onChange={(e) => setStopMode(e.target.value as StopMode)}
+              onChange={e => setStopMode(e.target.value as StopMode)}
             >
-              <option value={StopMode.StopInstantly}>
-                Stop Instantly (STOP)
-              </option>
-              <option value={StopMode.StopAtEndOfLoop}>
-                Stop At End Of Loop (FINISH)
-              </option>
+              <option value={StopMode.StopInstantly}>Stop Instantly (STOP)</option>
+              <option value={StopMode.StopAtEndOfLoop}>Stop At End Of Loop (FINISH)</option>
               <option value={StopMode.FadeOut}>Fade Out (FADE)</option>
             </Input>
             <Label for="stopMode">Stop Mode</Label>
@@ -244,12 +216,7 @@ export const PatchForm: FC<Props> = ({
               <Row className="align-items-center">
                 <Col>Phrases</Col>
                 <Col xs="auto">
-                  <Button
-                    type="button"
-                    color="primary"
-                    size="sm"
-                    onClick={addPhrase}
-                  >
+                  <Button type="button" color="primary" size="sm" onClick={addPhrase}>
                     Add
                   </Button>
                 </Col>
@@ -265,12 +232,7 @@ export const PatchForm: FC<Props> = ({
                   </Row>
                   <Row className="justify-content-center">
                     <Col xs="auto">
-                      <Button
-                        type="button"
-                        color="primary"
-                        size="sm"
-                        onClick={addPhrase}
-                      >
+                      <Button type="button" color="primary" size="sm" onClick={addPhrase}>
                         Add Phrase
                       </Button>
                     </Col>
@@ -278,23 +240,15 @@ export const PatchForm: FC<Props> = ({
                 </>
               ) : (
                 phrases.map((phrase, index) => (
-                  <Card
-                    key={phrase.name}
-                    className={classNames({ "mt-3": index > 0 })}
-                  >
+                  <Card key={phrase.name} className={classNames({ 'mt-3': index > 0 })}>
                     <CardHeader>{phrase.name}</CardHeader>
                     <CardBody>
                       <FormGroup>
-                        <Button
-                          color="secondary"
-                          onClick={() => handleFileSelect(index)}
-                        >
+                        <Button color="secondary" onClick={() => handleFileSelect(index)}>
                           Select WAV File
                         </Button>
                       </FormGroup>
-                      {phrase.wavPath && (
-                        <p className="text-sm">{phrase.wavPath}</p>
-                      )}
+                      {phrase.wavPath && <p className="text-sm">{phrase.wavPath}</p>}
 
                       <FormGroup floating>
                         <Input
@@ -302,7 +256,7 @@ export const PatchForm: FC<Props> = ({
                           id={`bpm-${index}`}
                           placeholder="BPM"
                           value={phrase.beatsPerMinute}
-                          onChange={(e) =>
+                          onChange={e =>
                             updatePhrase(index, {
                               beatsPerMinute: Number(e.target.value),
                             })
@@ -318,15 +272,13 @@ export const PatchForm: FC<Props> = ({
                           min="2"
                           max="15"
                           value={phrase.beatsPerMeasure}
-                          onChange={(e) =>
+                          onChange={e =>
                             updatePhrase(index, {
                               beatsPerMeasure: Number(e.target.value),
                             })
                           }
                         />
-                        <Label for={`timeSignature-${index}`}>
-                          Time Signature
-                        </Label>
+                        <Label for={`timeSignature-${index}`}>Time Signature</Label>
                       </FormGroup>
 
                       <FormGroup check>
@@ -334,9 +286,7 @@ export const PatchForm: FC<Props> = ({
                           <Input
                             type="checkbox"
                             checked={phrase.isLoop}
-                            onChange={(e) =>
-                              updatePhrase(index, { isLoop: e.target.checked })
-                            }
+                            onChange={e => updatePhrase(index, { isLoop: e.target.checked })}
                           />
                           Loop
                         </Label>
@@ -346,7 +296,7 @@ export const PatchForm: FC<Props> = ({
                           <Input
                             type="checkbox"
                             checked={phrase.isReversed}
-                            onChange={(e) =>
+                            onChange={e =>
                               updatePhrase(index, {
                                 isReversed: e.target.checked,
                               })

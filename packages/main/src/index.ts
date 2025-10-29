@@ -1,19 +1,19 @@
-import type { AppInitConfig } from "./AppInitConfig.js";
-import { createModuleRunner } from "./ModuleRunner.js";
-import { disallowMultipleAppInstance } from "./modules/SingleInstanceApp.js";
-import { createWindowManagerModule } from "./modules/WindowManager.js";
-import { terminateAppOnLastWindowClose } from "./modules/ApplicationTerminatorOnLastWindowClose.js";
-import { hardwareAccelerationMode } from "./modules/HardwareAccelerationModule.js";
-import { autoUpdater } from "./modules/AutoUpdater.js";
-import { allowInternalOrigins } from "./modules/BlockNotAllowdOrigins.js";
-import { allowExternalUrls } from "./modules/ExternalUrls.js";
-import { app, dialog, ipcMain, protocol } from "electron";
-import * as fs from "fs";
-import * as path from "path";
-import * as xml2js from "xml2js";
-import { v4 as uuidv4 } from "uuid";
-import * as fse from "fs-extra";
-import * as mm from "music-metadata";
+import type { AppInitConfig } from './AppInitConfig.js';
+import { createModuleRunner } from './ModuleRunner.js';
+import { disallowMultipleAppInstance } from './modules/SingleInstanceApp.js';
+import { createWindowManagerModule } from './modules/WindowManager.js';
+import { terminateAppOnLastWindowClose } from './modules/ApplicationTerminatorOnLastWindowClose.js';
+import { hardwareAccelerationMode } from './modules/HardwareAccelerationModule.js';
+import { autoUpdater } from './modules/AutoUpdater.js';
+import { allowInternalOrigins } from './modules/BlockNotAllowdOrigins.js';
+import { allowExternalUrls } from './modules/ExternalUrls.js';
+import { app, dialog, ipcMain, protocol } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as xml2js from 'xml2js';
+import { v4 as uuidv4 } from 'uuid';
+import * as fse from 'fs-extra';
+import * as mm from 'music-metadata';
 
 type PhraseForm = {
   name: string;
@@ -42,7 +42,7 @@ export async function initApp(initConfig: AppInitConfig) {
       createWindowManagerModule({
         initConfig,
         openDevTools: import.meta.env.DEV,
-      })
+      }),
     )
     .init(disallowMultipleAppInstance())
     .init(terminateAppOnLastWindowClose())
@@ -55,57 +55,55 @@ export async function initApp(initConfig: AppInitConfig) {
     // Security
     .init(
       allowInternalOrigins(
-        new Set(
-          initConfig.renderer instanceof URL ? [initConfig.renderer.origin] : []
-        )
-      )
+        new Set(initConfig.renderer instanceof URL ? [initConfig.renderer.origin] : []),
+      ),
     )
     .init(
       allowExternalUrls(
         new Set(
           initConfig.renderer instanceof URL
             ? [
-                "https://vite.dev",
-                "https://developer.mozilla.org",
-                "https://solidjs.com",
-                "https://qwik.dev",
-                "https://lit.dev",
-                "https://react.dev",
-                "https://preactjs.com",
-                "https://www.typescriptlang.org",
-                "https://vuejs.org",
+                'https://vite.dev',
+                'https://developer.mozilla.org',
+                'https://solidjs.com',
+                'https://qwik.dev',
+                'https://lit.dev',
+                'https://react.dev',
+                'https://preactjs.com',
+                'https://www.typescriptlang.org',
+                'https://vuejs.org',
               ]
-            : []
-        )
-      )
+            : [],
+        ),
+      ),
     );
 
   app.whenReady().then(() => {
-    protocol.registerFileProtocol("jamman", (request, callback) => {
-      const url = request.url.replace("jamman://", "");
+    protocol.registerFileProtocol('jamman', (request, callback) => {
+      const url = request.url.replace('jamman://', '');
       const decodedPath = decodeURIComponent(url);
       callback({ path: decodedPath });
     });
   });
 
-  ipcMain.handle("dialog:selectFolder", async () => {
+  ipcMain.handle('dialog:selectFolder', async () => {
     const result = await dialog.showOpenDialog({
-      properties: ["openDirectory"],
+      properties: ['openDirectory'],
     });
     return result.filePaths[0];
   });
 
-  ipcMain.handle("patches:read", async (_event, folderPath: string) => {
+  ipcMain.handle('patches:read', async (_event, folderPath: string) => {
     const jammanPath = path.join(folderPath);
     const patchDirs = fs
       .readdirSync(jammanPath)
-      .filter((d) => fs.statSync(path.join(jammanPath, d)).isDirectory());
+      .filter(d => fs.statSync(path.join(jammanPath, d)).isDirectory());
 
     const patches = await Promise.all(
-      patchDirs.map(async (dir) => {
+      patchDirs.map(async dir => {
         const patchDirPath = path.join(jammanPath, dir);
-        const patchXmlPath = path.join(patchDirPath, "patch.xml");
-        const patchXml = fs.readFileSync(patchXmlPath, "utf-8");
+        const patchXmlPath = path.join(patchDirPath, 'patch.xml');
+        const patchXml = fs.readFileSync(patchXmlPath, 'utf-8');
 
         const parser = new xml2js.Parser();
         const patchData = await parser.parseStringPromise(patchXml);
@@ -114,32 +112,24 @@ export async function initApp(initConfig: AppInitConfig) {
         const phraseDirs = fs
           .readdirSync(patchDirPath)
           .filter(
-            (subdir) =>
+            subdir =>
               /^Phrase[A-Z]$/.test(subdir) &&
-              fs.existsSync(path.join(patchDirPath, subdir, "phrase.xml"))
+              fs.existsSync(path.join(patchDirPath, subdir, 'phrase.xml')),
           );
 
         const phrases = await Promise.all(
-          phraseDirs.map(async (phraseDir) => {
-            const phraseXmlPath = path.join(
-              patchDirPath,
-              phraseDir,
-              "phrase.xml"
-            );
-            const phraseWavPath = path.join(
-              patchDirPath,
-              phraseDir,
-              "phrase.wav"
-            );
+          phraseDirs.map(async phraseDir => {
+            const phraseXmlPath = path.join(patchDirPath, phraseDir, 'phrase.xml');
+            const phraseWavPath = path.join(patchDirPath, phraseDir, 'phrase.wav');
 
-            const phraseXml = fs.readFileSync(phraseXmlPath, "utf-8");
+            const phraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
             const phraseData = await parser.parseStringPromise(phraseXml);
             return {
               dir: phraseDir,
               data: phraseData,
               wavPath: phraseWavPath,
             };
-          })
+          }),
         );
 
         return {
@@ -147,34 +137,28 @@ export async function initApp(initConfig: AppInitConfig) {
           data: patchData,
           phrases,
         };
-      })
+      }),
     );
 
     return patches;
   });
 
-  ipcMain.handle("phrase:getAudioURL", async (_event, filePath: string) => {
+  ipcMain.handle('phrase:getAudioURL', async (_event, filePath: string) => {
     if (!fs.existsSync(filePath)) return null;
     return `jamman://${encodeURIComponent(filePath)}`;
   });
 
-  ipcMain.handle("audio:validateWav", async (_event, filePath: string) => {
+  ipcMain.handle('audio:validateWav', async (_event, filePath: string) => {
     if (!fs.existsSync(filePath)) {
-      return { valid: false, error: "File not found" };
+      return { valid: false, error: 'File not found' };
     }
 
     try {
       const metadata = await mm.parseFile(filePath);
-      const {
-        sampleRate,
-        numberOfChannels,
-        bitsPerSample,
-        duration,
-        container,
-      } = metadata.format;
+      const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = metadata.format;
 
       const isValid =
-        container === "WAVE" &&
+        container === 'WAVE' &&
         sampleRate === 44100 &&
         bitsPerSample === 16 &&
         (numberOfChannels === 1 || numberOfChannels === 2);
@@ -185,29 +169,24 @@ export async function initApp(initConfig: AppInitConfig) {
         bitsPerSample,
         numberOfChannels,
         duration,
-        error: isValid
-          ? null
-          : "Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.",
+        error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
       };
-    } catch (err) {
-      return { valid: false, error: "Unable to parse WAV file." };
+    } catch {
+      return { valid: false, error: 'Unable to parse WAV file.' };
     }
   });
 
-  ipcMain.handle("dialog:selectFile", async () => {
+  ipcMain.handle('dialog:selectFile', async () => {
     const result = await dialog.showOpenDialog({
-      properties: ["openFile"],
-      filters: [{ name: "Audio", extensions: ["wav"] }],
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: ['wav'] }],
     });
 
-    return result.canceled || result.filePaths.length === 0
-      ? null
-      : result.filePaths[0];
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
   });
 
-  ipcMain.handle("patches:create", async (_event, data: PatchForm) => {
-    const { basePath, directory, patchName, rhythmType, stopMode, phrases } =
-      data;
+  ipcMain.handle('patches:create', async (_event, data: PatchForm) => {
+    const { basePath, directory, patchName, rhythmType, stopMode, phrases } = data;
 
     const patchDir = path.join(basePath, directory);
     fse.ensureDirSync(patchDir);
@@ -229,7 +208,7 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPatch>`.trim();
 
-    fs.writeFileSync(path.join(patchDir, "patch.xml"), patchXml, "utf-8");
+    fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
 
     // 2. Write each phrase folder and XML
     for (const phrase of phrases) {
@@ -240,7 +219,7 @@ export async function initApp(initConfig: AppInitConfig) {
       const originId = uuidv4();
 
       // Copy WAV file
-      const wavDest = path.join(phraseDir, "phrase.wav");
+      const wavDest = path.join(phraseDir, 'phrase.wav');
       fs.copyFileSync(phrase.wavPath, wavDest);
 
       // Write phrase.xml
@@ -259,13 +238,13 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPhrase>`.trim();
 
-      fs.writeFileSync(path.join(phraseDir, "phrase.xml"), phraseXml, "utf-8");
+      fs.writeFileSync(path.join(phraseDir, 'phrase.xml'), phraseXml, 'utf-8');
     }
 
     return true;
   });
 
-  ipcMain.handle("patches:update", async (_event, data: PatchForm) => {
+  ipcMain.handle('patches:update', async (_event, data: PatchForm) => {
     const {
       basePath,
       directory,
@@ -282,7 +261,7 @@ export async function initApp(initConfig: AppInitConfig) {
     // Overwrite patch.xml
     const updatedPatchID = patchID || uuidv4();
     const updatedOriginID = patchOriginID || uuidv4();
-    const updatedSettingsVersion = Number(settingsVersion || "0") + 1;
+    const updatedSettingsVersion = Number(settingsVersion || '0') + 1;
 
     const patchXml = `
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -296,19 +275,15 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPatch>`.trim();
 
-    fs.writeFileSync(path.join(patchDir, "patch.xml"), patchXml, "utf-8");
+    fs.writeFileSync(path.join(patchDir, 'patch.xml'), patchXml, 'utf-8');
 
     // Overwrite each phrase
-    const existingPhraseDirs = fs
-      .readdirSync(patchDir)
-      .filter((d) => /^Phrase[A-Z]$/.test(d));
+    const existingPhraseDirs = fs.readdirSync(patchDir).filter(d => /^Phrase[A-Z]$/.test(d));
 
     const updatedPhraseDirs = phrases.map((p: any) => p.name);
-    const toDelete = existingPhraseDirs.filter(
-      (d) => !updatedPhraseDirs.includes(d)
-    );
+    const toDelete = existingPhraseDirs.filter(d => !updatedPhraseDirs.includes(d));
 
-    toDelete.forEach((phraseName) => {
+    toDelete.forEach(phraseName => {
       fse.removeSync(path.join(patchDir, phraseName));
     });
 
@@ -317,27 +292,22 @@ export async function initApp(initConfig: AppInitConfig) {
       const phraseDir = path.join(patchDir, phrase.name);
       fse.ensureDirSync(phraseDir);
 
-      const phraseXmlPath = path.join(phraseDir, "phrase.xml");
+      const phraseXmlPath = path.join(phraseDir, 'phrase.xml');
 
       // Try to reuse existing ID and OriginID
       let phraseId = uuidv4();
       let originId = uuidv4();
 
       if (fs.existsSync(phraseXmlPath)) {
-        const existingPhraseXml = fs.readFileSync(phraseXmlPath, "utf-8");
-        const parsed = await new xml2js.Parser().parseStringPromise(
-          existingPhraseXml
-        );
+        const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
+        const parsed = await new xml2js.Parser().parseStringPromise(existingPhraseXml);
         phraseId = parsed.JamManPhrase?.ID?.[0] ?? phraseId;
         originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
       }
 
       // If wavPath is not already in that location, copy it
-      const destWav = path.join(phraseDir, "phrase.wav");
-      if (
-        phrase.wavPath &&
-        path.resolve(phrase.wavPath) !== path.resolve(destWav)
-      ) {
+      const destWav = path.join(phraseDir, 'phrase.wav');
+      if (phrase.wavPath && path.resolve(phrase.wavPath) !== path.resolve(destWav)) {
         fs.copyFileSync(phrase.wavPath, destWav);
       }
 
@@ -356,56 +326,50 @@ export async function initApp(initConfig: AppInitConfig) {
   <Metadata/>
 </JamManPhrase>`.trim();
 
-      fs.writeFileSync(phraseXmlPath, phraseXml, "utf-8");
+      fs.writeFileSync(phraseXmlPath, phraseXml, 'utf-8');
     }
 
     return true;
   });
 
-  ipcMain.handle(
-    "patches:delete",
-    async (_event, basePath: string, directory: string) => {
-      const patchPath = path.join(basePath, directory);
-      if (!fs.existsSync(patchPath)) {
-        throw new Error("Patch not found");
-      }
-
-      await fse.remove(patchPath);
-      return true;
+  ipcMain.handle('patches:delete', async (_event, basePath: string, directory: string) => {
+    const patchPath = path.join(basePath, directory);
+    if (!fs.existsSync(patchPath)) {
+      throw new Error('Patch not found');
     }
-  );
 
-  ipcMain.handle(
-    "patches:reorder",
-    async (_event, basePath: string, newOrder: string[]) => {
-      const jammanPath = path.join(basePath);
-      const tempMap: Record<string, string> = {};
+    await fse.remove(patchPath);
+    return true;
+  });
 
-      // 1. Temporary rename to avoid conflicts
-      for (let i = 0; i < newOrder.length; i++) {
-        const currentName = newOrder[i];
-        const originalPath = path.join(jammanPath, currentName);
-        const tempName = `__tmp_${currentName}`;
-        const tempPath = path.join(jammanPath, tempName);
+  ipcMain.handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
+    const jammanPath = path.join(basePath);
+    const tempMap: Record<string, string> = {};
 
-        if (!fs.existsSync(originalPath)) {
-          throw new Error(`Original patch folder not found: ${originalPath}`);
-        }
+    // 1. Temporary rename to avoid conflicts
+    for (let i = 0; i < newOrder.length; i++) {
+      const currentName = newOrder[i];
+      const originalPath = path.join(jammanPath, currentName);
+      const tempName = `__tmp_${currentName}`;
+      const tempPath = path.join(jammanPath, tempName);
 
-        fs.renameSync(originalPath, tempPath);
-        tempMap[tempName] = `Patch${String(i + 1).padStart(2, "0")}`;
+      if (!fs.existsSync(originalPath)) {
+        throw new Error(`Original patch folder not found: ${originalPath}`);
       }
 
-      // 2. Rename all temporary folders to their final names
-      for (const [tempName, finalName] of Object.entries(tempMap)) {
-        const tempPath = path.join(jammanPath, tempName);
-        const finalPath = path.join(jammanPath, finalName);
-        fs.renameSync(tempPath, finalPath);
-      }
-
-      return true;
+      fs.renameSync(originalPath, tempPath);
+      tempMap[tempName] = `Patch${String(i + 1).padStart(2, '0')}`;
     }
-  );
+
+    // 2. Rename all temporary folders to their final names
+    for (const [tempName, finalName] of Object.entries(tempMap)) {
+      const tempPath = path.join(jammanPath, tempName);
+      const finalPath = path.join(jammanPath, finalName);
+      fs.renameSync(tempPath, finalPath);
+    }
+
+    return true;
+  });
 
   await moduleRunner;
 }

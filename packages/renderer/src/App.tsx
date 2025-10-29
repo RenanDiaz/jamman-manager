@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Patch } from "./types";
+import { useEffect, useState } from 'react';
+import { Patch } from './types';
 import {
   AccordionBody,
   AccordionHeader,
@@ -17,16 +17,16 @@ import {
   Spinner,
   Table,
   UncontrolledAccordion,
-} from "reactstrap";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import PhrasePlayer from "./components/PhrasePlayer";
-import PatchForm from "./components/PatchForm";
-import { CheckmarkIcon, CrossIcon } from "./utils/Images";
-import { PatchList } from "./components/PatchList";
-import DeleteConfirmModal from "./components/DeleteConfirmModal";
+} from 'reactstrap';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import PhrasePlayer from './components/PhrasePlayer';
+import PatchForm from './components/PatchForm';
+import { CheckmarkIcon, CrossIcon } from './utils/Images';
+import { PatchList } from './components/PatchList';
+import DeleteConfirmModal from './components/DeleteConfirmModal';
 
-const PATCH_FORM_ID = "create-patch-form";
+const PATCH_FORM_ID = 'create-patch-form';
 
 const headersWidths = {
   xs: 5,
@@ -49,8 +49,7 @@ const valuesWidths = {
 function App() {
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [patches, setPatches] = useState<Patch[]>([]);
-  const [patchFormModalIsOpen, setPatchFormModalIsOpen] =
-    useState<boolean>(false);
+  const [patchFormModalIsOpen, setPatchFormModalIsOpen] = useState<boolean>(false);
   const [selectedPatch, setSelectedPatch] = useState<Patch>();
   const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
@@ -58,19 +57,19 @@ function App() {
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    document.body.setAttribute("data-bs-theme", "dark");
+    document.body.setAttribute('data-bs-theme', 'dark');
 
     // Keyboard shortcut: Ctrl/Cmd + O to load patches
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "o") {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
         e.preventDefault();
         handleLoad();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleLoad]);
 
   const loadPatches = async (folder: string, update?: boolean) => {
     try {
@@ -83,8 +82,8 @@ function App() {
         toast.success(`Successfully loaded ${result.length} patches`);
       }
     } catch (error) {
-      console.error("Error loading patches:", error);
-      toast.error("Failed to load patches. Please check the folder and try again.");
+      console.error('Error loading patches:', error);
+      toast.error('Failed to load patches. Please check the folder and try again.');
     } finally {
       setLoading(false);
     }
@@ -98,8 +97,8 @@ function App() {
         loadPatches(folder);
       }
     } catch (error) {
-      console.error("Error loading patches:", error);
-      toast.error("Failed to select folder. Please try again.");
+      console.error('Error loading patches:', error);
+      toast.error('Failed to select folder. Please try again.');
     }
   };
 
@@ -109,7 +108,7 @@ function App() {
   };
 
   const togglePatchModal = () => {
-    setPatchFormModalIsOpen((prev) => !prev);
+    setPatchFormModalIsOpen(prev => !prev);
   };
 
   const handleCreateEditPatchSuccess = () => {
@@ -142,8 +141,8 @@ function App() {
       toast.success(`Successfully deleted ${patchToDelete}`);
       loadPatches(currentFolder, true);
     } catch (error) {
-      console.error("Error deleting patch:", error);
-      toast.error("Failed to delete patch. Please try again.");
+      console.error('Error deleting patch:', error);
+      toast.error('Failed to delete patch. Please try again.');
     } finally {
       setLoading(false);
       setDeleteModalIsOpen(false);
@@ -157,7 +156,7 @@ function App() {
   };
 
   const toggleSortingModal = () => {
-    setSortingModalIsOpen((prev) => !prev);
+    setSortingModalIsOpen(prev => !prev);
   };
 
   const handleReorder = async (newOrder: Patch[]) => {
@@ -170,13 +169,13 @@ function App() {
       // send to main process to rename folders
       await window.electronAPI.reorderPatches(
         currentFolder,
-        newOrder.map((p) => p.dir)
+        newOrder.map(p => p.dir),
       );
-      toast.success("Successfully reordered patches");
+      toast.success('Successfully reordered patches');
       loadPatches(currentFolder, true);
     } catch (error) {
-      console.error("Error reordering patches:", error);
-      toast.error("Failed to reorder patches. Please try again.");
+      console.error('Error reordering patches:', error);
+      toast.error('Failed to reorder patches. Please try again.');
       // Revert to original order on error
       loadPatches(currentFolder, true);
     } finally {
@@ -186,7 +185,7 @@ function App() {
 
   return (
     <Container fluid>
-      <Row className="align-items-center" style={{ minHeight: "100vh" }}>
+      <Row className="align-items-center" style={{ minHeight: '100vh' }}>
         <Col>
           <Row>
             <Col>
@@ -196,12 +195,7 @@ function App() {
           <Row className="flex-nowrap overflow-auto">
             <Col xs="auto">
               <FormGroup>
-                <Button
-                  type="button"
-                  color="success"
-                  onClick={handleLoad}
-                  disabled={loading}
-                >
+                <Button type="button" color="success" onClick={handleLoad} disabled={loading}>
                   Load Patches
                 </Button>
               </FormGroup>
@@ -210,35 +204,21 @@ function App() {
               <>
                 <Col xs="auto">
                   <FormGroup>
-                    <Button
-                      type="button"
-                      color="info"
-                      outline
-                      onClick={clearPatches}
-                    >
+                    <Button type="button" color="info" outline onClick={clearPatches}>
                       Clear Patches
                     </Button>
                   </FormGroup>
                 </Col>
                 <Col xs="auto">
                   <FormGroup>
-                    <Button
-                      type="button"
-                      color="info"
-                      outline
-                      onClick={toggleSortingModal}
-                    >
+                    <Button type="button" color="info" outline onClick={toggleSortingModal}>
                       Sort Patches
                     </Button>
                   </FormGroup>
                 </Col>
                 <Col xs="auto" className="ms-auto">
                   <FormGroup>
-                    <Button
-                      type="button"
-                      color="primary"
-                      onClick={togglePatchModal}
-                    >
+                    <Button type="button" color="primary" onClick={togglePatchModal}>
                       Create Patch
                     </Button>
                   </FormGroup>
@@ -254,22 +234,18 @@ function App() {
                   <p>Found {patches.length} patches</p>
                 </Col>
               </Row>
-              <Row
-                style={{ maxHeight: "calc(100vh - 150px)", overflowY: "auto" }}
-              >
+              <Row style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
                 <Col>
                   <UncontrolledAccordion defaultOpen={[]} stayOpen>
                     {patches.map(({ data, dir, phrases }) => {
                       const patch = data.JamManPatch;
-                      const patchName = patch.PatchName?.[0] || "";
+                      const patchName = patch.PatchName?.[0] || '';
 
                       return (
                         <AccordionItem key={dir}>
                           <AccordionHeader targetId={dir}>
                             <strong>{dir}</strong>
-                            {!!patchName && (
-                              <small className="ms-2">{patchName}</small>
-                            )}
+                            {!!patchName && <small className="ms-2">{patchName}</small>}
                           </AccordionHeader>
                           <AccordionBody accordionId={dir}>
                             <Row className="mb-3 gy-2">
@@ -285,32 +261,26 @@ function App() {
                                 <strong>ID:</strong>
                               </Col>
                               <Col {...valuesWidths} className="text-truncate">
-                                {patch.ID[0] || "N/A"}
+                                {patch.ID[0] || 'N/A'}
                               </Col>
                               <Col {...headersWidths}>
                                 <strong>Origin ID:</strong>
                               </Col>
                               <Col {...valuesWidths} className="text-truncate">
-                                {patch.OriginID?.[0] || "N/A"}
+                                {patch.OriginID?.[0] || 'N/A'}
                               </Col>
                               <Col {...headersWidths}>
                                 <strong>Rhythm Type:</strong>
                               </Col>
-                              <Col {...valuesWidths}>
-                                {patch.RhythmType?.[0] || "N/A"}
-                              </Col>
+                              <Col {...valuesWidths}>{patch.RhythmType?.[0] || 'N/A'}</Col>
                               <Col {...headersWidths}>
                                 <strong>Stop Mode:</strong>
                               </Col>
-                              <Col {...valuesWidths}>
-                                {patch.StopMode?.[0] || "N/A"}
-                              </Col>
+                              <Col {...valuesWidths}>{patch.StopMode?.[0] || 'N/A'}</Col>
                               <Col {...headersWidths}>
                                 <strong>Settings Ver.:</strong>
                               </Col>
-                              <Col {...valuesWidths}>
-                                {patch.SettingsVersion?.[0] || "N/A"}
-                              </Col>
+                              <Col {...valuesWidths}>{patch.SettingsVersion?.[0] || 'N/A'}</Col>
                             </Row>
 
                             <Table responsive className="border">
@@ -331,58 +301,36 @@ function App() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {phrases.map(
-                                  ({
-                                    dir,
-                                    data: { JamManPhrase: phrase },
-                                    wavPath,
-                                  }) => (
-                                    <tr key={dir}>
-                                      <td>{dir}</td>
-                                      <td className="text-truncate">
-                                        {phrase.ID?.[0] || "N/A"}
-                                      </td>
-                                      <td>
-                                        {phrase.BeatsPerMinute?.[0] || "N/A"}
-                                      </td>
-                                      <td>
-                                        {phrase.IsLoop[0] === "1" ? (
-                                          <CheckmarkIcon />
-                                        ) : (
-                                          <CrossIcon />
-                                        )}
-                                      </td>
-                                      <td>
-                                        {phrase.IsReversed[0] === "1" ? (
-                                          <CheckmarkIcon />
-                                        ) : (
-                                          <CrossIcon />
-                                        )}
-                                      </td>
-                                      <td>
-                                        {phrase.BeatsPerMeasure?.[0] || "N/A"}
-                                      </td>
-                                      <td>
-                                        <PhrasePlayer wavPath={wavPath} />
-                                      </td>
-                                    </tr>
-                                  )
-                                )}
+                                {phrases.map(({ dir, data: { JamManPhrase: phrase }, wavPath }) => (
+                                  <tr key={dir}>
+                                    <td>{dir}</td>
+                                    <td className="text-truncate">{phrase.ID?.[0] || 'N/A'}</td>
+                                    <td>{phrase.BeatsPerMinute?.[0] || 'N/A'}</td>
+                                    <td>
+                                      {phrase.IsLoop[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}
+                                    </td>
+                                    <td>
+                                      {phrase.IsReversed[0] === '1' ? (
+                                        <CheckmarkIcon />
+                                      ) : (
+                                        <CrossIcon />
+                                      )}
+                                    </td>
+                                    <td>{phrase.BeatsPerMeasure?.[0] || 'N/A'}</td>
+                                    <td>
+                                      <PhrasePlayer wavPath={wavPath} />
+                                    </td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </Table>
                             <Row className="justify-content-end">
                               <Col xs="auto">
                                 <ButtonGroup>
-                                  <Button
-                                    color="primary"
-                                    onClick={() => handleEditPatch(dir)}
-                                  >
+                                  <Button color="primary" onClick={() => handleEditPatch(dir)}>
                                     Edit
                                   </Button>
-                                  <Button
-                                    color="danger"
-                                    onClick={() => handleDeletePatch(dir)}
-                                  >
+                                  <Button color="danger" onClick={() => handleDeletePatch(dir)}>
                                     Delete
                                   </Button>
                                 </ButtonGroup>
@@ -399,7 +347,7 @@ function App() {
           ) : loading ? (
             <Row className="justify-content-center mt-5">
               <Col xs="auto" className="text-center">
-                <Spinner color="primary" style={{ width: "3rem", height: "3rem" }} />
+                <Spinner color="primary" style={{ width: '3rem', height: '3rem' }} />
                 <p className="mt-3">Loading patches...</p>
               </Col>
             </Row>
@@ -407,28 +355,23 @@ function App() {
             <Row className="justify-content-center">
               <Col xs="auto">
                 <p>
-                  No patches loaded. Click "Load Patches" or press{" "}
-                  <kbd>Ctrl+O</kbd> (or <kbd>Cmd+O</kbd> on Mac) to select your
-                  JamMan SD card.
+                  No patches loaded. Click "Load Patches" or press <kbd>Ctrl+O</kbd> (or{' '}
+                  <kbd>Cmd+O</kbd> on Mac) to select your JamMan SD card.
                 </p>
               </Col>
             </Row>
           )}
         </Col>
       </Row>
-      <Modal
-        isOpen={patchFormModalIsOpen}
-        toggle={togglePatchModal}
-        onClosed={handleModalClose}
-      >
+      <Modal isOpen={patchFormModalIsOpen} toggle={togglePatchModal} onClosed={handleModalClose}>
         <ModalHeader toggle={togglePatchModal}>
-          {!selectedPatch ? "Create Patch" : "Edit Patch"}
+          {!selectedPatch ? 'Create Patch' : 'Edit Patch'}
         </ModalHeader>
         <ModalBody>
           <PatchForm
             formId={PATCH_FORM_ID}
-            basePath={currentFolder || ""}
-            busyPatches={patches.map((p) => p.dir)}
+            basePath={currentFolder || ''}
+            busyPatches={patches.map(p => p.dir)}
             initialData={selectedPatch}
             onSuccess={handleCreateEditPatchSuccess}
           />
@@ -438,7 +381,7 @@ function App() {
             Cancel
           </Button>
           <Button type="submit" form={PATCH_FORM_ID} color="primary">
-            {!selectedPatch ? "Create" : "Save"}
+            {!selectedPatch ? 'Create' : 'Save'}
           </Button>
         </ModalFooter>
       </Modal>
@@ -457,7 +400,7 @@ function App() {
 
       <DeleteConfirmModal
         isOpen={deleteModalIsOpen}
-        itemName={patchToDelete || ""}
+        itemName={patchToDelete || ''}
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       />

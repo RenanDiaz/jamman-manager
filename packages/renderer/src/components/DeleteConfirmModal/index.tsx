@@ -1,4 +1,4 @@
-import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from "reactstrap";
+import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from 'reactstrap';
 
 interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -21,8 +21,7 @@ export default function DeleteConfirmModal({
           Are you sure you want to delete <strong>{itemName}</strong>?
         </p>
         <p className="text-warning mb-0">
-          This action cannot be undone. All patch data and audio files will be
-          permanently removed.
+          This action cannot be undone. All patch data and audio files will be permanently removed.
         </p>
       </ModalBody>
       <ModalFooter>
