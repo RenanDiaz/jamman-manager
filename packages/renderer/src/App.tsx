@@ -14,13 +14,17 @@ import {
   ModalFooter,
   ModalHeader,
   Row,
+  Spinner,
   Table,
   UncontrolledAccordion,
 } from "reactstrap";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import PhrasePlayer from "./components/PhrasePlayer";
 import PatchForm from "./components/PatchForm";
 import { CheckmarkIcon, CrossIcon } from "./utils/Images";
 import { PatchList } from "./components/PatchList";
+import DeleteConfirmModal from "./components/DeleteConfirmModal";
 
 const PATCH_FORM_ID = "create-patch-form";
 
@@ -50,9 +54,22 @@ function App() {
   const [selectedPatch, setSelectedPatch] = useState<Patch>();
   const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
+  const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     document.body.setAttribute("data-bs-theme", "dark");
+
+    // Keyboard shortcut: Ctrl/Cmd + O to load patches
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "o") {
+        e.preventDefault();
+        handleLoad();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const loadPatches = async (folder: string, update?: boolean) => {
@@ -62,8 +79,12 @@ function App() {
       const result = await window.electronAPI.readPatches(folder);
       console.log(result);
       setPatches(result);
+      if (!update) {
+        toast.success(`Successfully loaded ${result.length} patches`);
+      }
     } catch (error) {
       console.error("Error loading patches:", error);
+      toast.error("Failed to load patches. Please check the folder and try again.");
     } finally {
       setLoading(false);
     }
@@ -78,6 +99,7 @@ function App() {
       }
     } catch (error) {
       console.error("Error loading patches:", error);
+      toast.error("Failed to select folder. Please try again.");
     }
   };
 
@@ -106,15 +128,32 @@ function App() {
     setPatchFormModalIsOpen(true);
   };
 
-  const handleDeletePatch = async (directory: string) => {
-    if (!currentFolder) return;
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${directory}"?`
-    );
-    if (confirmed) {
-      await window.electronAPI.deletePatch(currentFolder, directory);
+  const handleDeletePatch = (directory: string) => {
+    setPatchToDelete(directory);
+    setDeleteModalIsOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!currentFolder || !patchToDelete) return;
+
+    try {
+      setLoading(true);
+      await window.electronAPI.deletePatch(currentFolder, patchToDelete);
+      toast.success(`Successfully deleted ${patchToDelete}`);
       loadPatches(currentFolder, true);
+    } catch (error) {
+      console.error("Error deleting patch:", error);
+      toast.error("Failed to delete patch. Please try again.");
+    } finally {
+      setLoading(false);
+      setDeleteModalIsOpen(false);
+      setPatchToDelete(null);
     }
+  };
+
+  const cancelDelete = () => {
+    setDeleteModalIsOpen(false);
+    setPatchToDelete(null);
   };
 
   const toggleSortingModal = () => {
@@ -125,13 +164,24 @@ function App() {
     setPatches(newOrder); // update state visually
 
     if (!currentFolder) return;
-    // send to main process to rename folders
-    await window.electronAPI.reorderPatches(
-      currentFolder,
-      newOrder.map((p) => p.dir)
-    );
 
-    loadPatches(currentFolder, true);
+    try {
+      setLoading(true);
+      // send to main process to rename folders
+      await window.electronAPI.reorderPatches(
+        currentFolder,
+        newOrder.map((p) => p.dir)
+      );
+      toast.success("Successfully reordered patches");
+      loadPatches(currentFolder, true);
+    } catch (error) {
+      console.error("Error reordering patches:", error);
+      toast.error("Failed to reorder patches. Please try again.");
+      // Revert to original order on error
+      loadPatches(currentFolder, true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -346,12 +396,20 @@ function App() {
                 </Col>
               </Row>
             </>
+          ) : loading ? (
+            <Row className="justify-content-center mt-5">
+              <Col xs="auto" className="text-center">
+                <Spinner color="primary" style={{ width: "3rem", height: "3rem" }} />
+                <p className="mt-3">Loading patches...</p>
+              </Col>
+            </Row>
           ) : (
             <Row className="justify-content-center">
               <Col xs="auto">
                 <p>
-                  No patches loaded. Click "Load SD Card" to select your JamMan
-                  SD card.
+                  No patches loaded. Click "Load Patches" or press{" "}
+                  <kbd>Ctrl+O</kbd> (or <kbd>Cmd+O</kbd> on Mac) to select your
+                  JamMan SD card.
                 </p>
               </Col>
             </Row>
@@ -396,6 +454,26 @@ function App() {
           </Button>
         </ModalFooter>
       </Modal>
+
+      <DeleteConfirmModal
+        isOpen={deleteModalIsOpen}
+        itemName={patchToDelete || ""}
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
+
+      <ToastContainer
+        position="bottom-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
     </Container>
   );
 }
