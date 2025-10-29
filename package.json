@@ -73,6 +73,7 @@
   },
   "dependencies": {
     "@app/main": "*",
+    "electron-log": "^5.4.3",
     "fs-extra": "^11.3.0",
     "music-metadata": "^11.2.1",
     "uuid": "^11.1.0",
