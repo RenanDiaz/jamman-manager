@@ -46,6 +46,20 @@ type PatchForm = {
 };
 
 export async function initApp(initConfig: AppInitConfig) {
+  // CRITICAL: Register custom protocol scheme BEFORE any app initialization
+  // This must be called before app.ready fires
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: 'jamman',
+      privileges: {
+        bypassCSP: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
+  ]);
+  log.info('Custom protocol "jamman" registered as privileged');
+
   const moduleRunner = createModuleRunner()
     .init(
       createWindowManagerModule({
@@ -87,27 +101,26 @@ export async function initApp(initConfig: AppInitConfig) {
       ),
     );
 
-  // Register custom protocol scheme as privileged before app is ready
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: 'jamman',
-      privileges: {
-        bypassCSP: true,
-        supportFetchAPI: true,
-        stream: true,
-      },
-    },
-  ]);
-
   app.whenReady().then(() => {
     // Use modern protocol.handle() API instead of deprecated registerFileProtocol
     protocol.handle('jamman', async request => {
       try {
+        log.info(`Protocol handler received request: ${request.url}`);
+
         // Extract file path from URL
         const url = request.url.replace('jamman://', '');
         const filePath = decodeURIComponent(url);
 
-        log.info(`Serving audio file: ${filePath}`);
+        log.info(`Decoded file path: ${filePath}`);
+
+        // Validate file path is not empty
+        if (!filePath || filePath.trim() === '') {
+          log.error('Empty file path received');
+          return new Response('Empty file path', {
+            status: 400,
+            headers: { 'Content-Type': 'text/plain' },
+          });
+        }
 
         // Validate file exists
         if (!fs.existsSync(filePath)) {
@@ -120,6 +133,7 @@ export async function initApp(initConfig: AppInitConfig) {
 
         // Read file
         const fileBuffer = fs.readFileSync(filePath);
+        log.info(`Successfully read file: ${filePath} (${fileBuffer.length} bytes)`);
 
         // Return Response with proper headers for WAV audio
         return new Response(fileBuffer, {
@@ -139,6 +153,7 @@ export async function initApp(initConfig: AppInitConfig) {
         });
       }
     });
+    log.info('Protocol handler "jamman" registered successfully');
   });
 
   ipcMain.handle('dialog:selectFolder', async () => {
@@ -295,11 +310,25 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle('phrase:getAudioURL', async (_event, filePath: string) => {
     try {
+      log.info(`getAudioURL called with filePath: ${filePath}`);
+
+      // Validate filePath is not empty
+      if (!filePath || filePath.trim() === '') {
+        log.error('Empty filePath provided to getAudioURL');
+        return null;
+      }
+
+      // Check if file exists
       if (!fs.existsSync(filePath)) {
         log.warn(`Audio file not found: ${filePath}`);
         return null;
       }
-      return `jamman://${encodeURIComponent(filePath)}`;
+
+      // Create the custom protocol URL
+      const url = `jamman://${encodeURIComponent(filePath)}`;
+      log.info(`Generated audio URL: ${url}`);
+
+      return url;
     } catch (error) {
       log.error('Error getting audio URL:', error);
       return null;

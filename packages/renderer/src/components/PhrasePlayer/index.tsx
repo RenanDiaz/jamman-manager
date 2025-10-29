@@ -31,22 +31,39 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
     try {
       setIsLoading(true);
 
+      // Validate wavPath is not empty
+      if (!wavPath || wavPath.trim() === '') {
+        console.error('Empty wavPath provided to PhrasePlayer');
+        toast.error('Audio file path is missing');
+        setIsLoading(false);
+        return null;
+      }
+
+      console.log(`Loading audio file: ${wavPath}`);
+
       // Validate WAV file
       const validation = await window.electronAPI.validateWav(wavPath);
       if (!validation.valid) {
+        console.error(`WAV validation failed for ${wavPath}:`, validation.error);
         toast.error(`Invalid WAV file: ${validation.error}`);
+        setIsLoading(false);
         return null;
       }
 
       // Get audio URL
       const url = await window.electronAPI.getAudioURL(wavPath);
-      if (!url) {
-        toast.error('Failed to load audio file');
+      console.log(`Audio URL received: ${url}`);
+
+      if (!url || url.trim() === '') {
+        console.error(`Empty URL returned for wavPath: ${wavPath}`);
+        toast.error('Failed to load audio file - empty URL returned');
+        setIsLoading(false);
         return null;
       }
 
       // Create audio element
       const newAudio = new Audio(url);
+      console.log(`Audio element created with src: ${newAudio.src}`);
 
       // Set up event listeners
       newAudio.onended = () => {
