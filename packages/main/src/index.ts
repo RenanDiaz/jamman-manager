@@ -87,11 +87,57 @@ export async function initApp(initConfig: AppInitConfig) {
       ),
     );
 
+  // Register custom protocol scheme as privileged before app is ready
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: 'jamman',
+      privileges: {
+        bypassCSP: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
+  ]);
+
   app.whenReady().then(() => {
-    protocol.registerFileProtocol('jamman', (request, callback) => {
-      const url = request.url.replace('jamman://', '');
-      const decodedPath = decodeURIComponent(url);
-      callback({ path: decodedPath });
+    // Use modern protocol.handle() API instead of deprecated registerFileProtocol
+    protocol.handle('jamman', async request => {
+      try {
+        // Extract file path from URL
+        const url = request.url.replace('jamman://', '');
+        const filePath = decodeURIComponent(url);
+
+        log.info(`Serving audio file: ${filePath}`);
+
+        // Validate file exists
+        if (!fs.existsSync(filePath)) {
+          log.error(`Audio file not found: ${filePath}`);
+          return new Response('File not found', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain' },
+          });
+        }
+
+        // Read file
+        const fileBuffer = fs.readFileSync(filePath);
+
+        // Return Response with proper headers for WAV audio
+        return new Response(fileBuffer, {
+          status: 200,
+          headers: {
+            'Content-Type': 'audio/wav',
+            'Content-Length': fileBuffer.length.toString(),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      } catch (error) {
+        log.error('Error serving audio file:', error);
+        return new Response('Internal server error', {
+          status: 500,
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      }
     });
   });
 
