@@ -1,6 +1,6 @@
-import { sha256sum } from "./nodeCrypto.js";
-import { versions } from "./versions.js";
-import { contextBridge, ipcRenderer } from "electron";
+import { sha256sum } from './nodeCrypto.js';
+import { versions } from './versions.js';
+import { contextBridge, ipcRenderer } from 'electron';
 
 function send(channel: string, message: string) {
   return ipcRenderer.invoke(channel, message);
@@ -31,29 +31,27 @@ type AudioValidationResult = {
   numberOfChannels?: number;
   duration?: number;
   error?: string;
+  warning?: string;
+  canAttemptPlayback?: boolean;
 };
 
-contextBridge.exposeInMainWorld("electronAPI", {
-  selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
-  readPatches: (folderPath: string) =>
-    ipcRenderer.invoke("patches:read", folderPath),
-  getAudioURL: (wavPath: string) =>
-    ipcRenderer.invoke("phrase:getAudioURL", wavPath),
+contextBridge.exposeInMainWorld('electronAPI', {
+  selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
+  readPatches: (folderPath: string) => ipcRenderer.invoke('patches:read', folderPath),
+  getAudioURL: (wavPath: string) => ipcRenderer.invoke('phrase:getAudioURL', wavPath),
   validateWav: (wavPath: string): Promise<AudioValidationResult> =>
-    ipcRenderer.invoke("audio:validateWav", wavPath),
+    ipcRenderer.invoke('audio:validateWav', wavPath),
   selectFile: (): Promise<string | null> =>
-    ipcRenderer.invoke("dialog:selectFile", {
-      filters: [{ name: "Audio", extensions: ["wav"] }],
-      properties: ["openFile"],
+    ipcRenderer.invoke('dialog:selectFile', {
+      filters: [{ name: 'Audio', extensions: ['wav'] }],
+      properties: ['openFile'],
     }),
-  createPatch: (data: PatchPayload): Promise<void> =>
-    ipcRenderer.invoke("patches:create", data),
-  updatePatch: (data: PatchPayload): Promise<void> =>
-    ipcRenderer.invoke("patches:update", data),
+  createPatch: (data: PatchPayload): Promise<void> => ipcRenderer.invoke('patches:create', data),
+  updatePatch: (data: PatchPayload): Promise<void> => ipcRenderer.invoke('patches:update', data),
   deletePatch: (basePath: string, directory: string): Promise<void> =>
-    ipcRenderer.invoke("patches:delete", basePath, directory),
+    ipcRenderer.invoke('patches:delete', basePath, directory),
   reorderPatches: (basePath: string, patches: string[]): Promise<void> =>
-    ipcRenderer.invoke("patches:reorder", basePath, patches),
+    ipcRenderer.invoke('patches:reorder', basePath, patches),
 });
 
 export { sha256sum, versions, send };

@@ -9,22 +9,22 @@ interface PatchData {
 }
 
 export enum RhythmType {
-  Silence = "Silence",
-  WoodBlocks = "WoodBlocks",
-  Sticks = "Sticks",
-  Click = "Click",
-  AlternativeKickAndHighHat = "AlternativeKickAndHighHat",
-  StudioKickAndHighHat = "StudioKickAndHighHat",
-  TechnoKickAndHighHat = "TechnoKickAndHighHat",
-  Cowbell = "Cowbell",
-  Conga = "Conga",
-  Tambourine = "Tambourine",
+  Silence = 'Silence',
+  WoodBlocks = 'WoodBlocks',
+  Sticks = 'Sticks',
+  Click = 'Click',
+  AlternativeKickAndHighHat = 'AlternativeKickAndHighHat',
+  StudioKickAndHighHat = 'StudioKickAndHighHat',
+  TechnoKickAndHighHat = 'TechnoKickAndHighHat',
+  Cowbell = 'Cowbell',
+  Conga = 'Conga',
+  Tambourine = 'Tambourine',
 }
 
 export enum StopMode {
-  StopInstantly = "StopInstantly",
-  StopAtEndOfLoop = "StopAtEndOfLoop",
-  FadeOut = "FadeOut",
+  StopInstantly = 'StopInstantly',
+  StopAtEndOfLoop = 'StopAtEndOfLoop',
+  FadeOut = 'FadeOut',
 }
 
 interface JamManPatch {

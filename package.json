@@ -46,29 +46,49 @@
   "scripts": {
     "build": "npm run build -ws --if-present",
     "compile": "npm run build && electron-builder build --config electron-builder.mjs",
-    "test": "npx playwright test ./tests/e2e.spec.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "npx playwright test ./tests/e2e.spec.ts",
     "start": "node packages/dev-mode.js",
     "typecheck": "npm run typecheck -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "create-renderer": "cd packages && npm create vite@latest renderer",
     "integrate-renderer": "npm start --workspace @app/integrate-renderer",
     "init": "npm run create-renderer && npm run integrate-renderer && npm install",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@eslint/js": "^9.38.0",
     "@npmcli/map-workspaces": "4.0.2",
     "@playwright/test": "1.51.1",
     "@types/node": "22.14.0",
     "@types/xml2js": "^0.4.14",
+    "@vitest/ui": "^3.2.4",
     "electron": "39.0.0",
     "electron-builder": "^26.0.12",
     "glob": "11.0.1",
-    "playwright": "^1.51.1"
+    "globals": "^16.4.0",
+    "happy-dom": "^20.0.10",
+    "playwright": "^1.51.1",
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@app/main": "*",
+    "electron-log": "^5.4.3",
     "fs-extra": "^11.3.0",
     "music-metadata": "^11.2.1",
     "uuid": "^11.1.0",
     "xml2js": "^0.6.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,json,md,yml,yaml,css,scss,html}": [
+      "prettier --write"
+    ]
   }
 }
