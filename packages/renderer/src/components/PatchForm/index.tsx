@@ -13,6 +13,7 @@ import {
 } from 'reactstrap';
 import { Patch, RhythmType, StopMode } from '../../types';
 import classNames from 'classnames';
+import { usePatchStore } from '../../store/usePatchStore';
 
 type PhraseForm = {
   name: string;
@@ -87,6 +88,8 @@ export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialDat
     setPhrases(updated);
   };
 
+  const { createPatch, updatePatch } = usePatchStore();
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const directory = (e.target as HTMLFormElement).directory.value;
@@ -95,44 +98,44 @@ export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialDat
       return;
     }
 
-    if (isEditing && !!initialData) {
-      const patchID = initialData.data.JamManPatch.ID?.[0];
-      const patchOriginID = initialData.data.JamManPatch.OriginID?.[0];
-      const settingsVersion = initialData.data.JamManPatch.SettingsVersion[0];
-      await window.electronAPI.updatePatch({
-        basePath,
-        directory,
-        patchName,
-        rhythmType,
-        stopMode,
-        settingsVersion,
-        patchID,
-        patchOriginID,
-        phrases,
-      });
-    } else {
-      await window.electronAPI.createPatch({
-        basePath,
-        directory,
-        patchName,
-        rhythmType,
-        stopMode,
-        phrases,
-      });
-    }
+    try {
+      if (isEditing && !!initialData) {
+        const patchID = initialData.data.JamManPatch.ID?.[0];
+        const patchOriginID = initialData.data.JamManPatch.OriginID?.[0];
+        const settingsVersion = initialData.data.JamManPatch.SettingsVersion[0];
+        await updatePatch({
+          basePath,
+          directory,
+          patchName,
+          rhythmType,
+          stopMode,
+          settingsVersion,
+          patchID,
+          patchOriginID,
+          phrases,
+        });
+      } else {
+        await createPatch({
+          basePath,
+          directory,
+          patchName,
+          rhythmType,
+          stopMode,
+          phrases,
+        });
+      }
 
-    if (isEditing) {
-      alert('Patch updated successfully!');
-    } else {
-      alert('Patch created successfully!');
+      // Reset form
+      setPatchName('');
+      setPhrases([]);
+      setRhythmType(RhythmType.StudioKickAndHighHat);
+      setStopMode(StopMode.StopInstantly);
+      setIsEditing(false);
+      onSuccess();
+    } catch (error) {
+      // Error handling is done in the store
+      console.error('Form submission error:', error);
     }
-    // Optionally reset
-    setPatchName('');
-    setPhrases([]);
-    setRhythmType(RhythmType.StudioKickAndHighHat);
-    setStopMode(StopMode.StopInstantly);
-    setIsEditing(false);
-    onSuccess();
   };
 
   return (

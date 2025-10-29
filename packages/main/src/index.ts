@@ -16,6 +16,14 @@ import * as fse from 'fs-extra';
 import * as mm from 'music-metadata';
 import log from 'electron-log';
 
+// Cache for parsed patches to improve performance
+type CacheEntry = {
+  patches: any[];
+  modTimes: Map<string, number>;
+};
+
+const patchCache = new Map<string, CacheEntry>();
+
 type PhraseForm = {
   name: string;
   beatsPerMinute: number;
@@ -106,6 +114,9 @@ export async function initApp(initConfig: AppInitConfig) {
       }
 
       const jammanPath = path.join(folderPath);
+
+      // Collect current modification times
+      const currentModTimes = new Map<string, number>();
       const patchDirs = fs.readdirSync(jammanPath).filter(d => {
         try {
           return fs.statSync(path.join(jammanPath, d)).isDirectory();
@@ -114,6 +125,55 @@ export async function initApp(initConfig: AppInitConfig) {
         }
       });
 
+      // Get modification times for all patch and phrase XML files
+      for (const dir of patchDirs) {
+        const patchXmlPath = path.join(jammanPath, dir, 'patch.xml');
+        if (fs.existsSync(patchXmlPath)) {
+          const stat = fs.statSync(patchXmlPath);
+          currentModTimes.set(patchXmlPath, stat.mtimeMs);
+
+          // Check phrase XML files
+          const patchDirPath = path.join(jammanPath, dir);
+          const phraseDirs = fs
+            .readdirSync(patchDirPath)
+            .filter(
+              subdir =>
+                /^Phrase[A-Z]$/.test(subdir) &&
+                fs.existsSync(path.join(patchDirPath, subdir, 'phrase.xml')),
+            );
+
+          for (const phraseDir of phraseDirs) {
+            const phraseXmlPath = path.join(patchDirPath, phraseDir, 'phrase.xml');
+            if (fs.existsSync(phraseXmlPath)) {
+              const phraseStat = fs.statSync(phraseXmlPath);
+              currentModTimes.set(phraseXmlPath, phraseStat.mtimeMs);
+            }
+          }
+        }
+      }
+
+      // Check cache
+      const cached = patchCache.get(folderPath);
+      if (cached) {
+        // Verify all modification times match
+        let cacheValid = cached.modTimes.size === currentModTimes.size;
+        if (cacheValid) {
+          for (const [filePath, modTime] of currentModTimes) {
+            if (cached.modTimes.get(filePath) !== modTime) {
+              cacheValid = false;
+              break;
+            }
+          }
+        }
+
+        if (cacheValid) {
+          log.info(`Using cached patches for ${folderPath}`);
+          return cached.patches;
+        }
+      }
+
+      // Cache miss or invalid - parse patches
+      log.info(`Parsing patches for ${folderPath}`);
       const patches = await Promise.all(
         patchDirs.map(async dir => {
           try {
@@ -170,7 +230,15 @@ export async function initApp(initConfig: AppInitConfig) {
         }),
       );
 
-      return patches.filter(Boolean);
+      const filteredPatches = patches.filter(Boolean);
+
+      // Update cache
+      patchCache.set(folderPath, {
+        patches: filteredPatches,
+        modTimes: currentModTimes,
+      });
+
+      return filteredPatches;
     } catch (error) {
       log.error('Error reading patches from folder:', error);
       throw new Error(
@@ -300,6 +368,10 @@ export async function initApp(initConfig: AppInitConfig) {
       }
 
       log.info(`Successfully created patch: ${directory}`);
+
+      // Invalidate cache
+      patchCache.delete(basePath);
+
       return true;
     } catch (error) {
       log.error(`Error creating patch ${directory}:`, error);
@@ -422,6 +494,10 @@ export async function initApp(initConfig: AppInitConfig) {
       // Success - remove backup
       fse.removeSync(backupDir);
       log.info(`Successfully updated patch: ${directory}`);
+
+      // Invalidate cache
+      patchCache.delete(basePath);
+
       return true;
     } catch (error) {
       log.error(`Error updating patch ${directory}:`, error);
@@ -463,6 +539,9 @@ export async function initApp(initConfig: AppInitConfig) {
           log.info(`Permanently deleted patch backup: ${directory}`);
         }
       }, 5000); // 5 second safety window
+
+      // Invalidate cache
+      patchCache.delete(basePath);
 
       return true;
     } catch (error) {
@@ -518,6 +597,10 @@ export async function initApp(initConfig: AppInitConfig) {
       }
 
       log.info(`Successfully reordered ${newOrder.length} patches`);
+
+      // Invalidate cache
+      patchCache.delete(basePath);
+
       return true;
     } catch (error) {
       log.error('Error reordering patches:', error);

@@ -114,11 +114,13 @@ describe('Type Conversions', () => {
 
   describe('Integer to Boolean', () => {
     it('should convert 1 to true', () => {
-      expect('1' === '1').toBe(true);
+      const value: string = '1';
+      expect(value === '1').toBe(true);
     });
 
     it('should convert 0 to false', () => {
-      expect('0' === '1').toBe(false);
+      const value: string = '0';
+      expect(value === '1').toBe(false);
     });
   });
 });
@@ -140,7 +142,12 @@ describe('Data Transformation', () => {
     });
 
     it('should handle missing patch name', () => {
-      const mockPatchData = {
+      const mockPatchData: {
+        JamManPatch: {
+          ID: string[];
+          PatchName?: string[];
+        };
+      } = {
         JamManPatch: {
           ID: ['uuid-123'],
         },
@@ -169,7 +176,12 @@ describe('Data Transformation', () => {
     });
 
     it('should handle optional fields with defaults', () => {
-      const mockPhraseData = {
+      const mockPhraseData: {
+        JamManPhrase: {
+          BeatsPerMinute?: string[];
+          BeatsPerMeasure?: string[];
+        };
+      } = {
         JamManPhrase: {},
       };
 
