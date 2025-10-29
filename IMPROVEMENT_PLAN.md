@@ -56,11 +56,35 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - Add data validation before write operations
 - Implement operation queue to prevent concurrency issues
 
+#### 3. **Audio Playback Reliability**
+
+**Current Issues:**
+
+- MediaError code 4 (MEDIA_ERR_SRC_NOT_SUPPORTED) occurs frequently when playing WAV files
+- Error: "FFmpegDemuxer: data source error" suggests protocol handling issues
+- Custom `jamman://` protocol may not be properly serving files
+- No fallback or retry mechanism for failed audio loads
+
+**Improvements:**
+
+- Investigate and fix custom protocol file serving
+- Add proper error handling with user-friendly messages
+- Implement retry logic for failed audio loads
+- Consider alternative approaches (e.g., streaming from file:// with proper permissions)
+- Add audio format validation before attempting playback
+- Implement proper audio element lifecycle management
+- Add loading states while audio is being prepared
+
+**Files to Update:**
+
+- `packages/main/src/index.ts` (protocol registration)
+- `packages/renderer/src/components/PhrasePlayer/index.tsx` (audio playback logic)
+
 ---
 
 ### **Priority 2: Testing & Quality Assurance**
 
-#### 3. **Comprehensive Testing Suite**
+#### 4. **Comprehensive Testing Suite**
 
 **Current Gap:** Only E2E test scaffolding exists, no actual tests
 
@@ -92,7 +116,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 3: Performance & Scalability**
 
-#### 4. **Performance Optimization**
+#### 5. **Performance Optimization**
 
 **Current Issues:**
 
@@ -109,7 +133,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - Optimize bundle size (code splitting)
 - Add loading indicators for long operations
 
-#### 5. **State Management**
+#### 6. **State Management**
 
 **Current Issue:** All state in `App.tsx` could become unwieldy
 
@@ -125,7 +149,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 4: User Experience Enhancements**
 
-#### 6. **UI/UX Improvements**
+#### 7. **UI/UX Improvements**
 
 **Current Gaps:**
 
@@ -145,7 +169,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - Add tooltips for complex features
 - Implement search/filter for patches
 
-#### 7. **Audio Features Enhancement**
+#### 8. **Audio Features Enhancement**
 
 **Current Limitations:**
 
@@ -166,7 +190,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 5: Security Hardening**
 
-#### 8. **Security Enhancements**
+#### 9. **Security Enhancements**
 
 **Current Concerns:**
 
@@ -188,7 +212,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 6: Developer Experience & Documentation**
 
-#### 9. **Documentation**
+#### 10. **Documentation**
 
 **Current Gaps:**
 
@@ -208,7 +232,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - Document JamMan XML format specification
 - Add troubleshooting guide
 
-#### 10. **Development Tools**
+#### 11. **Development Tools**
 
 **Improvements:**
 
@@ -223,7 +247,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 7: Feature Additions**
 
-#### 11. **Additional Features to Consider**
+#### 12. **Additional Features to Consider**
 
 - **Backup/Restore:** Full SD card backup functionality
 - **Batch Operations:** Edit multiple patches at once
@@ -305,6 +329,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [x] Add try-catch wrappers to all IPC handlers
 - [x] Implement error logging system
 - [x] Add rollback mechanism for file operations
+- [ ] Fix audio playback reliability (MediaError code 4 / protocol handling)
 - [ ] Implement file locking for critical operations
 - [ ] Add operation queue for concurrency control
 
