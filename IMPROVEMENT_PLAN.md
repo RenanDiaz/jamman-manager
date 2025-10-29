@@ -356,7 +356,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [x] Add loading states and progress bars
 - [ ] Implement undo/redo functionality
 - [x] Add keyboard shortcuts
-- [ ] Add multi-select functionality for batch reordering
+- [x] Add multi-select functionality for batch reordering
 - [ ] Implement search/filter
 
 ### Priority 5: Security

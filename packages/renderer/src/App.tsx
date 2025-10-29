@@ -67,7 +67,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleLoad]);
 
-  const { deletePatch, reorderPatches } = usePatchStore();
+  const { deletePatch, reorderPatches, clearSelection } = usePatchStore();
 
   const togglePatchModal = () => {
     setPatchFormModalIsOpen(prev => !prev);
@@ -112,7 +112,13 @@ function App() {
   };
 
   const toggleSortingModal = () => {
-    setSortingModalIsOpen(prev => !prev);
+    setSortingModalIsOpen(prev => {
+      // Clear selection when closing the modal
+      if (prev) {
+        clearSelection();
+      }
+      return !prev;
+    });
   };
 
   const handleReorder = async (newOrder: typeof patches) => {

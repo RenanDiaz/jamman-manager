@@ -8,12 +8,19 @@ interface PatchStore {
   patches: Patch[];
   loading: boolean;
   selectedPatch: Patch | undefined;
+  selectedPatchDirs: string[];
 
   // Actions
   setCurrentFolder: (folder: string | null) => void;
   setPatches: (patches: Patch[]) => void;
   setLoading: (loading: boolean) => void;
   setSelectedPatch: (patch: Patch | undefined) => void;
+
+  // Multi-select actions
+  toggleSelection: (dir: string) => void;
+  selectRange: (startDir: string, endDir: string) => void;
+  clearSelection: () => void;
+  selectAll: () => void;
 
   // Async operations
   loadPatches: (folder: string, update?: boolean) => Promise<void>;
@@ -32,12 +39,51 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   patches: [],
   loading: false,
   selectedPatch: undefined,
+  selectedPatchDirs: [],
 
   // Simple setters
   setCurrentFolder: folder => set({ currentFolder: folder }),
   setPatches: patches => set({ patches }),
   setLoading: loading => set({ loading }),
   setSelectedPatch: patch => set({ selectedPatch: patch }),
+
+  // Multi-select actions
+  toggleSelection: (dir: string) => {
+    const { selectedPatchDirs } = get();
+    const isSelected = selectedPatchDirs.includes(dir);
+
+    if (isSelected) {
+      set({ selectedPatchDirs: selectedPatchDirs.filter(d => d !== dir) });
+    } else {
+      set({ selectedPatchDirs: [...selectedPatchDirs, dir] });
+    }
+  },
+
+  selectRange: (startDir: string, endDir: string) => {
+    const { patches, selectedPatchDirs } = get();
+    const startIndex = patches.findIndex(p => p.dir === startDir);
+    const endIndex = patches.findIndex(p => p.dir === endDir);
+
+    if (startIndex === -1 || endIndex === -1) return;
+
+    const minIndex = Math.min(startIndex, endIndex);
+    const maxIndex = Math.max(startIndex, endIndex);
+
+    const rangeSelection = patches.slice(minIndex, maxIndex + 1).map(p => p.dir);
+
+    // Merge with existing selection
+    const newSelection = Array.from(new Set([...selectedPatchDirs, ...rangeSelection]));
+    set({ selectedPatchDirs: newSelection });
+  },
+
+  clearSelection: () => {
+    set({ selectedPatchDirs: [] });
+  },
+
+  selectAll: () => {
+    const { patches } = get();
+    set({ selectedPatchDirs: patches.map(p => p.dir) });
+  },
 
   // Async operations
   loadPatches: async (folder: string, update = false) => {
@@ -130,6 +176,8 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       );
       toast.success('Successfully reordered patches');
       await loadPatches(currentFolder, true);
+      // Clear selection after successful reorder
+      set({ selectedPatchDirs: [] });
     } catch (error) {
       console.error('Error reordering patches:', error);
       toast.error('Failed to reorder patches. Please try again.');
@@ -142,6 +190,6 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   },
 
   clearPatches: () => {
-    set({ patches: [], currentFolder: null });
+    set({ patches: [], currentFolder: null, selectedPatchDirs: [] });
   },
 }));
