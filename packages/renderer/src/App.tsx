@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Patch } from './types';
 import {
   AccordionBody,
@@ -56,6 +56,19 @@ function App() {
   const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
 
+  const handleLoad = useCallback(async () => {
+    try {
+      const folder = await window.electronAPI.selectFolder();
+      if (folder) {
+        setCurrentFolder(folder);
+        loadPatches(folder);
+      }
+    } catch (error) {
+      console.error('Error loading patches:', error);
+      toast.error('Failed to select folder. Please try again.');
+    }
+  }, []);
+
   useEffect(() => {
     document.body.setAttribute('data-bs-theme', 'dark');
 
@@ -69,8 +82,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleLoad]);
 
   const loadPatches = async (folder: string, update?: boolean) => {
     try {
@@ -87,19 +99,6 @@ function App() {
       toast.error('Failed to load patches. Please check the folder and try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleLoad = async () => {
-    try {
-      const folder = await window.electronAPI.selectFolder();
-      if (folder) {
-        setCurrentFolder(folder);
-        loadPatches(folder);
-      }
-    } catch (error) {
-      console.error('Error loading patches:', error);
-      toast.error('Failed to select folder. Please try again.');
     }
   };
 
