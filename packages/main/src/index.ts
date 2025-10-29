@@ -337,12 +337,16 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle('audio:validateWav', async (_event, filePath: string) => {
     if (!fs.existsSync(filePath)) {
-      return { valid: false, error: 'File not found' };
+      return { valid: false, error: 'File not found', canAttemptPlayback: false };
     }
 
     try {
       const metadata = await mm.parseFile(filePath);
       const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = metadata.format;
+
+      log.info(
+        `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch`,
+      );
 
       const isValid =
         container === 'WAVE' &&
@@ -357,9 +361,17 @@ export async function initApp(initConfig: AppInitConfig) {
         numberOfChannels,
         duration,
         error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
+        canAttemptPlayback: true, // Even if format is unexpected, let browser try
       };
-    } catch {
-      return { valid: false, error: 'Unable to parse WAV file.' };
+    } catch (error) {
+      // Can't parse metadata, but file might still be playable
+      log.warn(`Unable to parse WAV metadata for ${filePath}:`, error);
+      return {
+        valid: false,
+        error: 'Unable to parse WAV file metadata.',
+        warning: 'File format could not be validated, but playback will be attempted.',
+        canAttemptPlayback: true, // Let the browser try to play it
+      };
     }
   });
 

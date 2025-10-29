@@ -37,7 +37,9 @@ interface AudioValidationResult {
   bitsPerSample?: number;
   numberOfChannels?: number;
   duration?: number;
-  error: string | null;
+  error?: string | null;
+  warning?: string;
+  canAttemptPlayback?: boolean;
 }
 
 declare global {

@@ -31,6 +31,8 @@ type AudioValidationResult = {
   numberOfChannels?: number;
   duration?: number;
   error?: string;
+  warning?: string;
+  canAttemptPlayback?: boolean;
 };
 
 contextBridge.exposeInMainWorld('electronAPI', {

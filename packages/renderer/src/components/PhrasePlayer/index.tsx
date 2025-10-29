@@ -43,11 +43,22 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
 
       // Validate WAV file
       const validation = await window.electronAPI.validateWav(wavPath);
-      if (!validation.valid) {
-        console.error(`WAV validation failed for ${wavPath}:`, validation.error);
-        toast.error(`Invalid WAV file: ${validation.error}`);
+
+      // Check if we can attempt playback
+      if (validation.canAttemptPlayback === false) {
+        console.error(`Cannot play WAV file ${wavPath}:`, validation.error);
+        toast.error(`Cannot play audio: ${validation.error}`);
         setIsLoading(false);
         return null;
+      }
+
+      // Show warnings for files that can't be validated but might work
+      if (!validation.valid && validation.warning) {
+        console.warn(`WAV validation warning for ${wavPath}:`, validation.warning);
+        toast.warning(validation.warning, { autoClose: 5000 });
+      } else if (!validation.valid && validation.error) {
+        console.warn(`WAV format issue for ${wavPath}:`, validation.error);
+        toast.warning(`${validation.error} - Attempting playback anyway.`, { autoClose: 5000 });
       }
 
       // Get audio URL
