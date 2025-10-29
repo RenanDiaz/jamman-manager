@@ -326,10 +326,10 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### Priority 4: UX
 
-- [ ] Replace browser confirm() with custom modals
-- [ ] Add loading states and progress bars
+- [x] Replace browser confirm() with custom modals
+- [x] Add loading states and progress bars
 - [ ] Implement undo/redo functionality
-- [ ] Add keyboard shortcuts
+- [x] Add keyboard shortcuts
 - [ ] Add multi-select functionality for batch reordering
 - [ ] Implement search/filter
 
@@ -346,8 +346,8 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [ ] Add comprehensive JSDoc comments
 - [ ] Update README with architecture docs
 - [ ] Add IPC API reference
-- [ ] Set up Prettier and ESLint
-- [ ] Configure pre-commit hooks
+- [x] Set up Prettier and ESLint
+- [x] Configure pre-commit hooks
 - [ ] Set up GitHub Actions CI/CD
 
 ---
