@@ -46,7 +46,11 @@
   "scripts": {
     "build": "npm run build -ws --if-present",
     "compile": "npm run build && electron-builder build --config electron-builder.mjs",
-    "test": "npx playwright test ./tests/e2e.spec.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "npx playwright test ./tests/e2e.spec.ts",
     "start": "node packages/dev-mode.js",
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
@@ -64,12 +68,15 @@
     "@playwright/test": "1.51.1",
     "@types/node": "22.14.0",
     "@types/xml2js": "^0.4.14",
+    "@vitest/ui": "^3.2.4",
     "electron": "39.0.0",
     "electron-builder": "^26.0.12",
     "glob": "11.0.1",
     "globals": "^16.4.0",
+    "happy-dom": "^20.0.10",
     "playwright": "^1.51.1",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@app/main": "*",
