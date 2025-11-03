@@ -55,7 +55,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         console.error(`Cannot play WAV file ${wavPath}:`, validation.error);
         toast.error(`Cannot play audio: ${validation.error}`);
         setIsLoading(false);
-        retryCountRef.current = 0;
         return null;
       }
 
@@ -78,7 +77,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         console.error(`Empty URL returned for wavPath: ${wavPath}`);
         toast.error('Failed to load audio file - empty URL returned');
         setIsLoading(false);
-        retryCountRef.current = 0;
         return null;
       }
 
@@ -129,7 +127,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
     } catch (error) {
       console.error('Error creating audio element:', error);
       setIsLoading(false);
-      retryCountRef.current = 0;
       toast.error('Failed to load audio file');
       return null;
     }
@@ -157,6 +154,11 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       try {
         // Clean up any previous failed audio from this retry loop
         if (currentAttemptAudio) {
+          // Remove event handlers to prevent them from firing during cleanup
+          currentAttemptAudio.onplay = null;
+          currentAttemptAudio.onerror = null;
+          currentAttemptAudio.onended = null;
+          currentAttemptAudio.oncanplay = null;
           currentAttemptAudio.pause();
           currentAttemptAudio.src = '';
           currentAttemptAudio.load();
