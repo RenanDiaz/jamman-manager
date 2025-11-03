@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as xml2js from 'xml2js';
 import { v4 as uuidv4 } from 'uuid';
-import * as fse from 'fs-extra';
+import fse from 'fs-extra';
 import * as mm from 'music-metadata';
 import log from 'electron-log';
 import { lockManager } from './LockManager.js';
