@@ -97,7 +97,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         console.log('Audio playback started');
         setIsPlaying(true);
         setIsLoading(false);
-        retryCountRef.current = 0; // Reset retry count on successful play
       };
 
       newAudio.oncanplay = () => {
