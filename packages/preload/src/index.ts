@@ -52,6 +52,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('patches:delete', basePath, directory),
   reorderPatches: (basePath: string, patches: string[]): Promise<void> =>
     ipcRenderer.invoke('patches:reorder', basePath, patches),
+  exportPatchesTXT: (
+    patches: unknown[],
+    basePath: string,
+  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
+    ipcRenderer.invoke('patches:exportTXT', patches, basePath),
+  exportPatchesPDF: (
+    patches: unknown[],
+    basePath: string,
+  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
+    ipcRenderer.invoke('patches:exportPDF', patches, basePath),
 });
 
 export { sha256sum, versions, send };

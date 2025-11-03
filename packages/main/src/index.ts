@@ -17,6 +17,7 @@ import * as mm from 'music-metadata';
 import log from 'electron-log';
 import { lockManager } from './LockManager.js';
 import { operationQueue, OperationPriority } from './OperationQueue.js';
+import PDFDocument from 'pdfkit';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -45,6 +46,28 @@ type PatchForm = {
   patchID?: string;
   patchOriginID?: string;
   phrases: PhraseForm[];
+};
+
+type ExportPatch = {
+  dir: string;
+  data?: {
+    JamManPatch?: {
+      PatchName?: string[];
+      RhythmType?: string[];
+      StopMode?: string[];
+    };
+  };
+  phrases?: {
+    dir: string;
+    data?: {
+      JamManPhrase?: {
+        BeatsPerMinute?: string[];
+        BeatsPerMeasure?: string[];
+        IsLoop?: string[];
+        IsReversed?: string[];
+      };
+    };
+  }[];
 };
 
 export async function initApp(initConfig: AppInitConfig) {
@@ -752,6 +775,163 @@ export async function initApp(initConfig: AppInitConfig) {
       },
       OperationPriority.NORMAL,
     );
+  });
+
+  ipcMain.handle('patches:exportTXT', async (_event, patches: ExportPatch[], basePath: string) => {
+    try {
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export Patches to TXT',
+        defaultPath: path.join(basePath, 'jamman-patches.txt'),
+        filters: [{ name: 'Text Files', extensions: ['txt'] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      // Format patch data as plain text
+      let content = 'JamMan Patches Export\n';
+      content += `Generated: ${new Date().toLocaleString()}\n`;
+      content += '='.repeat(80) + '\n\n';
+
+      patches.forEach((patch, index) => {
+        const patchData = patch.data?.JamManPatch;
+        const patchName = patchData?.PatchName?.[0] || 'Unknown';
+        const rhythmType = patchData?.RhythmType?.[0] || '0';
+        const stopMode = patchData?.StopMode?.[0] || '0';
+
+        content += `Patch ${index + 1}: ${patch.dir}\n`;
+        content += `-`.repeat(80) + '\n';
+        content += `  Name: ${patchName}\n`;
+        content += `  Rhythm Type: ${rhythmType}\n`;
+        content += `  Stop Mode: ${stopMode}\n`;
+
+        if (patch.phrases && patch.phrases.length > 0) {
+          content += `  Phrases (${patch.phrases.length}):\n`;
+          patch.phrases.forEach(phrase => {
+            const phraseData = phrase.data?.JamManPhrase;
+            const bpm = phraseData?.BeatsPerMinute?.[0] || '120';
+            const beatsPerMeasure = phraseData?.BeatsPerMeasure?.[0] || '4';
+            const isLoop = phraseData?.IsLoop?.[0] === '1' ? 'Yes' : 'No';
+            const isReversed = phraseData?.IsReversed?.[0] === '1' ? 'Yes' : 'No';
+
+            content += `    - ${phrase.dir}: ${bpm} BPM, ${beatsPerMeasure}/4, Loop: ${isLoop}, Reversed: ${isReversed}\n`;
+          });
+        } else {
+          content += `  Phrases: None\n`;
+        }
+
+        content += '\n';
+      });
+
+      // Write to file
+      fs.writeFileSync(result.filePath, content, 'utf-8');
+      log.info(`Successfully exported ${patches.length} patches to TXT: ${result.filePath}`);
+
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      log.error('Error exporting patches to TXT:', error);
+      throw new Error(
+        `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  ipcMain.handle('patches:exportPDF', async (_event, patches: ExportPatch[], basePath: string) => {
+    try {
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export Patches to PDF',
+        defaultPath: path.join(basePath, 'jamman-patches.pdf'),
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      // Create PDF document
+      const doc = new PDFDocument({ margin: 50 });
+      const stream = fs.createWriteStream(result.filePath);
+      doc.pipe(stream);
+
+      // Title
+      doc.fontSize(20).text('JamMan Patches Export', { align: 'center' });
+      doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.moveDown(2);
+
+      // Add each patch
+      patches.forEach((patch, index) => {
+        const patchData = patch.data?.JamManPatch;
+        const patchName = patchData?.PatchName?.[0] || 'Unknown';
+        const rhythmType = patchData?.RhythmType?.[0] || '0';
+        const stopMode = patchData?.StopMode?.[0] || '0';
+
+        // Check if we need a new page
+        if (index > 0 && doc.y > 650) {
+          doc.addPage();
+        }
+
+        // Patch header
+        doc
+          .fontSize(14)
+          .fillColor('#4A90E2')
+          .text(`Patch ${index + 1}: ${patch.dir}`, { underline: true });
+        doc.fillColor('black');
+        doc.moveDown(0.5);
+
+        // Patch details
+        doc.fontSize(11).text(`Name: ${patchName}`);
+        doc.text(`Rhythm Type: ${rhythmType}`);
+        doc.text(`Stop Mode: ${stopMode}`);
+        doc.moveDown(0.5);
+
+        // Phrases
+        if (patch.phrases && patch.phrases.length > 0) {
+          doc.fontSize(11).fillColor('#666666').text(`Phrases (${patch.phrases.length}):`);
+          doc.fillColor('black');
+
+          patch.phrases.forEach(phrase => {
+            const phraseData = phrase.data?.JamManPhrase;
+            const bpm = phraseData?.BeatsPerMinute?.[0] || '120';
+            const beatsPerMeasure = phraseData?.BeatsPerMeasure?.[0] || '4';
+            const isLoop = phraseData?.IsLoop?.[0] === '1' ? 'Yes' : 'No';
+            const isReversed = phraseData?.IsReversed?.[0] === '1' ? 'Yes' : 'No';
+
+            doc
+              .fontSize(10)
+              .text(
+                `  • ${phrase.dir}: ${bpm} BPM, ${beatsPerMeasure}/4, Loop: ${isLoop}, Reversed: ${isReversed}`,
+                { indent: 20 },
+              );
+          });
+        } else {
+          doc.fontSize(11).fillColor('#666666').text('Phrases: None');
+          doc.fillColor('black');
+        }
+
+        doc.moveDown(1.5);
+      });
+
+      // Finalize PDF
+      doc.end();
+
+      // Wait for the stream to finish
+      await new Promise<void>((resolve, reject) => {
+        stream.on('finish', () => resolve());
+        stream.on('error', reject);
+      });
+
+      log.info(`Successfully exported ${patches.length} patches to PDF: ${result.filePath}`);
+
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      log.error('Error exporting patches to PDF:', error);
+      throw new Error(
+        `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   });
 
   // Get operation queue status

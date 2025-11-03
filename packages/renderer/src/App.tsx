@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
+  ButtonDropdown,
   Col,
   Container,
+  DropdownItem,
+  DropdownMenu,
+  DropdownToggle,
   FormGroup,
   Modal,
   ModalBody,
@@ -39,6 +43,7 @@ function App() {
   const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
   const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
 
   const handleLoad = useCallback(async () => {
     try {
@@ -125,6 +130,48 @@ function App() {
     await reorderPatches(newOrder);
   };
 
+  const toggleExportDropdown = () => {
+    setExportDropdownOpen(prev => !prev);
+  };
+
+  const handleExportTXT = async () => {
+    if (!currentFolder || patches.length === 0) {
+      toast.warning('No patches to export');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.exportPatchesTXT(patches, currentFolder);
+      if (result.success && result.filePath) {
+        toast.success(`Exported patches to ${result.filePath}`);
+      } else if (result.canceled) {
+        // User canceled, no need to show message
+      }
+    } catch (error) {
+      console.error('Error exporting patches to TXT:', error);
+      toast.error('Failed to export patches to TXT');
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (!currentFolder || patches.length === 0) {
+      toast.warning('No patches to export');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.exportPatchesPDF(patches, currentFolder);
+      if (result.success && result.filePath) {
+        toast.success(`Exported patches to ${result.filePath}`);
+      } else if (result.canceled) {
+        // User canceled, no need to show message
+      }
+    } catch (error) {
+      console.error('Error exporting patches to PDF:', error);
+      toast.error('Failed to export patches to PDF');
+    }
+  };
+
   return (
     <Container fluid>
       <Row className="align-items-center" style={{ minHeight: '100vh' }}>
@@ -156,6 +203,19 @@ function App() {
                     <Button type="button" color="info" outline onClick={toggleSortingModal}>
                       Sort Patches
                     </Button>
+                  </FormGroup>
+                </Col>
+                <Col xs="auto">
+                  <FormGroup>
+                    <ButtonDropdown isOpen={exportDropdownOpen} toggle={toggleExportDropdown}>
+                      <DropdownToggle color="info" outline caret>
+                        Export Patches
+                      </DropdownToggle>
+                      <DropdownMenu>
+                        <DropdownItem onClick={handleExportTXT}>Export as TXT</DropdownItem>
+                        <DropdownItem onClick={handleExportPDF}>Export as PDF</DropdownItem>
+                      </DropdownMenu>
+                    </ButtonDropdown>
                   </FormGroup>
                 </Col>
                 <Col xs="auto" className="ms-auto">
