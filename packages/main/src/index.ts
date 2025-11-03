@@ -7,7 +7,7 @@ import { hardwareAccelerationMode } from './modules/HardwareAccelerationModule.j
 import { autoUpdater } from './modules/AutoUpdater.js';
 import { allowInternalOrigins } from './modules/BlockNotAllowdOrigins.js';
 import { allowExternalUrls } from './modules/ExternalUrls.js';
-import { app, dialog, ipcMain, protocol } from 'electron';
+import { app, dialog, ipcMain, protocol, net } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as xml2js from 'xml2js';
@@ -104,8 +104,9 @@ export async function initApp(initConfig: AppInitConfig) {
     );
 
   app.whenReady().then(() => {
-    // Use modern protocol.handle() API instead of deprecated registerFileProtocol
-    protocol.handle('jamman', async request => {
+    // Use net.fetch to proxy file:// URLs through our custom protocol
+    // This leverages Chromium's native file streaming which properly supports range requests
+    protocol.handle('jamman', request => {
       try {
         log.info(`Protocol handler received request: ${request.url}`);
 
@@ -133,20 +134,12 @@ export async function initApp(initConfig: AppInitConfig) {
           });
         }
 
-        // Read file
-        const fileBuffer = fs.readFileSync(filePath);
-        log.info(`Successfully read file: ${filePath} (${fileBuffer.length} bytes)`);
+        // Convert to file:// URL and let Chromium handle the streaming
+        // This properly supports range requests natively
+        const fileUrl = `file://${filePath}`;
+        log.info(`Proxying to: ${fileUrl}`);
 
-        // Return Response with proper headers for WAV audio
-        return new Response(fileBuffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'audio/wav',
-            'Content-Length': fileBuffer.length.toString(),
-            'Accept-Ranges': 'bytes',
-            'Cache-Control': 'public, max-age=3600',
-          },
-        });
+        return net.fetch(fileUrl);
       } catch (error) {
         log.error('Error serving audio file:', error);
         return new Response('Internal server error', {
