@@ -17,6 +17,7 @@ import * as mm from 'music-metadata';
 import log from 'electron-log';
 import { lockManager } from './LockManager.js';
 import { operationQueue, OperationPriority } from './OperationQueue.js';
+import PDFDocument from 'pdfkit';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -45,6 +46,28 @@ type PatchForm = {
   patchID?: string;
   patchOriginID?: string;
   phrases: PhraseForm[];
+};
+
+type ExportPatch = {
+  dir: string;
+  data?: {
+    JamManPatch?: {
+      PatchName?: string[];
+      RhythmType?: string[];
+      StopMode?: string[];
+    };
+  };
+  phrases?: {
+    dir: string;
+    data?: {
+      JamManPhrase?: {
+        BeatsPerMinute?: string[];
+        BeatsPerMeasure?: string[];
+        IsLoop?: string[];
+        IsReversed?: string[];
+      };
+    };
+  }[];
 };
 
 export async function initApp(initConfig: AppInitConfig) {
@@ -752,6 +775,104 @@ export async function initApp(initConfig: AppInitConfig) {
       },
       OperationPriority.NORMAL,
     );
+  });
+
+  ipcMain.handle('patches:exportTXT', async (_event, patches: ExportPatch[], basePath: string) => {
+    try {
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export Patches to TXT',
+        defaultPath: path.join(basePath, 'jamman-patches.txt'),
+        filters: [{ name: 'Text Files', extensions: ['txt'] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      // Format patch data as plain text
+      let content = 'JamMan Patches Export\n';
+      content += `Generated: ${new Date().toLocaleString()}\n`;
+      content += '='.repeat(80) + '\n\n';
+
+      patches.forEach((patch, index) => {
+        const patchData = patch.data?.JamManPatch;
+        const patchName = patchData?.PatchName?.[0] || 'Unknown';
+
+        content += `${index + 1}. ${patchName}\n`;
+      });
+
+      // Write to file
+      fs.writeFileSync(result.filePath, content, 'utf-8');
+      log.info(`Successfully exported ${patches.length} patches to TXT: ${result.filePath}`);
+
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      log.error('Error exporting patches to TXT:', error);
+      throw new Error(
+        `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  ipcMain.handle('patches:exportPDF', async (_event, patches: ExportPatch[], basePath: string) => {
+    try {
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Export Patches to PDF',
+        defaultPath: path.join(basePath, 'jamman-patches.pdf'),
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      // Create PDF document
+      const doc = new PDFDocument({ margin: 50 });
+      const stream = fs.createWriteStream(result.filePath);
+      doc.pipe(stream);
+
+      // Title
+      doc.fontSize(20).text('JamMan Patches Export', { align: 'center' });
+      doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.moveDown(2);
+
+      // Add each patch
+      patches.forEach((patch, index) => {
+        const patchData = patch.data?.JamManPatch;
+        const patchName = patchData?.PatchName?.[0] || 'Unknown';
+
+        // Check if we need a new page
+        if (index > 0 && doc.y > 700) {
+          doc.addPage();
+        }
+
+        doc
+          .fontSize(12)
+          .fillColor('black')
+          .text(`${index + 1}. ${patchName}`);
+        doc.moveDown(0.3);
+      });
+
+      // Finalize PDF
+      doc.end();
+
+      // Wait for the stream to finish
+      await new Promise<void>((resolve, reject) => {
+        stream.on('finish', () => resolve());
+        stream.on('error', reject);
+      });
+
+      log.info(`Successfully exported ${patches.length} patches to PDF: ${result.filePath}`);
+
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      log.error('Error exporting patches to PDF:', error);
+      throw new Error(
+        `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   });
 
   // Get operation queue status

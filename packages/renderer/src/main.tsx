@@ -42,6 +42,12 @@ interface AudioValidationResult {
   canAttemptPlayback?: boolean;
 }
 
+interface ExportResult {
+  success: boolean;
+  filePath?: string;
+  canceled?: boolean;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -54,6 +60,8 @@ declare global {
       updatePatch: (data: PatchForm) => Promise<void>;
       deletePatch(basePath: string, directory: string): Promise<void>;
       reorderPatches(basePath: string, patches: string[]): Promise<void>;
+      exportPatchesTXT(patches: Patch[], basePath: string): Promise<ExportResult>;
+      exportPatchesPDF(patches: Patch[], basePath: string): Promise<ExportResult>;
     };
   }
 }
