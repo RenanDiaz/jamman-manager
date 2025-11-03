@@ -1,4 +1,4 @@
-import { FC, useEffect, useRef, useState } from 'react';
+import { FC, useEffect, useState } from 'react';
 import { ButtonGroup, Spinner } from 'reactstrap';
 import { toast } from 'react-toastify';
 import { ImageButton } from '../../utils/Common';
@@ -8,15 +8,10 @@ interface Props {
   wavPath: string;
 }
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 500;
-
 const PhrasePlayer: FC<Props> = ({ wavPath }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
-  const retryCountRef = useRef(0);
-  const isRetryingRef = useRef(false);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -26,8 +21,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         audio.src = '';
         audio.load();
       }
-      retryCountRef.current = 0;
-      isRetryingRef.current = false;
     };
   }, [audio]);
 
@@ -43,9 +36,7 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         return null;
       }
 
-      console.log(
-        `Loading audio file: ${wavPath} (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})`,
-      );
+      console.log(`Loading audio file: ${wavPath}`);
 
       // Validate WAV file
       const validation = await window.electronAPI.validateWav(wavPath);
@@ -58,15 +49,13 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         return null;
       }
 
-      // Show warnings for files that can't be validated but might work (only on first attempt)
-      if (retryCountRef.current === 0) {
-        if (!validation.valid && validation.warning) {
-          console.warn(`WAV validation warning for ${wavPath}:`, validation.warning);
-          toast.warning(validation.warning, { autoClose: 5000 });
-        } else if (!validation.valid && validation.error) {
-          console.warn(`WAV format issue for ${wavPath}:`, validation.error);
-          toast.warning(`${validation.error} - Attempting playback anyway.`, { autoClose: 5000 });
-        }
+      // Show warnings for files that can't be validated but might work
+      if (!validation.valid && validation.warning) {
+        console.warn(`WAV validation warning for ${wavPath}:`, validation.warning);
+        toast.warning(validation.warning, { autoClose: 5000 });
+      } else if (!validation.valid && validation.error) {
+        console.warn(`WAV format issue for ${wavPath}:`, validation.error);
+        toast.warning(`${validation.error} - Attempting playback anyway.`, { autoClose: 5000 });
       }
 
       // Get audio URL
@@ -88,7 +77,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       newAudio.onended = () => {
         console.log('Audio playback ended');
         setIsPlaying(false);
-        retryCountRef.current = 0;
       };
 
       newAudio.onplay = () => {
@@ -112,15 +100,11 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
 
         setIsPlaying(false);
         setIsLoading(false);
+        setAudio(null);
 
-        // Don't retry from the error handler - let handlePlay manage retries
-        // Don't reset counter here - it's managed by the retry loop
-        if (!isRetryingRef.current) {
-          setAudio(null);
-          toast.error(
-            `Failed to play audio. ${error?.code === 4 ? 'The file format may not be supported.' : 'Please try again.'}`,
-          );
-        }
+        toast.error(
+          `Failed to play audio. ${error?.code === 4 ? 'The file format may not be supported.' : 'Click play to try again.'}`,
+        );
       };
 
       return newAudio;
@@ -139,75 +123,31 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         await audio.play();
       } catch (error) {
         console.error('Error resuming audio:', error);
-        toast.error('Failed to resume playback');
+        toast.error('Failed to resume playback. Click play to try again.');
         setIsLoading(false);
       }
       return;
     }
 
-    // Create new audio with retry logic
-    isRetryingRef.current = true;
-    let playSuccess = false;
-    let currentAttemptAudio: HTMLAudioElement | null = null;
+    // Create new audio and play once
+    try {
+      const newAudio = await createAudioElement();
 
-    while (retryCountRef.current < MAX_RETRIES && !playSuccess) {
-      try {
-        // Clean up any previous failed audio from this retry loop
-        if (currentAttemptAudio) {
-          // Remove event handlers to prevent them from firing during cleanup
-          currentAttemptAudio.onplay = null;
-          currentAttemptAudio.onerror = null;
-          currentAttemptAudio.onended = null;
-          currentAttemptAudio.oncanplay = null;
-          currentAttemptAudio.pause();
-          currentAttemptAudio.src = '';
-          currentAttemptAudio.load();
-        }
-
-        // Create new audio element
-        const newAudio = await createAudioElement();
-
-        if (!newAudio) {
-          console.log('Failed to create audio element, stopping retries');
-          break;
-        }
-
-        currentAttemptAudio = newAudio;
-        setAudio(newAudio);
-
-        // Try to play
-        console.log(
-          `Attempting to play audio (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})`,
-        );
-        await newAudio.play();
-
-        // If we get here, play succeeded
-        playSuccess = true;
-        console.log('Audio play succeeded');
-      } catch (error) {
-        console.error(`Play attempt ${retryCountRef.current + 1} failed:`, error);
-
-        retryCountRef.current++;
-
-        if (retryCountRef.current < MAX_RETRIES) {
-          console.log(`Waiting ${RETRY_DELAY_MS}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-        } else {
-          console.error('Max retries reached, giving up');
-          setAudio(null);
-          setIsLoading(false);
-          toast.error(
-            `Failed to play audio after ${MAX_RETRIES} attempts. The file format may not be supported or the file may be corrupted.`,
-          );
-        }
+      if (!newAudio) {
+        console.log('Failed to create audio element');
+        return;
       }
-    }
 
-    isRetryingRef.current = false;
+      setAudio(newAudio);
 
-    // Reset retry count if we succeeded
-    if (playSuccess) {
-      retryCountRef.current = 0;
+      console.log('Attempting to play audio');
+      await newAudio.play();
+      console.log('Audio play succeeded');
+    } catch (error) {
+      console.error('Play attempt failed:', error);
+      setAudio(null);
+      setIsLoading(false);
+      toast.error('Failed to play audio. Click play to try again.');
     }
   };
 
@@ -224,8 +164,6 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       audio.currentTime = 0;
       setIsPlaying(false);
     }
-    // Reset retry count when manually stopping
-    retryCountRef.current = 0;
   };
 
   return (
