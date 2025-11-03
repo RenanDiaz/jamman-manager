@@ -7,7 +7,7 @@ import { hardwareAccelerationMode } from './modules/HardwareAccelerationModule.j
 import { autoUpdater } from './modules/AutoUpdater.js';
 import { allowInternalOrigins } from './modules/BlockNotAllowdOrigins.js';
 import { allowExternalUrls } from './modules/ExternalUrls.js';
-import { app, dialog, ipcMain, protocol } from 'electron';
+import { app, dialog, ipcMain, protocol, net } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as xml2js from 'xml2js';
@@ -104,8 +104,9 @@ export async function initApp(initConfig: AppInitConfig) {
     );
 
   app.whenReady().then(() => {
-    // Use modern protocol.handle() API with streaming support
-    protocol.handle('jamman', async request => {
+    // Use net.fetch to proxy file:// URLs through our custom protocol
+    // This leverages Chromium's native file streaming which properly supports range requests
+    protocol.handle('jamman', request => {
       try {
         log.info(`Protocol handler received request: ${request.url}`);
 
@@ -133,50 +134,12 @@ export async function initApp(initConfig: AppInitConfig) {
           });
         }
 
-        // Get file stats for size
-        const stats = fs.statSync(filePath);
-        const fileSize = stats.size;
+        // Convert to file:// URL and let Chromium handle the streaming
+        // This properly supports range requests natively
+        const fileUrl = `file://${filePath}`;
+        log.info(`Proxying to: ${fileUrl}`);
 
-        // Check for range request
-        const range = request.headers.get('range');
-        if (range) {
-          // Parse range header (format: "bytes=start-end")
-          const parts = range.replace(/bytes=/, '').split('-');
-          const start = parseInt(parts[0], 10);
-          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-          const chunkSize = end - start + 1;
-
-          // Read only the requested chunk
-          const buffer = Buffer.alloc(chunkSize);
-          const fd = fs.openSync(filePath, 'r');
-          fs.readSync(fd, buffer, 0, chunkSize, start);
-          fs.closeSync(fd);
-
-          log.info(`Serving range ${start}-${end}/${fileSize} for ${filePath}`);
-
-          return new Response(buffer, {
-            status: 206, // Partial Content
-            headers: {
-              'Content-Type': 'audio/wav',
-              'Content-Length': chunkSize.toString(),
-              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-              'Accept-Ranges': 'bytes',
-            },
-          });
-        }
-
-        // No range request - send entire file
-        const fileBuffer = fs.readFileSync(filePath);
-        log.info(`Serving complete file: ${filePath} (${fileBuffer.length} bytes)`);
-
-        return new Response(fileBuffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'audio/wav',
-            'Content-Length': fileBuffer.length.toString(),
-            'Accept-Ranges': 'bytes',
-          },
-        });
+        return net.fetch(fileUrl);
       } catch (error) {
         log.error('Error serving audio file:', error);
         return new Response('Internal server error', {
