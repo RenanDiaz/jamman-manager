@@ -114,8 +114,8 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
         setIsLoading(false);
 
         // Don't retry from the error handler - let handlePlay manage retries
+        // Don't reset counter here - it's managed by the retry loop
         if (!isRetryingRef.current) {
-          retryCountRef.current = 0;
           setAudio(null);
           toast.error(
             `Failed to play audio. ${error?.code === 4 ? 'The file format may not be supported.' : 'Please try again.'}`,
