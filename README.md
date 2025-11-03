@@ -9,35 +9,66 @@ JamMan Manager is a desktop app that allows musicians to manage loops on their D
 - 🔍 View all patches and phrases from the SD card
 - 📝 Edit patch metadata: name, rhythm type, stop mode
 - 🎵 Edit phrase metadata: BPM, time signature, loop type, reverse, etc.
-- 📁 Import WAV files into phrases
+- 🎧 Audio playback with real-time preview of phrases
+- 📁 Import WAV files into phrases with validation
 - ➕ Create new patches and phrases
-- ✏️ Rename and reorder patches
-- 🗑 Delete patches safely
+- ✏️ Rename and reorder patches with drag-and-drop
+- ☑️ Multi-select functionality for batch operations
+- 🗑 Delete patches safely with automatic backups
+- 🔒 File locking to prevent concurrent operation conflicts
+- ⚡ Priority-based operation queue for optimal performance
 - 💽 Compatible with JamMan Stereo's SD card structure
 
 ## 🚀 Installation
 
-To run the app locally:
+### Requirements
+
+- Node.js >= 23.0.0
+
+### Running Locally
 
 ```bash
 npm install
 npm start
 ```
 
-To build a distributable installer:
+### Building a Distributable
 
 ```bash
 npm run compile
 ```
 
+This will create platform-specific installers (DMG for macOS, NSIS for Windows, AppImage for Linux).
+
 ## 🛠 Technologies Used
 
-- Electron
-- React
-- TypeScript
-- Vite
-- Bootstrap (via Reactstrap)
-- fs-extra + xml2js
+### Core
+
+- **Electron** - Desktop application framework
+- **React 19** - UI library
+- **TypeScript** - Type-safe JavaScript
+- **Vite** - Build tool and dev server
+
+### UI & Styling
+
+- **Bootstrap 5** + **Reactstrap** - Component library
+- **Styled Components** - CSS-in-JS styling
+- **React Toastify** - Toast notifications
+- **@dnd-kit** - Drag and drop functionality
+
+### State & Data Management
+
+- **Zustand** - State management
+- **fs-extra** - Enhanced file system operations
+- **xml2js** - XML parsing for patch files
+- **music-metadata** - Audio file metadata parsing
+
+### Development & Testing
+
+- **Vitest** - Unit testing framework
+- **Playwright** - E2E testing
+- **ESLint** + **Prettier** - Code quality and formatting
+- **electron-log** - Application logging
 
 ## 🧠 Why?
 
@@ -59,7 +90,7 @@ This app works directly with the expected JamMan directory structure:
 ## 📄 License
 
 MIT License
-© 2024 Renán Gabriel Díaz Reyes
+© 2025 Renán Gabriel Díaz Reyes
 
 ---
 
