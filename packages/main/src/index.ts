@@ -798,31 +798,8 @@ export async function initApp(initConfig: AppInitConfig) {
       patches.forEach((patch, index) => {
         const patchData = patch.data?.JamManPatch;
         const patchName = patchData?.PatchName?.[0] || 'Unknown';
-        const rhythmType = patchData?.RhythmType?.[0] || '0';
-        const stopMode = patchData?.StopMode?.[0] || '0';
 
-        content += `Patch ${index + 1}: ${patch.dir}\n`;
-        content += `-`.repeat(80) + '\n';
-        content += `  Name: ${patchName}\n`;
-        content += `  Rhythm Type: ${rhythmType}\n`;
-        content += `  Stop Mode: ${stopMode}\n`;
-
-        if (patch.phrases && patch.phrases.length > 0) {
-          content += `  Phrases (${patch.phrases.length}):\n`;
-          patch.phrases.forEach(phrase => {
-            const phraseData = phrase.data?.JamManPhrase;
-            const bpm = phraseData?.BeatsPerMinute?.[0] || '120';
-            const beatsPerMeasure = phraseData?.BeatsPerMeasure?.[0] || '4';
-            const isLoop = phraseData?.IsLoop?.[0] === '1' ? 'Yes' : 'No';
-            const isReversed = phraseData?.IsReversed?.[0] === '1' ? 'Yes' : 'No';
-
-            content += `    - ${phrase.dir}: ${bpm} BPM, ${beatsPerMeasure}/4, Loop: ${isLoop}, Reversed: ${isReversed}\n`;
-          });
-        } else {
-          content += `  Phrases: None\n`;
-        }
-
-        content += '\n';
+        content += `${index + 1}. ${patchName}\n`;
       });
 
       // Write to file
@@ -865,53 +842,17 @@ export async function initApp(initConfig: AppInitConfig) {
       patches.forEach((patch, index) => {
         const patchData = patch.data?.JamManPatch;
         const patchName = patchData?.PatchName?.[0] || 'Unknown';
-        const rhythmType = patchData?.RhythmType?.[0] || '0';
-        const stopMode = patchData?.StopMode?.[0] || '0';
 
         // Check if we need a new page
-        if (index > 0 && doc.y > 650) {
+        if (index > 0 && doc.y > 700) {
           doc.addPage();
         }
 
-        // Patch header
         doc
-          .fontSize(14)
-          .fillColor('#4A90E2')
-          .text(`Patch ${index + 1}: ${patch.dir}`, { underline: true });
-        doc.fillColor('black');
-        doc.moveDown(0.5);
-
-        // Patch details
-        doc.fontSize(11).text(`Name: ${patchName}`);
-        doc.text(`Rhythm Type: ${rhythmType}`);
-        doc.text(`Stop Mode: ${stopMode}`);
-        doc.moveDown(0.5);
-
-        // Phrases
-        if (patch.phrases && patch.phrases.length > 0) {
-          doc.fontSize(11).fillColor('#666666').text(`Phrases (${patch.phrases.length}):`);
-          doc.fillColor('black');
-
-          patch.phrases.forEach(phrase => {
-            const phraseData = phrase.data?.JamManPhrase;
-            const bpm = phraseData?.BeatsPerMinute?.[0] || '120';
-            const beatsPerMeasure = phraseData?.BeatsPerMeasure?.[0] || '4';
-            const isLoop = phraseData?.IsLoop?.[0] === '1' ? 'Yes' : 'No';
-            const isReversed = phraseData?.IsReversed?.[0] === '1' ? 'Yes' : 'No';
-
-            doc
-              .fontSize(10)
-              .text(
-                `  • ${phrase.dir}: ${bpm} BPM, ${beatsPerMeasure}/4, Loop: ${isLoop}, Reversed: ${isReversed}`,
-                { indent: 20 },
-              );
-          });
-        } else {
-          doc.fontSize(11).fillColor('#666666').text('Phrases: None');
-          doc.fillColor('black');
-        }
-
-        doc.moveDown(1.5);
+          .fontSize(12)
+          .fillColor('black')
+          .text(`${index + 1}. ${patchName}`);
+        doc.moveDown(0.3);
       });
 
       // Finalize PDF
