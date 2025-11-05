@@ -32,6 +32,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import type { Patch } from '../types';
 
 interface Playlist {
   id: string;
@@ -45,7 +46,7 @@ interface PlaylistsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentFolder: string | null;
-  patches: any[];
+  patches: Patch[];
   selectedPatchDirs: string[];
   onMovePlaylistToTop?: (playlistId: string) => void;
 }

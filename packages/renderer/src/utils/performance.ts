@@ -156,6 +156,12 @@ class PerformanceMonitor {
 export const performanceMonitor = new PerformanceMonitor();
 
 // Expose to window for debugging
+declare global {
+  interface Window {
+    performanceMonitor: PerformanceMonitor;
+  }
+}
+
 if (typeof window !== 'undefined') {
-  (window as any).performanceMonitor = performanceMonitor;
+  window.performanceMonitor = performanceMonitor;
 }

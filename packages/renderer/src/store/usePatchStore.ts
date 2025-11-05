@@ -15,7 +15,7 @@
  */
 
 import { create } from 'zustand';
-import { Patch } from '../types';
+import { Patch, CreatePatchPayload } from '../types';
 import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
 import { useUndoStore } from './useUndoStore';
@@ -136,13 +136,13 @@ interface PatchStore {
    * Creates a new patch with the specified data
    * @param data - Patch payload with metadata and phrases
    */
-  createPatch: (data: any) => Promise<void>;
+  createPatch: (data: CreatePatchPayload) => Promise<void>;
 
   /**
    * Updates an existing patch
    * @param data - Patch payload with updated metadata
    */
-  updatePatch: (data: any) => Promise<void>;
+  updatePatch: (data: CreatePatchPayload) => Promise<void>;
 
   /**
    * Deletes a single patch
@@ -273,7 +273,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  createPatch: async (data: any) => {
+  createPatch: async (data: CreatePatchPayload) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
 
@@ -291,7 +291,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  updatePatch: async (data: any) => {
+  updatePatch: async (data: CreatePatchPayload) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
 

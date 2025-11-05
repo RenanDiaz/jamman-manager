@@ -86,3 +86,16 @@ export type CreatePatchPayload = {
   patchName: string;
   phrases: PhraseForm[];
 };
+
+export interface Playlist {
+  id: string;
+  name: string;
+  patches: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlaylistData {
+  version: string;
+  playlists: Playlist[];
+}
