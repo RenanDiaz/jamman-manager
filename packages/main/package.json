@@ -16,11 +16,13 @@
   "dependencies": {
     "@app/preload": "*",
     "@app/renderer": "*",
+    "adm-zip": "^0.5.16",
     "electron-updater": "6.6.2"
   },
   "devDependencies": {
     "@app/electron-versions": "*",
     "@eslint/js": "^9.39.1",
+    "@types/adm-zip": "^0.5.7",
     "electron-devtools-installer": "4.0.0",
     "eslint": "^9.38.0",
     "eslint-config-prettier": "^10.1.8",

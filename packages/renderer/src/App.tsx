@@ -21,6 +21,7 @@ import PatchForm from './components/PatchForm';
 import { SortView } from './components/SortView';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import PatchListItem from './components/PatchListItem';
+import BackupRestoreModal from './components/BackupRestoreModal';
 import { usePatchStore } from './store/usePatchStore';
 
 const PATCH_FORM_ID = 'create-patch-form';
@@ -47,6 +48,7 @@ function App() {
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
   const [patchesToDelete, setPatchesToDelete] = useState<string[]>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
+  const [backupRestoreModalIsOpen, setBackupRestoreModalIsOpen] = useState<boolean>(false);
 
   const handleLoad = useCallback(async () => {
     try {
@@ -273,6 +275,16 @@ function App() {
                           <DropdownItem onClick={handleExportPDF}>Export as PDF</DropdownItem>
                         </DropdownMenu>
                       </ButtonDropdown>
+                      <Button
+                        type="button"
+                        color="secondary"
+                        outline
+                        onClick={() => setBackupRestoreModalIsOpen(true)}
+                        size="sm"
+                        title="Backup and Restore"
+                      >
+                        💾 Backup
+                      </Button>
                     </div>
 
                     {/* Selection Actions */}
@@ -402,6 +414,23 @@ function App() {
         itemNames={patchesToDelete.length > 0 ? patchesToDelete : undefined}
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
+      />
+
+      <BackupRestoreModal
+        isOpen={backupRestoreModalIsOpen}
+        onClose={() => setBackupRestoreModalIsOpen(false)}
+        currentFolder={currentFolder}
+        patches={patches}
+        selectedPatchDirs={selectedPatchDirs}
+        onBackupComplete={() => {
+          // Optionally reload patches after backup
+        }}
+        onRestoreComplete={() => {
+          // Reload patches after restore
+          if (currentFolder) {
+            loadPatches(currentFolder, true);
+          }
+        }}
       />
 
       <ToastContainer

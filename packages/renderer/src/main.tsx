@@ -48,6 +48,21 @@ interface ExportResult {
   canceled?: boolean;
 }
 
+interface BackupManifest {
+  version: string;
+  appVersion: string;
+  patchCount: number;
+  createdAt: string;
+  patches: string[];
+  playlists?: any;
+}
+
+interface BackupInfo {
+  valid: boolean;
+  manifest?: BackupManifest;
+  error?: string;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -66,6 +81,20 @@ declare global {
       reorderPatches(basePath: string, patches: string[]): Promise<void>;
       exportPatchesTXT(patches: Patch[], basePath: string): Promise<ExportResult>;
       exportPatchesPDF(patches: Patch[], basePath: string): Promise<ExportResult>;
+      // Backup/Restore
+      createBackup(
+        basePath: string,
+        patches?: string[],
+        includePlaylist?: boolean,
+      ): Promise<ExportResult>;
+      validateBackup(backupPath: string): Promise<BackupInfo>;
+      restoreBackup(
+        backupPath: string,
+        targetPath: string,
+        mode: 'replace' | 'merge',
+        patches?: string[],
+      ): Promise<{ success: boolean; patchesRestored: number }>;
+      selectBackupFile(): Promise<string | null>;
     };
   }
 }

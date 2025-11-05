@@ -18,6 +18,7 @@ import log from 'electron-log';
 import { lockManager } from './LockManager.js';
 import { operationQueue, OperationPriority } from './OperationQueue.js';
 import PDFDocument from 'pdfkit';
+import { BackupManager } from './BackupManager.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -940,6 +941,145 @@ export async function initApp(initConfig: AppInitConfig) {
       log.error('Error exporting patches to PDF:', error);
       throw new Error(
         `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Create backup
+  ipcMain.handle(
+    'backup:create',
+    async (_event, basePath: string, patches?: string[], includePlaylist?: boolean) => {
+      return operationQueue.enqueue(
+        'backup:create',
+        'Create backup',
+        async () => {
+          try {
+            log.info('Creating backup...', {
+              basePath,
+              patchCount: patches?.length || 'all',
+              includePlaylist,
+            });
+
+            // Show save dialog
+            const { filePath, canceled } = await dialog.showSaveDialog({
+              title: 'Save Backup',
+              defaultPath: path.join(
+                app.getPath('documents'),
+                `jamman-backup-${new Date().toISOString().split('T')[0]}.jamman-backup.zip`,
+              ),
+              filters: [
+                { name: 'JamMan Backup', extensions: ['jamman-backup.zip', 'zip'] },
+                { name: 'All Files', extensions: ['*'] },
+              ],
+            });
+
+            if (canceled || !filePath) {
+              log.info('Backup creation canceled by user');
+              return { success: false, canceled: true };
+            }
+
+            const outputPath = await BackupManager.createBackup({
+              basePath,
+              outputPath: filePath,
+              patches,
+              includePlaylist,
+            });
+
+            log.info('Backup created successfully:', outputPath);
+            return { success: true, filePath: outputPath };
+          } catch (error) {
+            log.error('Error creating backup:', error);
+            throw new Error(
+              `Failed to create backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            );
+          }
+        },
+        OperationPriority.MEDIUM,
+      );
+    },
+  );
+
+  // Validate backup
+  ipcMain.handle('backup:validate', async (_event, backupPath: string) => {
+    try {
+      log.info('Validating backup:', backupPath);
+      const info = await BackupManager.validateBackup(backupPath);
+      log.info('Backup validation result:', info);
+      return info;
+    } catch (error) {
+      log.error('Error validating backup:', error);
+      throw new Error(
+        `Failed to validate backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Restore backup
+  ipcMain.handle(
+    'backup:restore',
+    async (
+      _event,
+      backupPath: string,
+      targetPath: string,
+      mode: 'replace' | 'merge',
+      patches?: string[],
+    ) => {
+      return operationQueue.enqueue(
+        'backup:restore',
+        `Restore backup (${mode} mode)`,
+        async () => {
+          try {
+            log.info('Restoring backup...', { backupPath, targetPath, mode, patches });
+
+            const result = await BackupManager.restoreBackup({
+              backupPath,
+              targetPath,
+              mode,
+              patches,
+            });
+
+            log.info('Backup restored successfully:', result);
+
+            // Clear cache after restore
+            patchCache.delete(targetPath);
+
+            return result;
+          } catch (error) {
+            log.error('Error restoring backup:', error);
+            throw new Error(
+              `Failed to restore backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            );
+          }
+        },
+        OperationPriority.HIGH,
+      );
+    },
+  );
+
+  // Select backup file
+  ipcMain.handle('backup:selectFile', async () => {
+    try {
+      const { filePaths, canceled } = await dialog.showOpenDialog({
+        title: 'Select Backup File',
+        defaultPath: app.getPath('documents'),
+        filters: [
+          { name: 'JamMan Backup', extensions: ['jamman-backup.zip', 'zip'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile'],
+      });
+
+      if (canceled || filePaths.length === 0) {
+        log.info('Backup file selection canceled by user');
+        return null;
+      }
+
+      log.info('Backup file selected:', filePaths[0]);
+      return filePaths[0];
+    } catch (error) {
+      log.error('Error selecting backup file:', error);
+      throw new Error(
+        `Failed to select backup file: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   });

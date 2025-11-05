@@ -67,6 +67,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     basePath: string,
   ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
     ipcRenderer.invoke('patches:exportPDF', patches, basePath),
+  // Backup/Restore operations
+  createBackup: (
+    basePath: string,
+    patches?: string[],
+    includePlaylist?: boolean,
+  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
+    ipcRenderer.invoke('backup:create', basePath, patches, includePlaylist),
+  validateBackup: (
+    backupPath: string,
+  ): Promise<{ valid: boolean; manifest?: any; error?: string }> =>
+    ipcRenderer.invoke('backup:validate', backupPath),
+  restoreBackup: (
+    backupPath: string,
+    targetPath: string,
+    mode: 'replace' | 'merge',
+    patches?: string[],
+  ): Promise<{ success: boolean; patchesRestored: number }> =>
+    ipcRenderer.invoke('backup:restore', backupPath, targetPath, mode, patches),
+  selectBackupFile: (): Promise<string | null> => ipcRenderer.invoke('backup:selectFile'),
 });
 
 export { sha256sum, versions, send };
