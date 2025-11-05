@@ -1298,8 +1298,10 @@ export async function initApp(initConfig: AppInitConfig) {
     try {
       log.info('Exporting playlist:', { basePath, playlistId });
 
-      const data = PlaylistManager.loadPlaylists(basePath);
-      const playlist = data.playlists.find(p => p.id === playlistId);
+      const data = await PlaylistManager.loadPlaylists(basePath);
+      const playlist = data.playlists.find((p: any) => p.id === playlistId) as
+        | ((typeof data.playlists)[0] & { patches: string[] })
+        | undefined;
 
       if (!playlist) {
         throw new Error(`Playlist not found: ${playlistId}`);
@@ -1322,7 +1324,7 @@ export async function initApp(initConfig: AppInitConfig) {
 
       // Load patch details to get patch names
       const patches = await Promise.all(
-        playlist.patches.map(async patchDir => {
+        (playlist.patches || []).map(async (patchDir: string) => {
           const patchPath = path.join(basePath, patchDir);
           const patchXmlPath = path.join(patchPath, 'patch.xml');
 
@@ -1350,7 +1352,7 @@ export async function initApp(initConfig: AppInitConfig) {
       content += `Setlist:\n`;
       content += `--------\n\n`;
 
-      patches.forEach((patch, index) => {
+      patches.forEach((patch: { dir: string; name: string }, index: number) => {
         const num = String(index + 1).padStart(2, '0');
         content += `${num}. ${patch.dir}`;
         if (patch.name) {
