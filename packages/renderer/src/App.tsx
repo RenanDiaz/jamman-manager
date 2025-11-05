@@ -7,7 +7,6 @@ import {
   DropdownItem,
   DropdownMenu,
   DropdownToggle,
-  FormGroup,
   Modal,
   ModalBody,
   ModalFooter,
@@ -202,94 +201,141 @@ function App() {
     <Container fluid>
       <Row className="align-items-center" style={{ minHeight: '100vh' }}>
         <Col>
-          <Row>
-            <Col>
-              <h1>JamMan Manager</h1>
-            </Col>
-          </Row>
-          <Row className="flex-nowrap overflow-auto">
-            <Col xs="auto">
-              <FormGroup>
-                <Button type="button" color="success" onClick={handleLoad} disabled={loading}>
-                  Load Patches
-                </Button>
-              </FormGroup>
-            </Col>
-            {patches.length > 0 && (
-              <>
-                <Col xs="auto">
-                  <FormGroup>
-                    <Button type="button" color="info" outline onClick={clearPatches}>
-                      Clear Patches
-                    </Button>
-                  </FormGroup>
-                </Col>
-                <Col xs="auto">
-                  <FormGroup>
-                    <Button type="button" color="info" outline onClick={enterSortMode}>
-                      Sort Patches
-                    </Button>
-                  </FormGroup>
-                </Col>
-                <Col xs="auto">
-                  <FormGroup>
-                    <ButtonDropdown isOpen={exportDropdownOpen} toggle={toggleExportDropdown}>
-                      <DropdownToggle color="info" outline caret>
-                        Export Patches
-                      </DropdownToggle>
-                      <DropdownMenu>
-                        <DropdownItem onClick={handleExportTXT}>Export as TXT</DropdownItem>
-                        <DropdownItem onClick={handleExportPDF}>Export as PDF</DropdownItem>
-                      </DropdownMenu>
-                    </ButtonDropdown>
-                  </FormGroup>
-                </Col>
-                {selectedPatchDirs.length > 0 && (
-                  <Col xs="auto">
-                    <FormGroup>
-                      <Button type="button" color="danger" outline onClick={handleBatchDelete}>
-                        Delete Selected ({selectedPatchDirs.length})
-                      </Button>
-                    </FormGroup>
-                  </Col>
+          {/* Header / Toolbar */}
+          <div
+            className="sticky-top bg-dark border-bottom"
+            style={{
+              top: 0,
+              zIndex: 100,
+              marginLeft: '-12px',
+              marginRight: '-12px',
+              padding: '1rem 1.5rem',
+            }}
+          >
+            <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
+              {/* Left: Title */}
+              <div>
+                <h3 className="mb-0">JamMan Manager</h3>
+                {currentFolder && (
+                  <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                    {currentFolder}
+                  </small>
                 )}
-                <Col xs="auto" className="ms-auto">
-                  <FormGroup>
-                    <Button type="button" color="primary" onClick={togglePatchModal}>
-                      Create Patch
-                    </Button>
-                  </FormGroup>
-                </Col>
-              </>
-            )}
-          </Row>
+              </div>
 
-          {patches.length > 0 ? (
-            <>
-              <Row>
-                <Col>
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <p className="mb-0">Found {patches.length} patches</p>
+              {/* Right: Actions */}
+              <div className="d-flex align-items-center flex-wrap gap-2">
+                {/* Load Patches - Always visible */}
+                <Button
+                  type="button"
+                  color="success"
+                  onClick={handleLoad}
+                  disabled={loading}
+                  size="sm"
+                >
+                  📁 Load Patches
+                </Button>
+
+                {patches.length > 0 && (
+                  <>
+                    {/* Patch Management Actions */}
+                    <div className="d-flex gap-1" style={{ marginLeft: '0.5rem' }}>
+                      <Button
+                        type="button"
+                        color="secondary"
+                        outline
+                        onClick={clearPatches}
+                        size="sm"
+                        title="Clear all loaded patches"
+                      >
+                        ✕ Clear
+                      </Button>
+                      <Button
+                        type="button"
+                        color="secondary"
+                        outline
+                        onClick={enterSortMode}
+                        size="sm"
+                        title="Sort patches"
+                      >
+                        ⇅ Sort
+                      </Button>
+                      <ButtonDropdown
+                        isOpen={exportDropdownOpen}
+                        toggle={toggleExportDropdown}
+                        size="sm"
+                      >
+                        <DropdownToggle color="secondary" outline caret>
+                          ⤓ Export
+                        </DropdownToggle>
+                        <DropdownMenu>
+                          <DropdownItem onClick={handleExportTXT}>Export as TXT</DropdownItem>
+                          <DropdownItem onClick={handleExportPDF}>Export as PDF</DropdownItem>
+                        </DropdownMenu>
+                      </ButtonDropdown>
+                    </div>
+
+                    {/* Selection Actions */}
                     {selectedPatchDirs.length > 0 && (
-                      <div className="d-flex align-items-center gap-2">
+                      <div className="d-flex gap-1" style={{ marginLeft: '0.5rem' }}>
+                        <Button
+                          type="button"
+                          color="danger"
+                          outline
+                          onClick={handleBatchDelete}
+                          size="sm"
+                          title={`Delete ${selectedPatchDirs.length} selected patches`}
+                        >
+                          🗑️ Delete ({selectedPatchDirs.length})
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Primary Action */}
+                    <div style={{ marginLeft: '0.5rem' }}>
+                      <Button type="button" color="primary" onClick={togglePatchModal} size="sm">
+                        + Create Patch
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Content Area */}
+          <div style={{ paddingTop: '1rem' }}>
+            {patches.length > 0 ? (
+              <>
+                {/* Patch List Header */}
+                <div
+                  className="d-flex align-items-center justify-content-between mb-3 px-2"
+                  style={{ paddingTop: '0.5rem' }}
+                >
+                  <div>
+                    <strong>Patches</strong>
+                    <span className="text-muted ms-2">({patches.length} total)</span>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    {selectedPatchDirs.length > 0 ? (
+                      <>
                         <span className="text-primary">
                           <strong>{selectedPatchDirs.length} selected</strong>
                         </span>
                         <Button color="link" size="sm" onClick={clearSelection}>
                           Clear Selection
                         </Button>
-                      </div>
-                    )}
-                    {selectedPatchDirs.length === 0 && (
+                      </>
+                    ) : (
                       <Button color="link" size="sm" onClick={selectAll}>
                         Select All
                       </Button>
                     )}
                   </div>
-                </Col>
-              </Row>
-              <Row style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
-                <Col>
+                </div>
+
+                {/* Patch List */}
+                <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
                   <UncontrolledAccordion defaultOpen={[]} stayOpen>
                     {patches.map(patch => (
                       <PatchListItem
@@ -302,26 +348,29 @@ function App() {
                       />
                     ))}
                   </UncontrolledAccordion>
-                </Col>
-              </Row>
-            </>
-          ) : loading ? (
-            <Row className="justify-content-center mt-5">
-              <Col xs="auto" className="text-center">
+                </div>
+              </>
+            ) : loading ? (
+              <div
+                className="d-flex flex-column align-items-center justify-content-center"
+                style={{ minHeight: '60vh' }}
+              >
                 <Spinner color="primary" style={{ width: '3rem', height: '3rem' }} />
                 <p className="mt-3">Loading patches...</p>
-              </Col>
-            </Row>
-          ) : (
-            <Row className="justify-content-center">
-              <Col xs="auto">
-                <p>
-                  No patches loaded. Click "Load Patches" or press <kbd>Ctrl+O</kbd> (or{' '}
-                  <kbd>Cmd+O</kbd> on Mac) to select your JamMan SD card.
+              </div>
+            ) : (
+              <div
+                className="d-flex flex-column align-items-center justify-content-center text-center"
+                style={{ minHeight: '60vh' }}
+              >
+                <p className="text-muted mb-2">No patches loaded</p>
+                <p className="text-muted">
+                  Click "Load Patches" or press <kbd>Ctrl+O</kbd> (or <kbd>Cmd+O</kbd> on Mac) to
+                  select your JamMan SD card.
                 </p>
-              </Col>
-            </Row>
-          )}
+              </div>
+            )}
+          </div>
         </Col>
       </Row>
       <Modal isOpen={patchFormModalIsOpen} toggle={togglePatchModal} onClosed={handleModalClose}>
