@@ -19,7 +19,7 @@ import {
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import PatchForm from './components/PatchForm';
-import { PatchList } from './components/PatchList';
+import { SortView } from './components/SortView';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import PatchListItem from './components/PatchListItem';
 import { usePatchStore } from './store/usePatchStore';
@@ -41,7 +41,7 @@ function App() {
 
   // Local UI state (modals)
   const [patchFormModalIsOpen, setPatchFormModalIsOpen] = useState<boolean>(false);
-  const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
+  const [sortModeActive, setSortModeActive] = useState<boolean>(false);
   const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
   const [patchesToDelete, setPatchesToDelete] = useState<string[]>([]);
@@ -135,18 +135,18 @@ function App() {
     setDeleteModalIsOpen(true);
   }, [selectedPatchDirs]);
 
-  const toggleSortingModal = () => {
-    setSortingModalIsOpen(prev => {
-      // Clear selection when closing the modal
-      if (prev) {
-        clearSelection();
-      }
-      return !prev;
-    });
+  const enterSortMode = () => {
+    setSortModeActive(true);
   };
 
-  const handleReorder = async (newOrder: typeof patches) => {
+  const exitSortMode = () => {
+    setSortModeActive(false);
+    clearSelection();
+  };
+
+  const handleApplySort = async (newOrder: typeof patches) => {
     await reorderPatches(newOrder);
+    setSortModeActive(false);
   };
 
   const toggleExportDropdown = () => {
@@ -191,6 +191,11 @@ function App() {
     }
   };
 
+  // If in sort mode, show only the sort view
+  if (sortModeActive) {
+    return <SortView patches={patches} onApply={handleApplySort} onCancel={exitSortMode} />;
+  }
+
   return (
     <Container fluid>
       <Row className="align-items-center" style={{ minHeight: '100vh' }}>
@@ -219,7 +224,7 @@ function App() {
                 </Col>
                 <Col xs="auto">
                   <FormGroup>
-                    <Button type="button" color="info" outline onClick={toggleSortingModal}>
+                    <Button type="button" color="info" outline onClick={enterSortMode}>
                       Sort Patches
                     </Button>
                   </FormGroup>
@@ -317,18 +322,6 @@ function App() {
           </Button>
           <Button type="submit" form={PATCH_FORM_ID} color="primary">
             {!selectedPatch ? 'Create' : 'Save'}
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      <Modal isOpen={sortingModalIsOpen} toggle={toggleSortingModal}>
-        <ModalHeader toggle={toggleSortingModal}>Sorting</ModalHeader>
-        <ModalBody>
-          <PatchList patches={patches} onReorder={handleReorder} />
-        </ModalBody>
-        <ModalFooter>
-          <Button color="secondary" onClick={toggleSortingModal}>
-            Close
           </Button>
         </ModalFooter>
       </Modal>
