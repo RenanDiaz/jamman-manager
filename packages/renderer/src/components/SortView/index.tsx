@@ -149,7 +149,7 @@ export const SortView: FC<SortViewProps> = ({ patches, onApply, onCancel }) => {
 
   const handleQuickSort = (sortType: string) => {
     setSelectedSort(sortType);
-    let sorted = [...workingOrder];
+    const sorted = [...workingOrder];
 
     switch (sortType) {
       case 'az':

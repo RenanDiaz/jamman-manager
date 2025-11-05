@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import App from './App.tsx';
-import { Patch } from './types/index.ts';
+import { Patch, Playlist, PlaylistData } from './types/index.ts';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -55,26 +55,13 @@ interface BackupManifest {
   patchCount: number;
   createdAt: string;
   patches: string[];
-  playlists?: any;
+  playlists?: PlaylistData;
 }
 
 interface BackupInfo {
   valid: boolean;
   manifest?: BackupManifest;
   error?: string;
-}
-
-interface Playlist {
-  id: string;
-  name: string;
-  patches: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface PlaylistData {
-  version: string;
-  playlists: Playlist[];
 }
 
 declare global {

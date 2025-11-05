@@ -10,7 +10,6 @@ import { allowExternalUrls } from './modules/ExternalUrls.js';
 import { app, dialog, ipcMain, protocol, net } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as xml2js from 'xml2js';
 import { v4 as uuidv4 } from 'uuid';
 import fse from 'fs-extra';
 import * as mm from 'music-metadata';

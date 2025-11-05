@@ -23,6 +23,7 @@ import PatchListItem from './components/PatchListItem';
 import { usePatchStore } from './store/usePatchStore';
 import { useUndoStore } from './store/useUndoStore';
 import { executeUndo, executeRedo, canUndo, canRedo } from './utils/undoHandler';
+import type { Patch, Playlist } from './types';
 
 // Lazy load heavy components for better initial load performance
 const PatchForm = lazy(() => import('./components/PatchForm'));
@@ -233,7 +234,7 @@ function App() {
     try {
       // Load playlists to get the selected playlist
       const data = await window.electronAPI.loadPlaylists(currentFolder);
-      const playlist = data.playlists.find((p: any) => p.id === playlistId);
+      const playlist = data.playlists.find((p: Playlist) => p.id === playlistId);
 
       if (!playlist) {
         toast.error('Playlist not found');
@@ -246,7 +247,7 @@ function App() {
         .filter((p): p is NonNullable<typeof p> => p !== undefined);
 
       // Get patches not in playlist
-      const otherPatches = patches.filter((p: any) => !playlist.patches.includes(p.dir));
+      const otherPatches = patches.filter((p: Patch) => !playlist.patches.includes(p.dir));
 
       // Combine: playlist patches first, then others
       const newOrder = [...playlistPatches, ...otherPatches];
@@ -537,7 +538,6 @@ function App() {
 
                 {/* Patch List */}
                 <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
-                  {/* @ts-expect-error - reactstrap bug: toggle prop exists but types are incorrect */}
                   <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
                     {patches.map(patch => (
                       <PatchListItem

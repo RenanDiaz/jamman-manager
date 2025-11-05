@@ -19,12 +19,23 @@ import {
   ListGroupItem,
 } from 'reactstrap';
 import { toast } from 'react-toastify';
+import type { Patch } from '../types';
+
+interface BackupInfo {
+  valid: boolean;
+  manifest?: {
+    patchCount: number;
+    createdAt: string;
+    appVersion: string;
+  };
+  error?: string;
+}
 
 interface BackupRestoreModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentFolder: string | null;
-  patches: any[];
+  patches: Patch[];
   selectedPatchDirs: string[];
   onBackupComplete?: () => void;
   onRestoreComplete?: () => void;
@@ -47,7 +58,7 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
 
   // Restore state
   const [backupFilePath, setBackupFilePath] = useState<string | null>(null);
-  const [backupInfo, setBackupInfo] = useState<any>(null);
+  const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(null);
   const [restoreMode, setRestoreMode] = useState<'replace' | 'merge'>('merge');
   const [validatingBackup, setValidatingBackup] = useState(false);
 
@@ -290,9 +301,11 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
                   <Alert color="success">
                     <strong>Valid Backup</strong>
                     <ul className="mb-0 mt-2">
-                      <li>Patches: {backupInfo.manifest.patchCount}</li>
-                      <li>Created: {new Date(backupInfo.manifest.createdAt).toLocaleString()}</li>
-                      <li>App Version: {backupInfo.manifest.appVersion}</li>
+                      <li>Patches: {backupInfo.manifest?.patchCount}</li>
+                      <li>
+                        Created: {new Date(backupInfo.manifest?.createdAt || '').toLocaleString()}
+                      </li>
+                      <li>App Version: {backupInfo.manifest?.appVersion}</li>
                     </ul>
                   </Alert>
                 ) : (
