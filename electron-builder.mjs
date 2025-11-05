@@ -5,14 +5,13 @@ import { pathToFileURL } from 'node:url';
 
 export default /** @type import('electron-builder').Configuration */
 ({
+  appId: 'com.renandiazreyes.jammanmanager',
+  productName: 'JamMan Manager',
   directories: {
     output: 'dist',
     buildResources: 'buildResources',
   },
   generateUpdatesFilesForAllChannels: true,
-  linux: {
-    target: ['deb'],
-  },
   /**
    * It is recommended to avoid using non-standard characters such as spaces in artifact names,
    * as they can unpredictably change during deployment, making them impossible to locate and download for update.
@@ -24,6 +23,83 @@ export default /** @type import('electron-builder').Configuration */
     '!node_modules/@app/**',
     ...(await getListOfFilesFromEachWorkspace()),
   ],
+  mac: {
+    target: [
+      {
+        target: 'dmg',
+        arch: ['x64', 'arm64'],
+      },
+      {
+        target: 'zip',
+        arch: ['x64', 'arm64'],
+      },
+    ],
+    category: 'public.app-category.music',
+    icon: 'buildResources/icon.icns',
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    entitlements: 'buildResources/entitlements.mac.plist',
+    entitlementsInherit: 'buildResources/entitlements.mac.plist',
+  },
+  dmg: {
+    contents: [
+      {
+        x: 130,
+        y: 220,
+      },
+      {
+        x: 410,
+        y: 220,
+        type: 'link',
+        path: '/Applications',
+      },
+    ],
+    title: '${productName} ${version}',
+    window: {
+      width: 540,
+      height: 380,
+    },
+  },
+  win: {
+    target: [
+      {
+        target: 'nsis',
+        arch: ['x64', 'ia32'],
+      },
+      {
+        target: 'portable',
+        arch: ['x64'],
+      },
+    ],
+    icon: 'buildResources/icon.png',
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: '${productName}',
+    deleteAppDataOnUninstall: false,
+  },
+  linux: {
+    target: [
+      {
+        target: 'AppImage',
+        arch: ['x64'],
+      },
+      {
+        target: 'deb',
+        arch: ['x64'],
+      },
+      {
+        target: 'rpm',
+        arch: ['x64'],
+      },
+    ],
+    icon: 'buildResources/icon.png',
+    category: 'Audio',
+    description: 'JamMan patch editor and loop manager for Digitech JamMan Stereo',
+  },
 });
 
 /**
