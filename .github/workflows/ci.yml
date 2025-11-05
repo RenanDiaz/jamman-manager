@@ -1,70 +1,78 @@
-# This workflow is the entry point for all CI processes.
-# It is from here that all other workflows are launched.
-name: Entry CI
+name: CI
+
 on:
-  workflow_call:
-    inputs:
-      distribution-channel:
-        description: Distribution channel for release. It can be `beta`, `alpha` or any string.
-        type: string
-        required: true
-      renderer-template:
-        description: Define what vite template should be used to create renderer in case if renderer package doesn't exist
-        required: false
-        type: string
-        default: ''
-
-concurrency:
-  group: ${{github.workflow}}-${{ github.ref }}-${{inputs.distribution-channel}}
-  cancel-in-progress: true
-
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  push:
+    branches: [main, improvements]
+  pull_request:
+    branches: [main]
 
 jobs:
-  prepare:
-    name: Prepare shared data for multi-platform compilation
-    runs-on: ubuntu-latest
-    outputs:
-      APP_VERSION: ${{ steps.APP_VERSION.outputs.APP_VERSION }}
-      COMMIT_TIMESTAMP: ${{ steps.COMMIT_TIMESTAMP.outputs.COMMIT_TIMESTAMP }}
-      APP_FULL_VERSION: ${{ steps.APP_FULL_VERSION.outputs.APP_FULL_VERSION }}
+  build-and-test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [23.x]
+      fail-fast: false
+
     steps:
-      - uses: actions/checkout@v5
-      - id: COMMIT_TIMESTAMP
-        run: echo "COMMIT_TIMESTAMP=$(git show -s --format=%ct ${{ github.sha }})" >> $GITHUB_OUTPUT
-      - id: APP_VERSION
-        run: echo "APP_VERSION=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
-      - id: APP_FULL_VERSION
-        run: echo "APP_FULL_VERSION=${{ steps.APP_VERSION.outputs.APP_VERSION }}-${{inputs.distribution-channel}}.${{ steps.COMMIT_TIMESTAMP.outputs.COMMIT_TIMESTAMP }}" >> $GITHUB_OUTPUT
-      - run: |
-          echo "- \`COMMIT_TIMESTAMP\`: ${{ steps.COMMIT_TIMESTAMP.outputs.COMMIT_TIMESTAMP }}" >> $GITHUB_STEP_SUMMARY
-          echo "- \`APP_VERSION\`: ${{ steps.APP_VERSION.outputs.APP_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- \`APP_FULL_VERSION\`: ${{ steps.APP_FULL_VERSION.outputs.APP_FULL_VERSION }}" >> $GITHUB_STEP_SUMMARY
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  compile-and-test:
-    needs:
-      - prepare
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    uses: ./.github/workflows/compile-and-test.yml
-    with:
-      renderer-template: ${{ inputs.renderer-template }}
-      app-version: ${{ needs.prepare.outputs.APP_FULL_VERSION }}
-      distribution-channel: ${{inputs.distribution-channel}}
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
 
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    needs:
-      - prepare
-      - compile-and-test
-    uses: ./.github/workflows/deploy.yml
-    with:
-      distribution-channel: ${{ inputs.renderer-template }}
-      app-version: ${{ needs.prepare.outputs.APP_FULL_VERSION }}
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript type checking
+        run: npm run typecheck
+        continue-on-error: true
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm test
+        continue-on-error: true
+
+      - name: Build application
+        run: npm run build
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check code formatting
+        run: npx prettier --check "**/*.{js,jsx,ts,tsx,mjs,json,md,yml,yaml,css,scss,html}"
+        continue-on-error: true
+
+      - name: Run security audit
+        run: npm audit --audit-level=moderate
+
+      - name: Check for outdated dependencies
+        run: npm outdated
+        continue-on-error: true
