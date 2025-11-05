@@ -571,12 +571,15 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - [x] Auto-renumber patches on conflict (Merge mode)
   - [x] Generate manifest.json and README.txt
   - [x] User-friendly modal interface
-- [ ] **Playlist Management:** Virtual playlists for live performance organization
-  - [ ] Create/edit/delete playlists
-  - [ ] Multi-playlist membership (patches in multiple playlists)
-  - [ ] Drag-and-drop playlist management
-  - [ ] "Move Playlist to Top" for live performance preparation
-  - [ ] Export playlist as setlist
+- [x] **Playlist Management:** Virtual playlists for live performance organization ✅ COMPLETED
+  - [x] Create/edit/delete playlists
+  - [x] Multi-playlist membership (patches in multiple playlists)
+  - [x] Add/remove patches to/from playlists
+  - [x] "Move Playlist to Top" for live performance preparation
+  - [x] Export playlist as setlist (TXT format)
+  - [x] Stored in .jamman-playlists.json sidecar file
+  - [x] Two-panel modal UI (list + details)
+  - [x] Numbered patch display with ordering
 
 ### Priority 5: Security
 
