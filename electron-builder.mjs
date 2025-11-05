@@ -54,7 +54,7 @@ export default /** @type import('electron-builder').Configuration */
         path: '/Applications',
       },
     ],
-    title: '${productName} ${version}',
+    title: '${productName} ${version} ${arch}',
     window: {
       width: 540,
       height: 380,
