@@ -435,7 +435,7 @@ function App() {
 
                 {/* Patch List */}
                 <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
-                  <UncontrolledAccordion defaultOpen={[]} stayOpen>
+                  <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
                     {patches.map(patch => (
                       <PatchListItem
                         key={patch.dir}
