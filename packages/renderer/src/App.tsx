@@ -537,6 +537,7 @@ function App() {
 
                 {/* Patch List */}
                 <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+                  {/* @ts-expect-error - reactstrap bug: toggle prop exists but types are incorrect */}
                   <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
                     {patches.map(patch => (
                       <PatchListItem
