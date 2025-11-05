@@ -564,7 +564,13 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 - [x] **Batch Delete:** Delete multiple selected patches at once ✅ COMPLETED
 - [x] **Enhanced Sorting UI:** Dedicated sort mode with split view and quick sort options ✅ COMPLETED
-- [ ] **Backup/Restore System:** ZIP-based single-file backup with selective restore
+- [x] **Backup/Restore System:** ZIP-based single-file backup with selective restore ✅ COMPLETED
+  - [x] Create full or selective backups
+  - [x] Validate backup integrity
+  - [x] Restore with Replace or Merge modes
+  - [x] Auto-renumber patches on conflict (Merge mode)
+  - [x] Generate manifest.json and README.txt
+  - [x] User-friendly modal interface
 - [ ] **Playlist Management:** Virtual playlists for live performance organization
   - [ ] Create/edit/delete playlists
   - [ ] Multi-playlist membership (patches in multiple playlists)
