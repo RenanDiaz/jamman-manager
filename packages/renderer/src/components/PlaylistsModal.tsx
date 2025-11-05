@@ -71,7 +71,6 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    cursor: 'grab',
   };
 
   return (
@@ -80,15 +79,20 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
       className="d-flex justify-content-between align-items-center"
       style={style}
       {...attributes}
-      {...listeners}
     >
-      <div>
-        <span className="text-muted me-2">::</span>
-        <Badge color="secondary" className="me-2">
-          {index + 1}
-        </Badge>
-        <strong>{patchDir}</strong>
-        {patchName && <small className="ms-2 text-muted">{patchName}</small>}
+      <div className="d-flex align-items-center gap-2 flex-grow-1">
+        <span
+          className="text-muted"
+          style={{ cursor: 'grab', userSelect: 'none', padding: '0 4px' }}
+          {...listeners}
+        >
+          ⋮⋮
+        </span>
+        <Badge color="secondary">{index + 1}</Badge>
+        <div>
+          <strong>{patchDir}</strong>
+          {patchName && <small className="ms-2 text-muted">{patchName}</small>}
+        </div>
       </div>
       <Button
         color="danger"
