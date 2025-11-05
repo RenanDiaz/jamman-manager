@@ -63,6 +63,9 @@ interface PatchStore {
   /** Loading state for async operations */
   loading: boolean;
 
+  /** Total size of the current folder in bytes */
+  folderSizeBytes: number | null;
+
   /** Currently selected patch for editing (single selection) */
   selectedPatch: Patch | undefined;
 
@@ -188,6 +191,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   loading: false,
   selectedPatch: undefined,
   selectedPatchDirs: [],
+  folderSizeBytes: null,
 
   // Simple setters
   setCurrentFolder: folder => set({ currentFolder: folder }),
@@ -245,6 +249,15 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       console.log(result);
 
       set({ patches: result, currentFolder: folder });
+
+      // Calculate folder size
+      try {
+        const folderSize = await window.electronAPI.getFolderSize(folder);
+        set({ folderSizeBytes: folderSize.sizeBytes });
+      } catch (error) {
+        console.warn('Failed to calculate folder size:', error);
+        set({ folderSizeBytes: null });
+      }
 
       // Save to localStorage for auto-load on next launch
       saveLastFolder(folder);
@@ -391,7 +404,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   },
 
   clearPatches: () => {
-    set({ patches: [], currentFolder: null, selectedPatchDirs: [] });
+    set({ patches: [], currentFolder: null, selectedPatchDirs: [], folderSizeBytes: null });
   },
 
   // Get last folder from localStorage

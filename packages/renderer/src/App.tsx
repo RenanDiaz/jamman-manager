@@ -44,6 +44,7 @@ function App() {
     loading,
     selectedPatch,
     selectedPatchDirs,
+    folderSizeBytes,
     loadPatches,
     clearPatches,
     setSelectedPatch,
@@ -338,9 +339,21 @@ function App() {
               <div>
                 <h3 className="mb-0">JamMan Manager</h3>
                 {currentFolder && (
-                  <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                    {currentFolder}
-                  </small>
+                  <div className="d-flex align-items-center gap-2">
+                    <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                      {currentFolder}
+                    </small>
+                    {folderSizeBytes !== null && (
+                      <span className="badge bg-secondary" style={{ fontSize: '0.7rem' }}>
+                        📦{' '}
+                        {folderSizeBytes < 1024 * 1024
+                          ? `${(folderSizeBytes / 1024).toFixed(1)} KB`
+                          : folderSizeBytes < 1024 * 1024 * 1024
+                            ? `${(folderSizeBytes / 1024 / 1024).toFixed(1)} MB`
+                            : `${(folderSizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB`}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 

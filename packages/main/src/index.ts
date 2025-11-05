@@ -190,6 +190,62 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
+  ipcMain.handle('folder:getSize', async (_event, folderPath: string) => {
+    try {
+      // Security: Validate folder path
+      if (!folderPath || typeof folderPath !== 'string') {
+        throw new Error('Invalid folder path');
+      }
+
+      if (!PathValidator.pathExists(folderPath, 'directory')) {
+        throw new Error('Folder does not exist');
+      }
+
+      /**
+       * Recursively calculates the total size of a directory
+       */
+      const calculateFolderSize = async (dirPath: string): Promise<number> => {
+        let totalSize = 0;
+
+        try {
+          const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+
+            if (entry.isDirectory()) {
+              // Recursively calculate subdirectory size
+              totalSize += await calculateFolderSize(fullPath);
+            } else if (entry.isFile()) {
+              // Add file size
+              const stats = await fs.promises.stat(fullPath);
+              totalSize += stats.size;
+            }
+          }
+        } catch (error) {
+          log.warn(`Error reading directory ${dirPath}:`, error);
+          // Continue even if a subdirectory fails
+        }
+
+        return totalSize;
+      };
+
+      const sizeBytes = await calculateFolderSize(folderPath);
+      log.info(`Folder size for ${folderPath}: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
+
+      return {
+        sizeBytes,
+        sizeMB: sizeBytes / 1024 / 1024,
+        sizeGB: sizeBytes / 1024 / 1024 / 1024,
+      };
+    } catch (error) {
+      log.error('Error calculating folder size:', error);
+      throw new Error(
+        `Failed to calculate folder size: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
   ipcMain.handle('patches:read', async (_event, folderPath: string) => {
     try {
       // Security: Validate folder path
