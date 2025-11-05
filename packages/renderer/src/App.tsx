@@ -39,6 +39,7 @@ function App() {
     setSelectedPatch,
     toggleSelection,
     selectAll,
+    tryLoadLastFolder,
   } = usePatchStore();
 
   // Local UI state (modals)
@@ -76,6 +77,18 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleLoad]);
+
+  // Auto-load last folder on mount
+  useEffect(() => {
+    const autoLoad = async () => {
+      const loaded = await tryLoadLastFolder();
+      if (loaded) {
+        console.log('Auto-loaded last folder');
+      }
+    };
+
+    autoLoad();
+  }, [tryLoadLastFolder]);
 
   const { deletePatch, deletePatches, reorderPatches, clearSelection } = usePatchStore();
 
@@ -238,7 +251,7 @@ function App() {
                   📁 Load Patches
                 </Button>
 
-                {patches.length > 0 && (
+                {currentFolder && (
                   <>
                     {/* Patch Management Actions */}
                     <div className="d-flex gap-1" style={{ marginLeft: '0.5rem' }}>
@@ -248,7 +261,7 @@ function App() {
                         outline
                         onClick={clearPatches}
                         size="sm"
-                        title="Clear all loaded patches"
+                        title="Clear loaded folder"
                       >
                         ✕ Clear
                       </Button>
@@ -259,6 +272,7 @@ function App() {
                         onClick={enterSortMode}
                         size="sm"
                         title="Sort patches"
+                        disabled={patches.length === 0}
                       >
                         ⇅ Sort
                       </Button>
@@ -266,8 +280,14 @@ function App() {
                         isOpen={exportDropdownOpen}
                         toggle={toggleExportDropdown}
                         size="sm"
+                        disabled={patches.length === 0}
                       >
-                        <DropdownToggle color="secondary" outline caret>
+                        <DropdownToggle
+                          color="secondary"
+                          outline
+                          caret
+                          disabled={patches.length === 0}
+                        >
                           ⤓ Export
                         </DropdownToggle>
                         <DropdownMenu>
@@ -317,7 +337,15 @@ function App() {
 
           {/* Content Area */}
           <div style={{ paddingTop: '1rem' }}>
-            {patches.length > 0 ? (
+            {loading ? (
+              <div
+                className="d-flex flex-column align-items-center justify-content-center"
+                style={{ minHeight: '60vh' }}
+              >
+                <Spinner color="primary" style={{ width: '3rem', height: '3rem' }} />
+                <p className="mt-3">Loading patches...</p>
+              </div>
+            ) : patches.length > 0 ? (
               <>
                 {/* Patch List Header */}
                 <div
@@ -362,20 +390,34 @@ function App() {
                   </UncontrolledAccordion>
                 </div>
               </>
-            ) : loading ? (
+            ) : currentFolder ? (
               <div
-                className="d-flex flex-column align-items-center justify-content-center"
+                className="d-flex flex-column align-items-center justify-content-center text-center"
                 style={{ minHeight: '60vh' }}
               >
-                <Spinner color="primary" style={{ width: '3rem', height: '3rem' }} />
-                <p className="mt-3">Loading patches...</p>
+                <p className="text-muted mb-2">No patches found in this folder</p>
+                <p className="text-muted mb-3">
+                  You can create a new patch or restore from a backup.
+                </p>
+                <div className="d-flex gap-2">
+                  <Button color="primary" onClick={togglePatchModal}>
+                    Create Patch
+                  </Button>
+                  <Button
+                    color="secondary"
+                    outline
+                    onClick={() => setBackupRestoreModalIsOpen(true)}
+                  >
+                    Restore Backup
+                  </Button>
+                </div>
               </div>
             ) : (
               <div
                 className="d-flex flex-column align-items-center justify-content-center text-center"
                 style={{ minHeight: '60vh' }}
               >
-                <p className="text-muted mb-2">No patches loaded</p>
+                <p className="text-muted mb-2">No folder loaded</p>
                 <p className="text-muted">
                   Click "Load Patches" or press <kbd>Ctrl+O</kbd> (or <kbd>Cmd+O</kbd> on Mac) to
                   select your JamMan SD card.

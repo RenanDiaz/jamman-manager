@@ -2,6 +2,27 @@ import { create } from 'zustand';
 import { Patch } from '../types';
 import { toast } from 'react-toastify';
 
+// LocalStorage key for persisting last folder
+const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
+
+// Helper functions for localStorage
+const saveLastFolder = (folder: string) => {
+  try {
+    localStorage.setItem(LAST_FOLDER_KEY, folder);
+  } catch (error) {
+    console.warn('Failed to save last folder to localStorage:', error);
+  }
+};
+
+const getLastFolder = (): string | null => {
+  try {
+    return localStorage.getItem(LAST_FOLDER_KEY);
+  } catch (error) {
+    console.warn('Failed to retrieve last folder from localStorage:', error);
+    return null;
+  }
+};
+
 interface PatchStore {
   // State
   currentFolder: string | null;
@@ -32,6 +53,8 @@ interface PatchStore {
 
   // Utility
   clearPatches: () => void;
+  getLastFolder: () => string | null;
+  tryLoadLastFolder: () => Promise<boolean>;
 }
 
 export const usePatchStore = create<PatchStore>((set, get) => ({
@@ -96,6 +119,9 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       console.log(result);
 
       set({ patches: result, currentFolder: folder });
+
+      // Save to localStorage for auto-load on next launch
+      saveLastFolder(folder);
 
       if (!update) {
         toast.success(`Successfully loaded ${result.length} patches`);
@@ -223,5 +249,27 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
 
   clearPatches: () => {
     set({ patches: [], currentFolder: null, selectedPatchDirs: [] });
+  },
+
+  // Get last folder from localStorage
+  getLastFolder: () => {
+    return getLastFolder();
+  },
+
+  // Try to auto-load the last folder
+  tryLoadLastFolder: async () => {
+    const lastFolder = getLastFolder();
+    if (!lastFolder) {
+      return false;
+    }
+
+    try {
+      const { loadPatches } = get();
+      await loadPatches(lastFolder);
+      return true;
+    } catch (error) {
+      console.warn('Failed to auto-load last folder:', error);
+      return false;
+    }
   },
 }));
