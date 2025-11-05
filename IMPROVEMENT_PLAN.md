@@ -577,9 +577,12 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - [x] Add/remove patches to/from playlists
   - [x] "Move Playlist to Top" for live performance preparation
   - [x] Export playlist as setlist (TXT format)
-  - [x] Stored in .jamman-playlists.json sidecar file
+  - [x] Stored in .jamman-playlists.json sidecar file (migrated to v2.0 ID-based storage)
   - [x] Two-panel modal UI (list + details)
   - [x] Numbered patch display with ordering
+  - [x] **Bug Fix:** Changed storage from directory names to stable patch IDs
+  - [x] **Sorting Feature:** Added drag-and-drop reordering within playlists
+  - [x] Automatic migration from v1.0 (directory-based) to v2.0 (ID-based)
 
 ### Priority 5: Security
 

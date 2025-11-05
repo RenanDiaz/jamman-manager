@@ -1091,7 +1091,7 @@ export async function initApp(initConfig: AppInitConfig) {
   ipcMain.handle('playlists:load', async (_event, basePath: string) => {
     try {
       log.info('Loading playlists:', basePath);
-      const data = PlaylistManager.loadPlaylists(basePath);
+      const data = await PlaylistManager.loadPlaylists(basePath);
       log.info('Playlists loaded:', data.playlists.length);
       return data;
     } catch (error) {
@@ -1108,7 +1108,7 @@ export async function initApp(initConfig: AppInitConfig) {
     async (_event, basePath: string, name: string, patches?: string[]) => {
       try {
         log.info('Creating playlist:', { basePath, name, patchCount: patches?.length });
-        const playlist = PlaylistManager.createPlaylist(basePath, name, patches);
+        const playlist = await PlaylistManager.createPlaylist(basePath, name, patches);
         log.info('Playlist created:', playlist.id);
         return playlist;
       } catch (error) {
@@ -1131,7 +1131,7 @@ export async function initApp(initConfig: AppInitConfig) {
     ) => {
       try {
         log.info('Updating playlist:', { basePath, playlistId, updates });
-        const playlist = PlaylistManager.updatePlaylist(basePath, playlistId, updates);
+        const playlist = await PlaylistManager.updatePlaylist(basePath, playlistId, updates);
         log.info('Playlist updated:', playlist.id);
         return playlist;
       } catch (error) {
@@ -1147,7 +1147,7 @@ export async function initApp(initConfig: AppInitConfig) {
   ipcMain.handle('playlists:delete', async (_event, basePath: string, playlistId: string) => {
     try {
       log.info('Deleting playlist:', { basePath, playlistId });
-      PlaylistManager.deletePlaylist(basePath, playlistId);
+      await PlaylistManager.deletePlaylist(basePath, playlistId);
       log.info('Playlist deleted:', playlistId);
       return { success: true };
     } catch (error) {
@@ -1168,7 +1168,11 @@ export async function initApp(initConfig: AppInitConfig) {
           playlistId,
           patchCount: patchDirs.length,
         });
-        const playlist = PlaylistManager.addPatchesToPlaylist(basePath, playlistId, patchDirs);
+        const playlist = await PlaylistManager.addPatchesToPlaylist(
+          basePath,
+          playlistId,
+          patchDirs,
+        );
         log.info('Patches added to playlist:', playlist.id);
         return playlist;
       } catch (error) {
@@ -1190,7 +1194,11 @@ export async function initApp(initConfig: AppInitConfig) {
           playlistId,
           patchCount: patchDirs.length,
         });
-        const playlist = PlaylistManager.removePatchesFromPlaylist(basePath, playlistId, patchDirs);
+        const playlist = await PlaylistManager.removePatchesFromPlaylist(
+          basePath,
+          playlistId,
+          patchDirs,
+        );
         log.info('Patches removed from playlist:', playlist.id);
         return playlist;
       } catch (error) {
@@ -1212,7 +1220,11 @@ export async function initApp(initConfig: AppInitConfig) {
           playlistId,
           patchCount: newOrder.length,
         });
-        const playlist = PlaylistManager.reorderPlaylistPatches(basePath, playlistId, newOrder);
+        const playlist = await PlaylistManager.reorderPlaylistPatches(
+          basePath,
+          playlistId,
+          newOrder,
+        );
         log.info('Playlist patches reordered:', playlist.id);
         return playlist;
       } catch (error) {

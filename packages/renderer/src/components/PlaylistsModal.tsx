@@ -15,6 +15,23 @@ import {
   Spinner,
 } from 'reactstrap';
 import { toast } from 'react-toastify';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface Playlist {
   id: string;
@@ -33,6 +50,61 @@ interface PlaylistsModalProps {
   onMovePlaylistToTop?: (playlistId: string) => void;
 }
 
+interface SortablePatchItemProps {
+  patchDir: string;
+  index: number;
+  patchName: string;
+  onRemove: (patchDir: string) => void;
+}
+
+const SortablePatchItem: FC<SortablePatchItemProps> = ({
+  patchDir,
+  index,
+  patchName,
+  onRemove,
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: patchDir,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    cursor: 'grab',
+  };
+
+  return (
+    <ListGroupItem
+      innerRef={setNodeRef}
+      className="d-flex justify-content-between align-items-center"
+      style={style}
+      {...attributes}
+      {...listeners}
+    >
+      <div>
+        <span className="text-muted me-2">::</span>
+        <Badge color="secondary" className="me-2">
+          {index + 1}
+        </Badge>
+        <strong>{patchDir}</strong>
+        {patchName && <small className="ms-2 text-muted">{patchName}</small>}
+      </div>
+      <Button
+        color="danger"
+        size="sm"
+        outline
+        onClick={e => {
+          e.stopPropagation();
+          onRemove(patchDir);
+        }}
+      >
+        Remove
+      </Button>
+    </ListGroupItem>
+  );
+};
+
 export const PlaylistsModal: FC<PlaylistsModalProps> = ({
   isOpen,
   onClose,
@@ -48,6 +120,14 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
   const [editing, setEditing] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [editPlaylistName, setEditPlaylistName] = useState('');
+
+  // Drag-and-drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   // Load playlists when modal opens
   useEffect(() => {
@@ -215,6 +295,42 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
   const getPatchName = (patchDir: string) => {
     const patch = patches.find(p => p.dir === patchDir);
     return patch?.data?.JamManPatch?.PatchName?.[0] || '';
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    if (!currentFolder || !selectedPlaylist) return;
+
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const oldIndex = selectedPlaylist.patches.findIndex(p => p === active.id);
+      const newIndex = selectedPlaylist.patches.findIndex(p => p === over?.id);
+      const newOrder = arrayMove(selectedPlaylist.patches, oldIndex, newIndex);
+
+      // Optimistically update UI
+      setSelectedPlaylist({
+        ...selectedPlaylist,
+        patches: newOrder,
+      });
+
+      try {
+        setLoading(true);
+        const updated = await window.electronAPI.reorderPlaylistPatches(
+          currentFolder,
+          selectedPlaylist.id,
+          newOrder,
+        );
+        await loadPlaylists();
+        setSelectedPlaylist(updated);
+      } catch (error) {
+        console.error('Error reordering patches:', error);
+        toast.error('Failed to reorder patches');
+        // Reload to revert optimistic update
+        await loadPlaylists();
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   return (
@@ -406,35 +522,36 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                         </small>
                       </Alert>
                     ) : (
-                      <ListGroup>
-                        {selectedPlaylist.patches.map((patchDir, index) => {
-                          const patchName = getPatchName(patchDir);
-                          return (
-                            <ListGroupItem
-                              key={patchDir}
-                              className="d-flex justify-content-between align-items-center"
+                      <div>
+                        <small className="text-muted d-block mb-2">
+                          💡 Drag patches to reorder them within the playlist
+                        </small>
+                        <ListGroup>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <SortableContext
+                              items={selectedPlaylist.patches}
+                              strategy={verticalListSortingStrategy}
                             >
-                              <div>
-                                <Badge color="secondary" className="me-2">
-                                  {index + 1}
-                                </Badge>
-                                <strong>{patchDir}</strong>
-                                {patchName && (
-                                  <small className="ms-2 text-muted">{patchName}</small>
-                                )}
-                              </div>
-                              <Button
-                                color="danger"
-                                size="sm"
-                                outline
-                                onClick={() => handleRemovePatch(patchDir)}
-                              >
-                                Remove
-                              </Button>
-                            </ListGroupItem>
-                          );
-                        })}
-                      </ListGroup>
+                              {selectedPlaylist.patches.map((patchDir, index) => {
+                                const patchName = getPatchName(patchDir);
+                                return (
+                                  <SortablePatchItem
+                                    key={patchDir}
+                                    patchDir={patchDir}
+                                    index={index}
+                                    patchName={patchName}
+                                    onRemove={handleRemovePatch}
+                                  />
+                                );
+                              })}
+                            </SortableContext>
+                          </DndContext>
+                        </ListGroup>
+                      </div>
                     )}
                   </div>
                 </>
