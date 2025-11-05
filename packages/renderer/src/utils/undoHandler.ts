@@ -17,7 +17,6 @@ import { toast } from 'react-toastify';
  */
 export const executeUndo = async (): Promise<boolean> => {
   const undoStore = useUndoStore.getState();
-  const patchStore = usePatchStore.getState();
 
   if (!undoStore.canUndo()) {
     return false;
@@ -47,7 +46,6 @@ export const executeUndo = async (): Promise<boolean> => {
  */
 export const executeRedo = async (): Promise<boolean> => {
   const undoStore = useUndoStore.getState();
-  const patchStore = usePatchStore.getState();
 
   if (!undoStore.canRedo()) {
     return false;

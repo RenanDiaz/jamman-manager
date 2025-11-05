@@ -122,7 +122,7 @@ interface AudioPlayerStore {
   close: () => void;
 }
 
-export const useAudioPlayerStore = create<AudioPlayerStore>((set, get) => ({
+export const useAudioPlayerStore = create<AudioPlayerStore>(set => ({
   // Initial state
   audioInfo: null,
   isPlaying: false,

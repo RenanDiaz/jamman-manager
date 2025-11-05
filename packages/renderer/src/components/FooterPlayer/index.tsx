@@ -15,7 +15,7 @@
  */
 
 import { FC, useEffect, useRef, useState } from 'react';
-import { Button, ButtonGroup } from 'reactstrap';
+import { Button } from 'reactstrap';
 import { toast } from 'react-toastify';
 import { useAudioPlayerStore } from '../../store/useAudioPlayerStore';
 import { PauseIcon, PlayIcon, StopIcon } from '../../utils/Images';

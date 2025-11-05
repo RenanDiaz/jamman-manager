@@ -262,6 +262,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   selectBackupFile: (): Promise<string | null> => ipcRenderer.invoke('backup:selectFile'),
 
+  // ==================== Utility Operations ====================
+
+  /**
+   * Calculates the total size of a folder
+   * @param folderPath - Absolute path to the folder
+   * @returns Promise resolving with size information
+   */
+  getFolderSize: (
+    folderPath: string,
+  ): Promise<{ sizeBytes: number; sizeMB: number; sizeGB: number }> =>
+    ipcRenderer.invoke('folder:getSize', folderPath),
+
   // ==================== Playlist Operations ====================
 
   /**
