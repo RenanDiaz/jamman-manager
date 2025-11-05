@@ -22,6 +22,7 @@ import { SortView } from './components/SortView';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import PatchListItem from './components/PatchListItem';
 import BackupRestoreModal from './components/BackupRestoreModal';
+import PlaylistsModal from './components/PlaylistsModal';
 import { usePatchStore } from './store/usePatchStore';
 
 const PATCH_FORM_ID = 'create-patch-form';
@@ -50,6 +51,7 @@ function App() {
   const [patchesToDelete, setPatchesToDelete] = useState<string[]>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
   const [backupRestoreModalIsOpen, setBackupRestoreModalIsOpen] = useState<boolean>(false);
+  const [playlistsModalIsOpen, setPlaylistsModalIsOpen] = useState<boolean>(false);
 
   const handleLoad = useCallback(async () => {
     try {
@@ -163,6 +165,38 @@ function App() {
   const handleApplySort = async (newOrder: typeof patches) => {
     await reorderPatches(newOrder);
     setSortModeActive(false);
+  };
+
+  const handleMovePlaylistToTop = async (playlistId: string) => {
+    if (!currentFolder) return;
+
+    try {
+      // Load playlists to get the selected playlist
+      const data = await window.electronAPI.loadPlaylists(currentFolder);
+      const playlist = data.playlists.find((p: any) => p.id === playlistId);
+
+      if (!playlist) {
+        toast.error('Playlist not found');
+        return;
+      }
+
+      // Get patches in playlist order
+      const playlistPatches = playlist.patches
+        .map((dir: string) => patches.find(p => p.dir === dir))
+        .filter((p): p is NonNullable<typeof p> => p !== undefined);
+
+      // Get patches not in playlist
+      const otherPatches = patches.filter((p: any) => !playlist.patches.includes(p.dir));
+
+      // Combine: playlist patches first, then others
+      const newOrder = [...playlistPatches, ...otherPatches];
+
+      await reorderPatches(newOrder);
+      toast.success(`Moved "${playlist.name}" to top`);
+    } catch (error) {
+      console.error('Error moving playlist to top:', error);
+      toast.error('Failed to move playlist to top');
+    }
   };
 
   const toggleExportDropdown = () => {
@@ -304,6 +338,16 @@ function App() {
                         title="Backup and Restore"
                       >
                         💾 Backup
+                      </Button>
+                      <Button
+                        type="button"
+                        color="secondary"
+                        outline
+                        onClick={() => setPlaylistsModalIsOpen(true)}
+                        size="sm"
+                        title="Manage Playlists"
+                      >
+                        📋 Playlists
                       </Button>
                     </div>
 
@@ -473,6 +517,15 @@ function App() {
             loadPatches(currentFolder, true);
           }
         }}
+      />
+
+      <PlaylistsModal
+        isOpen={playlistsModalIsOpen}
+        onClose={() => setPlaylistsModalIsOpen(false)}
+        currentFolder={currentFolder}
+        patches={patches}
+        selectedPatchDirs={selectedPatchDirs}
+        onMovePlaylistToTop={handleMovePlaylistToTop}
       />
 
       <ToastContainer
