@@ -86,6 +86,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ): Promise<{ success: boolean; patchesRestored: number }> =>
     ipcRenderer.invoke('backup:restore', backupPath, targetPath, mode, patches),
   selectBackupFile: (): Promise<string | null> => ipcRenderer.invoke('backup:selectFile'),
+  // Playlist operations
+  loadPlaylists: (basePath: string): Promise<any> => ipcRenderer.invoke('playlists:load', basePath),
+  createPlaylist: (basePath: string, name: string, patches?: string[]): Promise<any> =>
+    ipcRenderer.invoke('playlists:create', basePath, name, patches),
+  updatePlaylist: (
+    basePath: string,
+    playlistId: string,
+    updates: { name?: string; patches?: string[] },
+  ): Promise<any> => ipcRenderer.invoke('playlists:update', basePath, playlistId, updates),
+  deletePlaylist: (basePath: string, playlistId: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('playlists:delete', basePath, playlistId),
+  addPatchesToPlaylist: (basePath: string, playlistId: string, patchDirs: string[]): Promise<any> =>
+    ipcRenderer.invoke('playlists:addPatches', basePath, playlistId, patchDirs),
+  removePatchesFromPlaylist: (
+    basePath: string,
+    playlistId: string,
+    patchDirs: string[],
+  ): Promise<any> => ipcRenderer.invoke('playlists:removePatches', basePath, playlistId, patchDirs),
+  reorderPlaylistPatches: (
+    basePath: string,
+    playlistId: string,
+    newOrder: string[],
+  ): Promise<any> => ipcRenderer.invoke('playlists:reorderPatches', basePath, playlistId, newOrder),
+  exportPlaylist: (
+    basePath: string,
+    playlistId: string,
+  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
+    ipcRenderer.invoke('playlists:export', basePath, playlistId),
 });
 
 export { sha256sum, versions, send };

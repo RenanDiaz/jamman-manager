@@ -63,6 +63,19 @@ interface BackupInfo {
   error?: string;
 }
 
+interface Playlist {
+  id: string;
+  name: string;
+  patches: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PlaylistData {
+  version: string;
+  playlists: Playlist[];
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -95,6 +108,31 @@ declare global {
         patches?: string[],
       ): Promise<{ success: boolean; patchesRestored: number }>;
       selectBackupFile(): Promise<string | null>;
+      // Playlists
+      loadPlaylists(basePath: string): Promise<PlaylistData>;
+      createPlaylist(basePath: string, name: string, patches?: string[]): Promise<Playlist>;
+      updatePlaylist(
+        basePath: string,
+        playlistId: string,
+        updates: { name?: string; patches?: string[] },
+      ): Promise<Playlist>;
+      deletePlaylist(basePath: string, playlistId: string): Promise<{ success: boolean }>;
+      addPatchesToPlaylist(
+        basePath: string,
+        playlistId: string,
+        patchDirs: string[],
+      ): Promise<Playlist>;
+      removePatchesFromPlaylist(
+        basePath: string,
+        playlistId: string,
+        patchDirs: string[],
+      ): Promise<Playlist>;
+      reorderPlaylistPatches(
+        basePath: string,
+        playlistId: string,
+        newOrder: string[],
+      ): Promise<Playlist>;
+      exportPlaylist(basePath: string, playlistId: string): Promise<ExportResult>;
     };
   }
 }
