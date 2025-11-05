@@ -1,7 +1,9 @@
 import type { AppModule } from '../AppModule.js';
 import { ModuleContext } from '../ModuleContext.js';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, nativeImage } from 'electron';
 import type { AppInitConfig } from '../AppInitConfig.js';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 class WindowManager implements AppModule {
   readonly #preload: { path: string };
@@ -28,8 +30,14 @@ class WindowManager implements AppModule {
   }
 
   async createWindow(): Promise<BrowserWindow> {
+    // Get icon path - works in both dev and production
+    const __dirname = fileURLToPath(new URL('.', import.meta.url));
+    const iconPath = join(__dirname, '../../../../buildResources/icon.png');
+    const icon = nativeImage.createFromPath(iconPath);
+
     const browserWindow = new BrowserWindow({
       show: false, // Use the 'ready-to-show' event to show the instantiated BrowserWindow.
+      icon: icon,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

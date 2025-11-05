@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A90E2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#357ABD;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#50C878;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3FA965;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#2C3E50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1A252F;stop-opacity:1" />
+    </radialGradient>
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dx="0" dy="4" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGradient)"/>
+
+  <!-- Outer loop ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#mainGradient)" stroke-width="16" opacity="0.4"/>
+
+  <!-- Main circular loop with arrows (representing loop/repeat) -->
+  <g filter="url(#shadow)">
+    <!-- Top arc with arrow -->
+    <path d="M 256 96 A 160 160 0 1 1 96 256"
+          fill="none"
+          stroke="url(#mainGradient)"
+          stroke-width="28"
+          stroke-linecap="round"/>
+    <!-- Arrow head for top -->
+    <polygon points="96,256 70,240 70,272" fill="url(#mainGradient)"/>
+
+    <!-- Bottom arc with arrow -->
+    <path d="M 96 256 A 160 160 0 1 1 256 96"
+          fill="none"
+          stroke="url(#accentGradient)"
+          stroke-width="28"
+          stroke-linecap="round"
+          opacity="0.9"/>
+    <!-- Arrow head for bottom -->
+    <polygon points="256,96 240,70 272,70" fill="url(#accentGradient)"/>
+  </g>
+
+  <!-- Center waveform/audio representation -->
+  <g transform="translate(256, 256)" filter="url(#shadow)">
+    <!-- Stylized waveform bars -->
+    <rect x="-60" y="-40" width="12" height="80" rx="6" fill="url(#accentGradient)"/>
+    <rect x="-35" y="-60" width="12" height="120" rx="6" fill="url(#accentGradient)"/>
+    <rect x="-10" y="-30" width="12" height="60" rx="6" fill="url(#accentGradient)"/>
+    <rect x="15" y="-55" width="12" height="110" rx="6" fill="url(#accentGradient)"/>
+    <rect x="40" y="-45" width="12" height="90" rx="6" fill="url(#accentGradient)"/>
+  </g>
+
+  <!-- Decorative sound wave rings -->
+  <circle cx="256" cy="256" r="80" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.3"/>
+  <circle cx="256" cy="256" r="90" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.2"/>
+  <circle cx="256" cy="256" r="100" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.1"/>
+
+  <!-- Outer highlight -->
+  <circle cx="256" cy="256" r="235" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.1"/>
+</svg>
