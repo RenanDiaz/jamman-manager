@@ -77,6 +77,8 @@ type AudioValidationResult = {
   numberOfChannels?: number;
   /** Duration in seconds */
   duration?: number;
+  /** File size in bytes */
+  fileSizeBytes?: number;
   /** Error message if validation failed */
   error?: string;
   /** Warning message if format is unexpected but playable */
@@ -203,6 +205,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   validateWav: (wavPath: string): Promise<AudioValidationResult> =>
     ipcRenderer.invoke('audio:validateWav', wavPath),
+
+  /**
+   * Reads an audio file as an ArrayBuffer for direct playback
+   * @param wavPath - Absolute path to the WAV file
+   * @returns Promise resolving to ArrayBuffer containing audio data
+   */
+  readAudioFile: (wavPath: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke('audio:readFile', wavPath),
 
   // ==================== Backup/Restore Operations ====================
 

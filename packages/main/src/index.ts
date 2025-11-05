@@ -135,13 +135,9 @@ export async function initApp(initConfig: AppInitConfig) {
     // This leverages Chromium's native file streaming which properly supports range requests
     protocol.handle('jamman', request => {
       try {
-        log.info(`Protocol handler received request: ${request.url}`);
-
         // Extract file path from URL
         const url = request.url.replace('jamman://', '');
         const filePath = decodeURIComponent(url);
-
-        log.info(`Decoded file path: ${filePath}`);
 
         // Validate file path is not empty
         if (!filePath || filePath.trim() === '') {
@@ -164,8 +160,6 @@ export async function initApp(initConfig: AppInitConfig) {
         // Convert to file:// URL and let Chromium handle the streaming
         // This properly supports range requests natively
         const fileUrl = `file://${filePath}`;
-        log.info(`Proxying to: ${fileUrl}`);
-
         return net.fetch(fileUrl);
       } catch (error) {
         log.error('Error serving audio file:', error);
@@ -485,6 +479,37 @@ export async function initApp(initConfig: AppInitConfig) {
         warning: 'File format could not be validated, but playback will be attempted.',
         canAttemptPlayback: true, // Let the browser try to play it
       };
+    }
+  });
+
+  ipcMain.handle('audio:readFile', async (_event, filePath: string) => {
+    // Security: Validate file path
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path');
+    }
+
+    // Validate file extension
+    if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
+      throw new Error('Invalid file extension');
+    }
+
+    // Check if file exists
+    if (!PathValidator.pathExists(filePath, 'file')) {
+      throw new Error('File not found');
+    }
+
+    try {
+      // Read file as buffer
+      const buffer = await fs.promises.readFile(filePath);
+      log.info(`Read audio file: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
+      // Return as Uint8Array (which can be transferred to renderer as ArrayBuffer)
+      return buffer;
+    } catch (error) {
+      log.error('Error reading audio file:', error);
+      throw new Error(
+        `Failed to read audio file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   });
 

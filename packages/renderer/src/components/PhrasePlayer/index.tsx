@@ -19,7 +19,7 @@ interface Props {
 }
 
 const PhrasePlayer: FC<Props> = memo(({ wavPath, patchDir, patchName, phraseName }) => {
-  const { audioInfo, loadAudio } = useAudioPlayerStore();
+  const { audioInfo, loadAudio, play } = useAudioPlayerStore();
 
   const handlePlay = async () => {
     try {
@@ -41,6 +41,9 @@ const PhrasePlayer: FC<Props> = memo(({ wavPath, patchDir, patchName, phraseName
         duration: validation.duration ?? null,
         fileSizeBytes: validation.fileSizeBytes ?? null,
       });
+
+      // Auto-play after loading
+      play();
 
       // Show warnings if any
       if (!validation.valid && validation.warning) {

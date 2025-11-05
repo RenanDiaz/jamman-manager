@@ -3,12 +3,11 @@
  *
  * A persistent audio player that appears at the bottom of the screen
  * (YouTube Music style). Provides a central place for all audio playback
- * with waveform visualization and full controls.
+ * with full controls.
  *
  * Features:
- * - Waveform visualization with WaveSurfer.js
  * - Playback controls (Play/Pause, Stop)
- * - Seek bar with waveform interaction
+ * - Seek bar
  * - Volume control
  * - Metadata display (patch name, phrase name, duration, file size)
  * - Minimize/maximize functionality
@@ -16,9 +15,8 @@
  */
 
 import { FC, useEffect, useRef, useState } from 'react';
-import { Button, ButtonGroup, Progress } from 'reactstrap';
+import { Button, ButtonGroup } from 'reactstrap';
 import { toast } from 'react-toastify';
-import WaveSurfer from 'wavesurfer.js';
 import { useAudioPlayerStore } from '../../store/useAudioPlayerStore';
 import { PauseIcon, PlayIcon, StopIcon } from '../../utils/Images';
 
@@ -46,7 +44,6 @@ export const FooterPlayer: FC = () => {
   const {
     audioInfo,
     isPlaying,
-    isLoading,
     currentTime,
     volume,
     isMinimized,
@@ -55,110 +52,100 @@ export const FooterPlayer: FC = () => {
     stop,
     seek,
     setVolume,
-    setLoading,
     setCurrentTime,
     setDuration,
     toggleMinimized,
     close,
   } = useAudioPlayerStore();
 
-  const waveformRef = useRef<HTMLDivElement>(null);
-  const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const [isReady, setIsReady] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
-  // Initialize WaveSurfer when audio is loaded
+  // Load audio when audioInfo changes
   useEffect(() => {
-    if (!audioInfo || !waveformRef.current) return;
+    if (!audioInfo) {
+      setAudioUrl(null);
+      return;
+    }
 
-    setLoading(true);
-    setIsReady(false);
-
-    // Create WaveSurfer instance
-    const ws = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: '#6c757d',
-      progressColor: '#0d6efd',
-      cursorColor: '#0d6efd',
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      height: 80,
-      normalize: true,
-      backend: 'WebAudio',
-    });
-
-    wavesurferRef.current = ws;
-
-    // Load audio URL
+    // Get audio URL
     (async () => {
       try {
         const url = await window.electronAPI.getAudioURL(audioInfo.wavPath);
-        if (!url) {
-          toast.error('Failed to load audio file');
-          setLoading(false);
-          return;
-        }
-
-        await ws.load(url);
+        setAudioUrl(url);
       } catch (error) {
-        console.error('Error loading audio:', error);
+        console.error('Error loading audio URL:', error);
         toast.error('Failed to load audio');
-        setLoading(false);
       }
     })();
+  }, [audioInfo]);
 
-    // Event listeners
-    ws.on('ready', () => {
-      console.log('WaveSurfer ready');
-      setIsReady(true);
-      setLoading(false);
-      setDuration(ws.getDuration());
-    });
-
-    ws.on('audioprocess', () => {
-      setCurrentTime(ws.getCurrentTime());
-    });
-
-    ws.on('finish', () => {
-      pause();
-      ws.seekTo(0);
-    });
-
-    ws.on('error', error => {
-      console.error('WaveSurfer error:', error);
-      toast.error('Audio playback error');
-      setLoading(false);
-    });
-
-    // Cleanup
-    return () => {
-      ws.destroy();
-      wavesurferRef.current = null;
-    };
-  }, [audioInfo, setLoading, setDuration, setCurrentTime, pause]);
-
-  // Sync play/pause with WaveSurfer
+  // Update duration when audio loads
   useEffect(() => {
-    if (!wavesurferRef.current || !isReady) return;
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) return;
+
+    const handleLoadedMetadata = () => {
+      // Only update duration if it's a valid finite number
+      // Custom protocols may report Infinity, so we keep the metadata duration
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+      }
+    };
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+
+    const handleEnded = () => {
+      pause();
+      audio.currentTime = 0;
+    };
+
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+
+    // Also check if metadata is already loaded
+    if (audio.readyState >= 1 && isFinite(audio.duration) && audio.duration > 0) {
+      setDuration(audio.duration);
+    }
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, [audioUrl, setDuration, setCurrentTime, pause]);
+
+  // Sync play/pause with audio element
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) return;
 
     if (isPlaying) {
-      wavesurferRef.current.play();
+      audio.play().catch(error => {
+        console.error('Error playing audio:', error);
+        toast.error('Failed to play audio');
+      });
     } else {
-      wavesurferRef.current.pause();
+      audio.pause();
     }
-  }, [isPlaying, isReady]);
+  }, [isPlaying, audioUrl]);
 
-  // Sync volume with WaveSurfer
+  // Sync volume with audio element
   useEffect(() => {
-    if (!wavesurferRef.current) return;
-    wavesurferRef.current.setVolume(volume);
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
   }, [volume]);
 
   // Handle seek
-  const handleSeek = (time: number) => {
-    if (!wavesurferRef.current || !audioInfo?.duration) return;
-    const position = time / audioInfo.duration;
-    wavesurferRef.current.seekTo(position);
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const time = parseFloat(e.target.value);
+    audio.currentTime = time;
     seek(time);
   };
 
@@ -166,134 +153,230 @@ export const FooterPlayer: FC = () => {
   if (!audioInfo) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: '#212529',
-        borderTop: '1px solid #495057',
-        zIndex: 1000,
-        transition: 'height 0.3s ease',
-        height: isMinimized ? '60px' : '200px',
-      }}
-    >
-      <div className="container-fluid h-100 d-flex flex-column">
-        {/* Header */}
-        <div className="d-flex align-items-center justify-content-between py-2 border-bottom border-secondary">
-          <div className="d-flex align-items-center gap-2">
-            <Button
-              size="sm"
-              color="link"
-              className="text-white p-0"
-              onClick={toggleMinimized}
-              title={isMinimized ? 'Expand' : 'Minimize'}
-            >
-              {isMinimized ? '▲' : '▼'}
-            </Button>
-            <div>
-              <div className="fw-bold" style={{ fontSize: '0.9rem' }}>
-                {audioInfo.patchName}
-              </div>
-              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                {audioInfo.patchDir} → {audioInfo.phraseName}
-              </div>
+    <>
+      {/* Hidden audio element */}
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" />}
+
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: '#181818',
+          borderTop: '1px solid #282828',
+          zIndex: 1000,
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          height: isMinimized ? '72px' : '120px',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div className="h-100 d-flex flex-column">
+          {/* Seek Bar - Always on top */}
+          {!isMinimized && (
+            <div style={{ padding: '0 16px', paddingTop: '8px' }}>
+              <input
+                type="range"
+                className="form-range"
+                min="0"
+                max={audioInfo.duration || 0}
+                step="0.1"
+                value={currentTime}
+                onChange={handleSeek}
+                style={{
+                  width: '100%',
+                  height: '4px',
+                  cursor: 'pointer',
+                }}
+              />
             </div>
-          </div>
+          )}
 
-          <div className="d-flex align-items-center gap-2">
-            {!isMinimized && (
-              <>
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-                  ⏱️ {formatTime(audioInfo.duration)}
-                </span>
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>
-                  📦 {formatFileSize(audioInfo.fileSizeBytes)}
-                </span>
-              </>
-            )}
-            <Button size="sm" color="link" className="text-white p-0" onClick={close} title="Close">
-              ✕
-            </Button>
-          </div>
-        </div>
-
-        {/* Main Content - Hidden when minimized */}
-        {!isMinimized && (
-          <div className="flex-grow-1 d-flex flex-column justify-content-center py-2">
-            {/* Waveform */}
-            <div className="mb-2">
-              <div ref={waveformRef} style={{ opacity: isLoading ? 0.5 : 1 }} />
-            </div>
-
-            {/* Controls */}
-            <div className="d-flex align-items-center justify-content-between">
-              <div className="d-flex align-items-center gap-3">
-                {/* Playback Controls */}
-                <ButtonGroup size="sm">
-                  <Button
-                    color="primary"
-                    onClick={() => (isPlaying ? pause() : play())}
-                    disabled={isLoading || !isReady}
+          {/* Main Content */}
+          <div className="flex-grow-1 d-flex align-items-center px-4">
+            <div className="d-flex align-items-center justify-content-between w-100">
+              {/* Left: Track Info */}
+              <div
+                className="d-flex align-items-center gap-3"
+                style={{ minWidth: 0, flex: '0 1 30%' }}
+              >
+                <Button
+                  size="sm"
+                  color="link"
+                  className="text-white p-0"
+                  onClick={toggleMinimized}
+                  title={isMinimized ? 'Expand' : 'Minimize'}
+                  style={{
+                    opacity: 0.6,
+                    fontSize: '1.2rem',
+                    transition: 'opacity 0.2s',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+                >
+                  {isMinimized ? '▲' : '▼'}
+                </Button>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    className="text-truncate fw-semibold"
+                    style={{ fontSize: '0.9rem', color: '#fff', marginBottom: '2px' }}
                   >
-                    {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                  </Button>
-                  <Button color="secondary" onClick={stop} disabled={isLoading || !isReady}>
-                    <StopIcon />
-                  </Button>
-                </ButtonGroup>
-
-                {/* Time Display */}
-                <div style={{ fontSize: '0.85rem', minWidth: '100px' }}>
-                  <span className="text-white">{formatTime(currentTime)}</span>
-                  <span className="text-muted"> / {formatTime(audioInfo.duration)}</span>
+                    {audioInfo.patchName}
+                  </div>
+                  <div className="text-truncate" style={{ fontSize: '0.75rem', color: '#b3b3b3' }}>
+                    {audioInfo.patchDir} → {audioInfo.phraseName}
+                  </div>
                 </div>
               </div>
 
-              {/* Volume Control */}
-              <div className="d-flex align-items-center gap-2" style={{ width: '150px' }}>
-                <span style={{ fontSize: '0.85rem' }}>🔊</span>
-                <input
-                  type="range"
-                  className="form-range"
-                  min="0"
-                  max="100"
-                  value={volume * 100}
-                  onChange={e => setVolume(parseInt(e.target.value) / 100)}
-                  style={{ width: '100px' }}
-                />
-                <span style={{ fontSize: '0.75rem', minWidth: '35px' }}>
-                  {Math.round(volume * 100)}%
-                </span>
+              {/* Center: Playback Controls */}
+              <div
+                className="d-flex flex-column align-items-center gap-2"
+                style={{ flex: '0 1 40%' }}
+              >
+                <div className="d-flex align-items-center gap-2">
+                  {/* Stop Button */}
+                  <button
+                    onClick={stop}
+                    disabled={!audioUrl}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#b3b3b3',
+                      cursor: audioUrl ? 'pointer' : 'not-allowed',
+                      padding: '8px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s',
+                      opacity: audioUrl ? 1 : 0.3,
+                    }}
+                    onMouseEnter={e => {
+                      if (audioUrl) {
+                        e.currentTarget.style.color = '#fff';
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = '#b3b3b3';
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <StopIcon />
+                  </button>
+
+                  {/* Play/Pause Button */}
+                  <button
+                    onClick={() => (isPlaying ? pause() : play())}
+                    disabled={!audioUrl}
+                    style={{
+                      background: '#fff',
+                      border: 'none',
+                      color: '#000',
+                      cursor: audioUrl ? 'pointer' : 'not-allowed',
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s',
+                      opacity: audioUrl ? 1 : 0.3,
+                    }}
+                    onMouseEnter={e => {
+                      if (audioUrl) e.currentTarget.style.transform = 'scale(1.06)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                  >
+                    {isPlaying ? <PauseIcon /> : <PlayIcon />}
+                  </button>
+                </div>
+
+                {/* Time Display */}
+                {!isMinimized && (
+                  <div style={{ fontSize: '0.75rem', color: '#b3b3b3', whiteSpace: 'nowrap' }}>
+                    {formatTime(currentTime)} / {formatTime(audioInfo.duration)}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Volume & Metadata */}
+              <div
+                className="d-flex align-items-center justify-content-end gap-3"
+                style={{ flex: '0 1 30%' }}
+              >
+                {!isMinimized && (
+                  <>
+                    <span
+                      className="badge bg-dark"
+                      style={{ fontSize: '0.7rem', color: '#b3b3b3' }}
+                    >
+                      ⏱️ {formatTime(audioInfo.duration)}
+                    </span>
+                    <span
+                      className="badge bg-dark"
+                      style={{ fontSize: '0.7rem', color: '#b3b3b3' }}
+                    >
+                      📦 {formatFileSize(audioInfo.fileSizeBytes)}
+                    </span>
+                  </>
+                )}
+
+                {/* Volume Control */}
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ fontSize: '1.1rem', opacity: 0.7 }}>🔊</span>
+                  {!isMinimized && (
+                    <>
+                      <input
+                        type="range"
+                        className="form-range"
+                        min="0"
+                        max="100"
+                        value={volume * 100}
+                        onChange={e => setVolume(parseInt(e.target.value) / 100)}
+                        style={{ width: '80px', height: '4px', cursor: 'pointer' }}
+                      />
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          color: '#b3b3b3',
+                          minWidth: '35px',
+                          textAlign: 'right',
+                        }}
+                      >
+                        {Math.round(volume * 100)}%
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Close Button */}
+                <Button
+                  size="sm"
+                  color="link"
+                  className="text-white p-0"
+                  onClick={close}
+                  title="Close"
+                  style={{
+                    opacity: 0.6,
+                    fontSize: '1.3rem',
+                    transition: 'opacity 0.2s',
+                    marginLeft: '8px',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+                >
+                  ✕
+                </Button>
               </div>
             </div>
           </div>
-        )}
-
-        {/* Minimized View - Only show playback controls */}
-        {isMinimized && (
-          <div className="flex-grow-1 d-flex align-items-center justify-content-between">
-            <ButtonGroup size="sm">
-              <Button
-                color="primary"
-                onClick={() => (isPlaying ? pause() : play())}
-                disabled={isLoading || !isReady}
-              >
-                {isPlaying ? <PauseIcon /> : <PlayIcon />}
-              </Button>
-              <Button color="secondary" onClick={stop} disabled={isLoading || !isReady}>
-                <StopIcon />
-              </Button>
-            </ButtonGroup>
-
-            <div style={{ fontSize: '0.85rem' }}>
-              <span className="text-white">{formatTime(currentTime)}</span>
-              <span className="text-muted"> / {formatTime(audioInfo.duration)}</span>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
