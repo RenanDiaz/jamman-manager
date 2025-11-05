@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface Playlist {
   id: string;
   name: string;
-  patchIds: string[]; // Array of patch IDs (from patch.xml patchID field) in order
+  patchIds: string[]; // Array of patch IDs (from patch.xml <ID> field) in order
   createdAt: string;
   updatedAt: string;
 }
@@ -40,7 +40,7 @@ export class PlaylistManager {
       const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
       const parser = new xml2js.Parser();
       const result = await parser.parseStringPromise(xmlContent);
-      return result.JamManPatch?.PatchID?.[0] || null;
+      return result.JamManPatch?.ID?.[0] || null;
     } catch {
       return null;
     }
