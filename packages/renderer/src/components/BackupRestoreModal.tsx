@@ -229,9 +229,10 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
                   style={{
                     maxHeight: '150px',
                     overflowY: 'auto',
-                    backgroundColor: '#f8f9fa',
+                    backgroundColor: '#212529',
                     padding: '10px',
                     borderRadius: '4px',
+                    border: '1px solid #495057',
                   }}
                 >
                   <ListGroup flush>
