@@ -18,6 +18,8 @@ import log from 'electron-log';
 import { lockManager } from './LockManager.js';
 import { operationQueue, OperationPriority } from './OperationQueue.js';
 import PDFDocument from 'pdfkit';
+import { BackupManager } from './BackupManager.js';
+import { PlaylistManager } from './PlaylistManager.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -703,6 +705,75 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
+  ipcMain.handle('patches:deleteBatch', async (_event, basePath: string, directories: string[]) => {
+    const backups: Record<string, string> = {};
+    const deleted: string[] = [];
+
+    // Enqueue operation with high priority (delete is user-initiated)
+    return operationQueue.enqueue(
+      'patches:deleteBatch',
+      `Delete ${directories.length} patches`,
+      async () => {
+        try {
+          // Delete each patch with individual locks
+          for (const directory of directories) {
+            const patchPath = path.join(basePath, directory);
+            const backupDir = path.join(basePath, `__deleted_${directory}_${Date.now()}`);
+
+            await lockManager.withLock(patchPath, async () => {
+              if (!fs.existsSync(patchPath)) {
+                log.warn(`Patch not found, skipping: ${directory}`);
+                return;
+              }
+
+              // Move to backup instead of immediate deletion for safety
+              fse.moveSync(patchPath, backupDir);
+              backups[directory] = backupDir;
+              deleted.push(directory);
+              log.info(`Moved patch to backup before deletion: ${directory}`);
+            });
+          }
+
+          // Actually delete the backups after a short delay
+          setTimeout(() => {
+            Object.values(backups).forEach(backupDir => {
+              if (fs.existsSync(backupDir)) {
+                fse.removeSync(backupDir);
+                log.info(`Permanently deleted patch backup: ${backupDir}`);
+              }
+            });
+          }, 5000); // 5 second safety window
+
+          // Invalidate cache
+          patchCache.delete(basePath);
+
+          log.info(`Successfully deleted ${deleted.length} patches`);
+          return { success: true, deleted, failed: directories.length - deleted.length };
+        } catch (error) {
+          log.error(`Error during batch delete:`, error);
+
+          // Rollback: Restore all backed up patches
+          for (const [directory, backupDir] of Object.entries(backups)) {
+            const patchPath = path.join(basePath, directory);
+            if (fs.existsSync(backupDir) && !fs.existsSync(patchPath)) {
+              try {
+                fse.moveSync(backupDir, patchPath);
+                log.info(`Restored patch from backup: ${directory}`);
+              } catch (rollbackError) {
+                log.error(`Failed to restore deleted patch ${directory}:`, rollbackError);
+              }
+            }
+          }
+
+          throw new Error(
+            `Failed to delete patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
+        }
+      },
+      OperationPriority.HIGH,
+    );
+  });
+
   ipcMain.handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
     const jammanPath = path.join(basePath);
     const tempMap: Record<string, string> = {};
@@ -871,6 +942,376 @@ export async function initApp(initConfig: AppInitConfig) {
       log.error('Error exporting patches to PDF:', error);
       throw new Error(
         `Failed to export patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Create backup
+  ipcMain.handle(
+    'backup:create',
+    async (_event, basePath: string, patches?: string[], includePlaylist?: boolean) => {
+      return operationQueue.enqueue(
+        'backup:create',
+        'Create backup',
+        async () => {
+          try {
+            log.info('Creating backup...', {
+              basePath,
+              patchCount: patches?.length || 'all',
+              includePlaylist,
+            });
+
+            // Show save dialog
+            const { filePath, canceled } = await dialog.showSaveDialog({
+              title: 'Save Backup',
+              defaultPath: path.join(
+                app.getPath('documents'),
+                `jamman-backup-${new Date().toISOString().split('T')[0]}.jamman-backup.zip`,
+              ),
+              filters: [
+                { name: 'JamMan Backup', extensions: ['jamman-backup.zip', 'zip'] },
+                { name: 'All Files', extensions: ['*'] },
+              ],
+            });
+
+            if (canceled || !filePath) {
+              log.info('Backup creation canceled by user');
+              return { success: false, canceled: true };
+            }
+
+            const outputPath = await BackupManager.createBackup({
+              basePath,
+              outputPath: filePath,
+              patches,
+              includePlaylist,
+            });
+
+            log.info('Backup created successfully:', outputPath);
+            return { success: true, filePath: outputPath };
+          } catch (error) {
+            log.error('Error creating backup:', error);
+            throw new Error(
+              `Failed to create backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            );
+          }
+        },
+        OperationPriority.MEDIUM,
+      );
+    },
+  );
+
+  // Validate backup
+  ipcMain.handle('backup:validate', async (_event, backupPath: string) => {
+    try {
+      log.info('Validating backup:', backupPath);
+      const info = await BackupManager.validateBackup(backupPath);
+      log.info('Backup validation result:', info);
+      return info;
+    } catch (error) {
+      log.error('Error validating backup:', error);
+      throw new Error(
+        `Failed to validate backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Restore backup
+  ipcMain.handle(
+    'backup:restore',
+    async (
+      _event,
+      backupPath: string,
+      targetPath: string,
+      mode: 'replace' | 'merge',
+      patches?: string[],
+    ) => {
+      return operationQueue.enqueue(
+        'backup:restore',
+        `Restore backup (${mode} mode)`,
+        async () => {
+          try {
+            log.info('Restoring backup...', { backupPath, targetPath, mode, patches });
+
+            const result = await BackupManager.restoreBackup({
+              backupPath,
+              targetPath,
+              mode,
+              patches,
+            });
+
+            log.info('Backup restored successfully:', result);
+
+            // Clear cache after restore
+            patchCache.delete(targetPath);
+
+            return result;
+          } catch (error) {
+            log.error('Error restoring backup:', error);
+            throw new Error(
+              `Failed to restore backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            );
+          }
+        },
+        OperationPriority.HIGH,
+      );
+    },
+  );
+
+  // Select backup file
+  ipcMain.handle('backup:selectFile', async () => {
+    try {
+      const { filePaths, canceled } = await dialog.showOpenDialog({
+        title: 'Select Backup File',
+        defaultPath: app.getPath('documents'),
+        filters: [
+          { name: 'JamMan Backup', extensions: ['jamman-backup.zip', 'zip'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile'],
+      });
+
+      if (canceled || filePaths.length === 0) {
+        log.info('Backup file selection canceled by user');
+        return null;
+      }
+
+      log.info('Backup file selected:', filePaths[0]);
+      return filePaths[0];
+    } catch (error) {
+      log.error('Error selecting backup file:', error);
+      throw new Error(
+        `Failed to select backup file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // ==================== PLAYLIST OPERATIONS ====================
+
+  // Load playlists
+  ipcMain.handle('playlists:load', async (_event, basePath: string) => {
+    try {
+      log.info('Loading playlists:', basePath);
+      const data = await PlaylistManager.loadPlaylists(basePath);
+      log.info('Playlists loaded:', data.playlists.length);
+      return data;
+    } catch (error) {
+      log.error('Error loading playlists:', error);
+      throw new Error(
+        `Failed to load playlists: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Create playlist
+  ipcMain.handle(
+    'playlists:create',
+    async (_event, basePath: string, name: string, patches?: string[]) => {
+      try {
+        log.info('Creating playlist:', { basePath, name, patchCount: patches?.length });
+        const playlist = await PlaylistManager.createPlaylist(basePath, name, patches);
+        log.info('Playlist created:', playlist.id);
+        return playlist;
+      } catch (error) {
+        log.error('Error creating playlist:', error);
+        throw new Error(
+          `Failed to create playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  );
+
+  // Update playlist
+  ipcMain.handle(
+    'playlists:update',
+    async (
+      _event,
+      basePath: string,
+      playlistId: string,
+      updates: { name?: string; patches?: string[] },
+    ) => {
+      try {
+        log.info('Updating playlist:', { basePath, playlistId, updates });
+        const playlist = await PlaylistManager.updatePlaylist(basePath, playlistId, updates);
+        log.info('Playlist updated:', playlist.id);
+        return playlist;
+      } catch (error) {
+        log.error('Error updating playlist:', error);
+        throw new Error(
+          `Failed to update playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  );
+
+  // Delete playlist
+  ipcMain.handle('playlists:delete', async (_event, basePath: string, playlistId: string) => {
+    try {
+      log.info('Deleting playlist:', { basePath, playlistId });
+      await PlaylistManager.deletePlaylist(basePath, playlistId);
+      log.info('Playlist deleted:', playlistId);
+      return { success: true };
+    } catch (error) {
+      log.error('Error deleting playlist:', error);
+      throw new Error(
+        `Failed to delete playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
+
+  // Add patches to playlist
+  ipcMain.handle(
+    'playlists:addPatches',
+    async (_event, basePath: string, playlistId: string, patchDirs: string[]) => {
+      try {
+        log.info('Adding patches to playlist:', {
+          basePath,
+          playlistId,
+          patchCount: patchDirs.length,
+        });
+        const playlist = await PlaylistManager.addPatchesToPlaylist(
+          basePath,
+          playlistId,
+          patchDirs,
+        );
+        log.info('Patches added to playlist:', playlist.id);
+        return playlist;
+      } catch (error) {
+        log.error('Error adding patches to playlist:', error);
+        throw new Error(
+          `Failed to add patches to playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  );
+
+  // Remove patches from playlist
+  ipcMain.handle(
+    'playlists:removePatches',
+    async (_event, basePath: string, playlistId: string, patchDirs: string[]) => {
+      try {
+        log.info('Removing patches from playlist:', {
+          basePath,
+          playlistId,
+          patchCount: patchDirs.length,
+        });
+        const playlist = await PlaylistManager.removePatchesFromPlaylist(
+          basePath,
+          playlistId,
+          patchDirs,
+        );
+        log.info('Patches removed from playlist:', playlist.id);
+        return playlist;
+      } catch (error) {
+        log.error('Error removing patches from playlist:', error);
+        throw new Error(
+          `Failed to remove patches from playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  );
+
+  // Reorder patches in playlist
+  ipcMain.handle(
+    'playlists:reorderPatches',
+    async (_event, basePath: string, playlistId: string, newOrder: string[]) => {
+      try {
+        log.info('Reordering patches in playlist:', {
+          basePath,
+          playlistId,
+          patchCount: newOrder.length,
+        });
+        const playlist = await PlaylistManager.reorderPlaylistPatches(
+          basePath,
+          playlistId,
+          newOrder,
+        );
+        log.info('Playlist patches reordered:', playlist.id);
+        return playlist;
+      } catch (error) {
+        log.error('Error reordering playlist patches:', error);
+        throw new Error(
+          `Failed to reorder playlist patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  );
+
+  // Export playlist as setlist
+  ipcMain.handle('playlists:export', async (_event, basePath: string, playlistId: string) => {
+    try {
+      log.info('Exporting playlist:', { basePath, playlistId });
+
+      const data = PlaylistManager.loadPlaylists(basePath);
+      const playlist = data.playlists.find(p => p.id === playlistId);
+
+      if (!playlist) {
+        throw new Error(`Playlist not found: ${playlistId}`);
+      }
+
+      // Show save dialog
+      const { filePath, canceled } = await dialog.showSaveDialog({
+        title: 'Export Playlist as Setlist',
+        defaultPath: path.join(app.getPath('documents'), `${playlist.name}-setlist.txt`),
+        filters: [
+          { name: 'Text Files', extensions: ['txt'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (canceled || !filePath) {
+        log.info('Playlist export canceled by user');
+        return { success: false, canceled: true };
+      }
+
+      // Load patch details to get patch names
+      const patches = await Promise.all(
+        playlist.patches.map(async patchDir => {
+          const patchPath = path.join(basePath, patchDir);
+          const patchXmlPath = path.join(patchPath, 'patch.xml');
+
+          if (!fs.existsSync(patchXmlPath)) {
+            return { dir: patchDir, name: '' };
+          }
+
+          try {
+            const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
+            const parser = new xml2js.Parser();
+            const result = await parser.parseStringPromise(xmlContent);
+            const patchName = result.JamManPatch?.PatchName?.[0] || '';
+            return { dir: patchDir, name: patchName };
+          } catch {
+            return { dir: patchDir, name: '' };
+          }
+        }),
+      );
+
+      // Generate setlist content
+      let content = `${playlist.name}\n`;
+      content += `${'='.repeat(playlist.name.length)}\n\n`;
+      content += `Created: ${new Date().toLocaleString()}\n`;
+      content += `Patches: ${patches.length}\n\n`;
+      content += `Setlist:\n`;
+      content += `--------\n\n`;
+
+      patches.forEach((patch, index) => {
+        const num = String(index + 1).padStart(2, '0');
+        content += `${num}. ${patch.dir}`;
+        if (patch.name) {
+          content += ` - ${patch.name}`;
+        }
+        content += `\n`;
+      });
+
+      content += `\n\nGenerated by JamMan Manager\n`;
+
+      fs.writeFileSync(filePath, content, 'utf-8');
+
+      log.info('Playlist exported successfully:', filePath);
+      return { success: true, filePath };
+    } catch (error) {
+      log.error('Error exporting playlist:', error);
+      throw new Error(
+        `Failed to export playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   });

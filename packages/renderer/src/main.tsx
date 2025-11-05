@@ -48,6 +48,34 @@ interface ExportResult {
   canceled?: boolean;
 }
 
+interface BackupManifest {
+  version: string;
+  appVersion: string;
+  patchCount: number;
+  createdAt: string;
+  patches: string[];
+  playlists?: any;
+}
+
+interface BackupInfo {
+  valid: boolean;
+  manifest?: BackupManifest;
+  error?: string;
+}
+
+interface Playlist {
+  id: string;
+  name: string;
+  patches: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PlaylistData {
+  version: string;
+  playlists: Playlist[];
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -59,9 +87,52 @@ declare global {
       createPatch: (data: PatchForm) => Promise<void>;
       updatePatch: (data: PatchForm) => Promise<void>;
       deletePatch(basePath: string, directory: string): Promise<void>;
+      deletePatchBatch(
+        basePath: string,
+        directories: string[],
+      ): Promise<{ success: boolean; deleted: string[]; failed: number }>;
       reorderPatches(basePath: string, patches: string[]): Promise<void>;
       exportPatchesTXT(patches: Patch[], basePath: string): Promise<ExportResult>;
       exportPatchesPDF(patches: Patch[], basePath: string): Promise<ExportResult>;
+      // Backup/Restore
+      createBackup(
+        basePath: string,
+        patches?: string[],
+        includePlaylist?: boolean,
+      ): Promise<ExportResult>;
+      validateBackup(backupPath: string): Promise<BackupInfo>;
+      restoreBackup(
+        backupPath: string,
+        targetPath: string,
+        mode: 'replace' | 'merge',
+        patches?: string[],
+      ): Promise<{ success: boolean; patchesRestored: number }>;
+      selectBackupFile(): Promise<string | null>;
+      // Playlists
+      loadPlaylists(basePath: string): Promise<PlaylistData>;
+      createPlaylist(basePath: string, name: string, patches?: string[]): Promise<Playlist>;
+      updatePlaylist(
+        basePath: string,
+        playlistId: string,
+        updates: { name?: string; patches?: string[] },
+      ): Promise<Playlist>;
+      deletePlaylist(basePath: string, playlistId: string): Promise<{ success: boolean }>;
+      addPatchesToPlaylist(
+        basePath: string,
+        playlistId: string,
+        patchDirs: string[],
+      ): Promise<Playlist>;
+      removePatchesFromPlaylist(
+        basePath: string,
+        playlistId: string,
+        patchDirs: string[],
+      ): Promise<Playlist>;
+      reorderPlaylistPatches(
+        basePath: string,
+        playlistId: string,
+        newOrder: string[],
+      ): Promise<Playlist>;
+      exportPlaylist(basePath: string, playlistId: string): Promise<ExportResult>;
     };
   }
 }

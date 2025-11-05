@@ -2,6 +2,27 @@ import { create } from 'zustand';
 import { Patch } from '../types';
 import { toast } from 'react-toastify';
 
+// LocalStorage key for persisting last folder
+const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
+
+// Helper functions for localStorage
+const saveLastFolder = (folder: string) => {
+  try {
+    localStorage.setItem(LAST_FOLDER_KEY, folder);
+  } catch (error) {
+    console.warn('Failed to save last folder to localStorage:', error);
+  }
+};
+
+const getLastFolder = (): string | null => {
+  try {
+    return localStorage.getItem(LAST_FOLDER_KEY);
+  } catch (error) {
+    console.warn('Failed to retrieve last folder from localStorage:', error);
+    return null;
+  }
+};
+
 interface PatchStore {
   // State
   currentFolder: string | null;
@@ -27,10 +48,13 @@ interface PatchStore {
   createPatch: (data: any) => Promise<void>;
   updatePatch: (data: any) => Promise<void>;
   deletePatch: (directory: string) => Promise<void>;
+  deletePatches: (directories: string[]) => Promise<void>;
   reorderPatches: (newOrder: Patch[]) => Promise<void>;
 
   // Utility
   clearPatches: () => void;
+  getLastFolder: () => string | null;
+  tryLoadLastFolder: () => Promise<boolean>;
 }
 
 export const usePatchStore = create<PatchStore>((set, get) => ({
@@ -95,6 +119,9 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       console.log(result);
 
       set({ patches: result, currentFolder: folder });
+
+      // Save to localStorage for auto-load on next launch
+      saveLastFolder(folder);
 
       if (!update) {
         toast.success(`Successfully loaded ${result.length} patches`);
@@ -161,6 +188,37 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
+  deletePatches: async (directories: string[]) => {
+    const { currentFolder, loadPatches } = get();
+    if (!currentFolder) return;
+
+    try {
+      set({ loading: true });
+      const result = await window.electronAPI.deletePatchBatch(currentFolder, directories);
+
+      if (result.success) {
+        const deletedCount = result.deleted.length;
+        const failedCount = result.failed;
+
+        if (failedCount > 0) {
+          toast.warning(`Deleted ${deletedCount} patches successfully, but ${failedCount} failed.`);
+        } else {
+          toast.success(`Successfully deleted ${deletedCount} patches`);
+        }
+
+        await loadPatches(currentFolder, true);
+        // Clear selection after successful delete
+        set({ selectedPatchDirs: [] });
+      }
+    } catch (error) {
+      console.error('Error deleting patches:', error);
+      toast.error('Failed to delete patches. Please try again.');
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
   reorderPatches: async (newOrder: Patch[]) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
@@ -191,5 +249,27 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
 
   clearPatches: () => {
     set({ patches: [], currentFolder: null, selectedPatchDirs: [] });
+  },
+
+  // Get last folder from localStorage
+  getLastFolder: () => {
+    return getLastFolder();
+  },
+
+  // Try to auto-load the last folder
+  tryLoadLastFolder: async () => {
+    const lastFolder = getLastFolder();
+    if (!lastFolder) {
+      return false;
+    }
+
+    try {
+      const { loadPatches } = get();
+      await loadPatches(lastFolder);
+      return true;
+    } catch (error) {
+      console.warn('Failed to auto-load last folder:', error);
+      return false;
+    }
   },
 }));
