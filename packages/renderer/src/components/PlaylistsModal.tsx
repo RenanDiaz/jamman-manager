@@ -76,6 +76,7 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
     border: '1px solid #495057',
     borderRadius: '4px',
     marginBottom: '8px',
+    cursor: isDragging ? 'grabbing' : 'grab',
   };
 
   return (
@@ -84,12 +85,12 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
       className="d-flex justify-content-between align-items-center"
       style={style}
       {...attributes}
+      {...listeners}
     >
       <div className="d-flex align-items-center gap-2 flex-grow-1">
         <span
           className="text-muted"
-          style={{ cursor: 'grab', userSelect: 'none', padding: '0 8px', fontSize: '18px' }}
-          {...listeners}
+          style={{ userSelect: 'none', padding: '0 8px', fontSize: '18px' }}
         >
           ⋮⋮
         </span>
@@ -99,7 +100,16 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
           {patchName && <small className="ms-2 text-muted">{patchName}</small>}
         </div>
       </div>
-      <Button color="danger" size="sm" outline onClick={() => onRemove(patchDir)}>
+      <Button
+        color="danger"
+        size="sm"
+        outline
+        onClick={e => {
+          e.stopPropagation();
+          onRemove(patchDir);
+        }}
+        onPointerDown={e => e.stopPropagation()}
+      >
         Remove
       </Button>
     </div>
@@ -525,7 +535,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                     ) : (
                       <div>
                         <small className="text-muted d-block mb-2">
-                          💡 Drag the ⋮⋮ handle to reorder patches within the playlist
+                          💡 Drag patches to reorder them within the playlist
                         </small>
                         <DndContext
                           sensors={sensors}
