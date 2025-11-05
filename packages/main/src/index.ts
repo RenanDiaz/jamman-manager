@@ -20,6 +20,8 @@ import { operationQueue, OperationPriority } from './OperationQueue.js';
 import PDFDocument from 'pdfkit';
 import { BackupManager } from './BackupManager.js';
 import { PlaylistManager } from './PlaylistManager.js';
+import { PathValidator } from './PathValidator.js';
+import { SecureXMLParser } from './SecureXMLParser.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -190,11 +192,23 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle('patches:read', async (_event, folderPath: string) => {
     try {
-      if (!fs.existsSync(folderPath)) {
-        throw new Error('Folder does not exist');
+      // Security: Validate folder path
+      if (!folderPath || typeof folderPath !== 'string') {
+        throw new Error('Invalid folder path');
       }
 
-      const jammanPath = path.join(folderPath);
+      // Check folder exists and is a directory
+      if (!PathValidator.pathExists(folderPath, 'directory')) {
+        throw new Error('Folder does not exist or is not a directory');
+      }
+
+      // Validate it's a JamMan folder
+      if (!PathValidator.isValidJamManFolder(folderPath)) {
+        log.warn('Folder does not appear to be a valid JamMan folder:', folderPath);
+        // Don't throw error - user might be setting up a new folder
+      }
+
+      const jammanPath = path.resolve(folderPath);
 
       // Collect current modification times
       const currentModTimes = new Map<string, number>();
@@ -267,8 +281,8 @@ export async function initApp(initConfig: AppInitConfig) {
             }
 
             const patchXml = fs.readFileSync(patchXmlPath, 'utf-8');
-            const parser = new xml2js.Parser();
-            const patchData = await parser.parseStringPromise(patchXml);
+            // Security: Use hardened XML parser to prevent XXE attacks
+            const patchData = await SecureXMLParser.parsePatchXML(patchXml);
 
             // Read all PhraseX folders (PhraseA, PhraseB, etc.)
             const phraseDirs = fs
@@ -286,7 +300,8 @@ export async function initApp(initConfig: AppInitConfig) {
                   const phraseWavPath = path.join(patchDirPath, phraseDir, 'phrase.wav');
 
                   const phraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
-                  const phraseData = await parser.parseStringPromise(phraseXml);
+                  // Security: Use hardened XML parser to prevent XXE attacks
+                  const phraseData = await SecureXMLParser.parsePhraseXML(phraseXml);
                   return {
                     dir: phraseDir,
                     data: phraseData,
@@ -332,15 +347,21 @@ export async function initApp(initConfig: AppInitConfig) {
     try {
       log.info(`getAudioURL called with filePath: ${filePath}`);
 
-      // Validate filePath is not empty
-      if (!filePath || filePath.trim() === '') {
-        log.error('Empty filePath provided to getAudioURL');
+      // Security: Validate filePath
+      if (!filePath || typeof filePath !== 'string' || filePath.trim() === '') {
+        log.error('Invalid or empty filePath provided to getAudioURL');
         return null;
       }
 
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        log.warn(`Audio file not found: ${filePath}`);
+      // Validate file extension
+      if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
+        log.error('Invalid file extension for audio file:', filePath);
+        return null;
+      }
+
+      // Check if file exists and is a file
+      if (!PathValidator.pathExists(filePath, 'file')) {
+        log.warn(`Audio file not found or is not a file: ${filePath}`);
         return null;
       }
 
@@ -356,7 +377,18 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   ipcMain.handle('audio:validateWav', async (_event, filePath: string) => {
-    if (!fs.existsSync(filePath)) {
+    // Security: Validate file path
+    if (!filePath || typeof filePath !== 'string') {
+      return { valid: false, error: 'Invalid file path', canAttemptPlayback: false };
+    }
+
+    // Validate file extension
+    if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
+      return { valid: false, error: 'Invalid file extension', canAttemptPlayback: false };
+    }
+
+    // Check if file exists
+    if (!PathValidator.pathExists(filePath, 'file')) {
       return { valid: false, error: 'File not found', canAttemptPlayback: false };
     }
 
@@ -411,7 +443,19 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle('patches:create', async (_event, data: PatchForm) => {
     const { basePath, directory, patchName, rhythmType, stopMode, phrases } = data;
-    const patchDir = path.join(basePath, directory);
+
+    // Security: Validate base path
+    if (!basePath || typeof basePath !== 'string') {
+      throw new Error('Invalid base path');
+    }
+
+    // Security: Validate directory name format
+    if (!PathValidator.isValidPatchDir(directory)) {
+      throw new Error(`Invalid patch directory name: ${directory}`);
+    }
+
+    // Security: Validate patch directory is within base path
+    const patchDir = PathValidator.safeJoin(basePath, directory);
 
     // Enqueue operation with normal priority
     return operationQueue.enqueue(
@@ -586,7 +630,8 @@ export async function initApp(initConfig: AppInitConfig) {
 
               if (fs.existsSync(phraseXmlPath)) {
                 const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
-                const parsed = await new xml2js.Parser().parseStringPromise(existingPhraseXml);
+                // Security: Use hardened XML parser to prevent XXE attacks
+                const parsed = await SecureXMLParser.parsePhraseXML(existingPhraseXml);
                 phraseId = parsed.JamManPhrase?.ID?.[0] ?? phraseId;
                 originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
               }
@@ -651,8 +696,23 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   ipcMain.handle('patches:delete', async (_event, basePath: string, directory: string) => {
-    const patchPath = path.join(basePath, directory);
-    const backupDir = path.join(basePath, `__deleted_${directory}_${Date.now()}`);
+    // Security: Validate inputs
+    if (!basePath || typeof basePath !== 'string') {
+      throw new Error('Invalid base path');
+    }
+
+    if (!directory || typeof directory !== 'string') {
+      throw new Error('Invalid directory name');
+    }
+
+    // Security: Validate directory name format
+    if (!PathValidator.isValidPatchDir(directory)) {
+      throw new Error(`Invalid patch directory name: ${directory}`);
+    }
+
+    // Security: Validate paths are within base path
+    const patchPath = PathValidator.safeJoin(basePath, directory);
+    const backupDir = PathValidator.safeJoin(basePath, `__deleted_${directory}_${Date.now()}`);
 
     // Enqueue operation with high priority (delete is user-initiated)
     return operationQueue.enqueue(
@@ -995,7 +1055,7 @@ export async function initApp(initConfig: AppInitConfig) {
             );
           }
         },
-        OperationPriority.MEDIUM,
+        OperationPriority.NORMAL,
       );
     },
   );
@@ -1241,8 +1301,10 @@ export async function initApp(initConfig: AppInitConfig) {
     try {
       log.info('Exporting playlist:', { basePath, playlistId });
 
-      const data = PlaylistManager.loadPlaylists(basePath);
-      const playlist = data.playlists.find(p => p.id === playlistId);
+      const data = await PlaylistManager.loadPlaylists(basePath);
+      const playlist = data.playlists.find((p: any) => p.id === playlistId) as
+        | ((typeof data.playlists)[0] & { patches: string[] })
+        | undefined;
 
       if (!playlist) {
         throw new Error(`Playlist not found: ${playlistId}`);
@@ -1265,7 +1327,7 @@ export async function initApp(initConfig: AppInitConfig) {
 
       // Load patch details to get patch names
       const patches = await Promise.all(
-        playlist.patches.map(async patchDir => {
+        (playlist.patches || []).map(async (patchDir: string) => {
           const patchPath = path.join(basePath, patchDir);
           const patchXmlPath = path.join(patchPath, 'patch.xml');
 
@@ -1275,8 +1337,8 @@ export async function initApp(initConfig: AppInitConfig) {
 
           try {
             const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
-            const parser = new xml2js.Parser();
-            const result = await parser.parseStringPromise(xmlContent);
+            // Security: Use hardened XML parser to prevent XXE attacks
+            const result = await SecureXMLParser.parsePatchXML(xmlContent);
             const patchName = result.JamManPatch?.PatchName?.[0] || '';
             return { dir: patchDir, name: patchName };
           } catch {
@@ -1293,7 +1355,7 @@ export async function initApp(initConfig: AppInitConfig) {
       content += `Setlist:\n`;
       content += `--------\n\n`;
 
-      patches.forEach((patch, index) => {
+      patches.forEach((patch: { dir: string; name: string }, index: number) => {
         const num = String(index + 1).padStart(2, '0');
         content += `${num}. ${patch.dir}`;
         if (patch.name) {

@@ -1,11 +1,30 @@
+/**
+ * Patch Store - Centralized State Management
+ *
+ * This module provides Zustand-based state management for JamMan patches.
+ * It handles loading, creating, updating, deleting, and reordering patches,
+ * as well as multi-select operations and folder persistence.
+ *
+ * Features:
+ * - Automatic last folder persistence via localStorage
+ * - Multi-select with click/shift-click/cmd-click support
+ * - Optimistic updates with error rollback
+ * - Toast notifications for all operations
+ *
+ * @module usePatchStore
+ */
+
 import { create } from 'zustand';
 import { Patch } from '../types';
 import { toast } from 'react-toastify';
 
-// LocalStorage key for persisting last folder
+/** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
 
-// Helper functions for localStorage
+/**
+ * Saves the last opened folder to localStorage for auto-loading on next launch
+ * @param folder - Folder path to save
+ */
 const saveLastFolder = (folder: string) => {
   try {
     localStorage.setItem(LAST_FOLDER_KEY, folder);
@@ -14,6 +33,10 @@ const saveLastFolder = (folder: string) => {
   }
 };
 
+/**
+ * Retrieves the last opened folder from localStorage
+ * @returns Last folder path, or null if none saved
+ */
 const getLastFolder = (): string | null => {
   try {
     return localStorage.getItem(LAST_FOLDER_KEY);
@@ -23,37 +46,135 @@ const getLastFolder = (): string | null => {
   }
 };
 
+/**
+ * Patch store interface defining all state and actions
+ */
 interface PatchStore {
-  // State
+  // ==================== State ====================
+
+  /** Currently opened JamMan folder path */
   currentFolder: string | null;
+
+  /** Array of loaded patches with metadata */
   patches: Patch[];
+
+  /** Loading state for async operations */
   loading: boolean;
+
+  /** Currently selected patch for editing (single selection) */
   selectedPatch: Patch | undefined;
+
+  /** Array of selected patch directories for multi-select operations */
   selectedPatchDirs: string[];
 
-  // Actions
+  // ==================== Simple Setters ====================
+
+  /**
+   * Sets the current folder path
+   * @param folder - Folder path or null to clear
+   */
   setCurrentFolder: (folder: string | null) => void;
+
+  /**
+   * Sets the patches array
+   * @param patches - Array of patch objects
+   */
   setPatches: (patches: Patch[]) => void;
+
+  /**
+   * Sets the loading state
+   * @param loading - Whether operations are in progress
+   */
   setLoading: (loading: boolean) => void;
+
+  /**
+   * Sets the selected patch for editing
+   * @param patch - Patch object or undefined to clear
+   */
   setSelectedPatch: (patch: Patch | undefined) => void;
 
-  // Multi-select actions
+  // ==================== Multi-Select Actions ====================
+
+  /**
+   * Toggles selection state for a single patch
+   * @param dir - Patch directory name
+   */
   toggleSelection: (dir: string) => void;
+
+  /**
+   * Selects a range of patches (for shift-click behavior)
+   * @param startDir - Starting patch directory name
+   * @param endDir - Ending patch directory name
+   */
   selectRange: (startDir: string, endDir: string) => void;
+
+  /**
+   * Clears all multi-select selections
+   */
   clearSelection: () => void;
+
+  /**
+   * Selects all patches in the current folder
+   */
   selectAll: () => void;
 
-  // Async operations
+  // ==================== Async Operations ====================
+
+  /**
+   * Loads patches from the specified folder
+   * @param folder - JamMan folder path
+   * @param update - If true, suppresses success toast (for refresh operations)
+   */
   loadPatches: (folder: string, update?: boolean) => Promise<void>;
+
+  /**
+   * Creates a new patch with the specified data
+   * @param data - Patch payload with metadata and phrases
+   */
   createPatch: (data: any) => Promise<void>;
+
+  /**
+   * Updates an existing patch
+   * @param data - Patch payload with updated metadata
+   */
   updatePatch: (data: any) => Promise<void>;
+
+  /**
+   * Deletes a single patch
+   * @param directory - Patch directory name
+   */
   deletePatch: (directory: string) => Promise<void>;
+
+  /**
+   * Deletes multiple patches in a batch operation
+   * @param directories - Array of patch directory names
+   */
   deletePatches: (directories: string[]) => Promise<void>;
+
+  /**
+   * Reorders patches by renaming directories
+   * Uses optimistic updates with rollback on error
+   * @param newOrder - Array of patches in desired order
+   */
   reorderPatches: (newOrder: Patch[]) => Promise<void>;
 
-  // Utility
+  // ==================== Utility ====================
+
+  /**
+   * Clears all patches and folder state
+   */
   clearPatches: () => void;
+
+  /**
+   * Gets the last opened folder from localStorage
+   * @returns Last folder path or null
+   */
   getLastFolder: () => string | null;
+
+  /**
+   * Attempts to automatically load the last opened folder on app launch
+   * @returns Promise resolving to true if successful, false otherwise
+   */
   tryLoadLastFolder: () => Promise<boolean>;
 }
 

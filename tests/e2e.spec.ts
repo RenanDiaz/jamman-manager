@@ -100,24 +100,22 @@ test('Main window state', async ({ electronApp, page }) => {
   expect(windowState.isDevToolsOpened, 'The DevTools panel was open').toEqual(false);
 });
 
-test.describe('Main window web content', async () => {
-  test('The main window has an interactive button', async ({ page }) => {
-    const element = page.getByRole('button');
-    await expect(element).toBeVisible();
-    await expect(element).toHaveText('count is 0');
-    await element.click();
-    await expect(element).toHaveText('count is 1');
+test.describe('JamMan Manager Features', async () => {
+  test('Application title should be correct', async ({ page }) => {
+    const title = await page.title();
+    expect(title).toContain('JamMan Manager');
   });
 
-  test('The main window has a vite logo', async ({ page }) => {
-    const element = page.getByAltText('Vite logo');
-    await expect(element).toBeVisible();
-    await expect(element).toHaveRole('img');
-    const imgState = await element.evaluate((img: HTMLImageElement) => img.complete);
-    const imgNaturalWidth = await element.evaluate((img: HTMLImageElement) => img.naturalWidth);
+  test('Main navigation should be visible', async ({ page }) => {
+    // Check for main UI elements
+    const mainContent = page.locator('[role="main"]').or(page.locator('main'));
+    await expect(mainContent.first()).toBeVisible();
+  });
 
-    expect(imgState).toEqual(true);
-    expect(imgNaturalWidth).toBeGreaterThan(0);
+  test('Should display patches list view', async ({ page }) => {
+    // Look for patch-related elements
+    const patchesView = page.getByText(/patch/i).first();
+    await expect(patchesView).toBeVisible();
   });
 });
 
