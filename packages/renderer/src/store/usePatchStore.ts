@@ -17,6 +17,7 @@
 import { create } from 'zustand';
 import { Patch } from '../types';
 import { toast } from 'react-toastify';
+import { performanceMonitor } from '../utils/performance';
 
 /** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
@@ -236,7 +237,9 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       set({ loading: true });
       if (!update) set({ patches: [] });
 
-      const result = await window.electronAPI.readPatches(folder);
+      const result = await performanceMonitor.measure('loadPatches', () =>
+        window.electronAPI.readPatches(folder),
+      );
       console.log(result);
 
       set({ patches: result, currentFolder: folder });
@@ -349,9 +352,11 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
 
     try {
       set({ loading: true });
-      await window.electronAPI.reorderPatches(
-        currentFolder,
-        newOrder.map(p => p.dir),
+      await performanceMonitor.measure('reorderPatches', () =>
+        window.electronAPI.reorderPatches(
+          currentFolder,
+          newOrder.map(p => p.dir),
+        ),
       );
       toast.success('Successfully reordered patches');
       await loadPatches(currentFolder, true);

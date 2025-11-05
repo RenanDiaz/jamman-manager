@@ -367,7 +367,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
               </div>
 
               {creating && (
-                <div className="mb-3 p-2 border rounded bg-light">
+                <div className="mb-3 p-2 border rounded bg-dark">
                   <FormGroup>
                     <Label size="sm">Playlist Name</Label>
                     <Input

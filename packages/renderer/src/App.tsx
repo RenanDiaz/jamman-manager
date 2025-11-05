@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
 import {
   Button,
   ButtonDropdown,
@@ -17,13 +17,15 @@ import {
 } from 'reactstrap';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import PatchForm from './components/PatchForm';
-import { SortView } from './components/SortView';
-import DeleteConfirmModal from './components/DeleteConfirmModal';
 import PatchListItem from './components/PatchListItem';
-import BackupRestoreModal from './components/BackupRestoreModal';
-import PlaylistsModal from './components/PlaylistsModal';
 import { usePatchStore } from './store/usePatchStore';
+
+// Lazy load heavy components for better initial load performance
+const PatchForm = lazy(() => import('./components/PatchForm'));
+const SortView = lazy(() => import('./components/SortView').then(m => ({ default: m.SortView })));
+const DeleteConfirmModal = lazy(() => import('./components/DeleteConfirmModal'));
+const BackupRestoreModal = lazy(() => import('./components/BackupRestoreModal'));
+const PlaylistsModal = lazy(() => import('./components/PlaylistsModal'));
 
 const PATCH_FORM_ID = 'create-patch-form';
 
@@ -243,7 +245,20 @@ function App() {
 
   // If in sort mode, show only the sort view
   if (sortModeActive) {
-    return <SortView patches={patches} onApply={handleApplySort} onCancel={exitSortMode} />;
+    return (
+      <Suspense
+        fallback={
+          <div
+            className="d-flex align-items-center justify-content-center"
+            style={{ minHeight: '100vh' }}
+          >
+            <Spinner color="primary" />
+          </div>
+        }
+      >
+        <SortView patches={patches} onApply={handleApplySort} onCancel={exitSortMode} />
+      </Suspense>
+    );
   }
 
   return (
@@ -420,7 +435,7 @@ function App() {
 
                 {/* Patch List */}
                 <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
-                  <UncontrolledAccordion defaultOpen={[]} stayOpen>
+                  <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
                     {patches.map(patch => (
                       <PatchListItem
                         key={patch.dir}
@@ -471,62 +486,70 @@ function App() {
           </div>
         </Col>
       </Row>
-      <Modal isOpen={patchFormModalIsOpen} toggle={togglePatchModal} onClosed={handleModalClose}>
-        <ModalHeader toggle={togglePatchModal}>
-          {!selectedPatch ? 'Create Patch' : 'Edit Patch'}
-        </ModalHeader>
-        <ModalBody>
-          <PatchForm
-            formId={PATCH_FORM_ID}
-            basePath={currentFolder || ''}
-            busyPatches={patches.map(p => p.dir)}
-            initialData={selectedPatch}
-            onSuccess={handleCreateEditPatchSuccess}
-          />
-        </ModalBody>
-        <ModalFooter>
-          <Button color="secondary" onClick={togglePatchModal}>
-            Cancel
-          </Button>
-          <Button type="submit" form={PATCH_FORM_ID} color="primary">
-            {!selectedPatch ? 'Create' : 'Save'}
-          </Button>
-        </ModalFooter>
-      </Modal>
+      <Suspense fallback={<div />}>
+        <Modal isOpen={patchFormModalIsOpen} toggle={togglePatchModal} onClosed={handleModalClose}>
+          <ModalHeader toggle={togglePatchModal}>
+            {!selectedPatch ? 'Create Patch' : 'Edit Patch'}
+          </ModalHeader>
+          <ModalBody>
+            <PatchForm
+              formId={PATCH_FORM_ID}
+              basePath={currentFolder || ''}
+              busyPatches={patches.map(p => p.dir)}
+              initialData={selectedPatch}
+              onSuccess={handleCreateEditPatchSuccess}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button color="secondary" onClick={togglePatchModal}>
+              Cancel
+            </Button>
+            <Button type="submit" form={PATCH_FORM_ID} color="primary">
+              {!selectedPatch ? 'Create' : 'Save'}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      </Suspense>
 
-      <DeleteConfirmModal
-        isOpen={deleteModalIsOpen}
-        itemName={patchToDelete || undefined}
-        itemNames={patchesToDelete.length > 0 ? patchesToDelete : undefined}
-        onConfirm={confirmDelete}
-        onCancel={cancelDelete}
-      />
+      <Suspense fallback={<div />}>
+        <DeleteConfirmModal
+          isOpen={deleteModalIsOpen}
+          itemName={patchToDelete || undefined}
+          itemNames={patchesToDelete.length > 0 ? patchesToDelete : undefined}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
+      </Suspense>
 
-      <BackupRestoreModal
-        isOpen={backupRestoreModalIsOpen}
-        onClose={() => setBackupRestoreModalIsOpen(false)}
-        currentFolder={currentFolder}
-        patches={patches}
-        selectedPatchDirs={selectedPatchDirs}
-        onBackupComplete={() => {
-          // Optionally reload patches after backup
-        }}
-        onRestoreComplete={() => {
-          // Reload patches after restore
-          if (currentFolder) {
-            loadPatches(currentFolder, true);
-          }
-        }}
-      />
+      <Suspense fallback={<div />}>
+        <BackupRestoreModal
+          isOpen={backupRestoreModalIsOpen}
+          onClose={() => setBackupRestoreModalIsOpen(false)}
+          currentFolder={currentFolder}
+          patches={patches}
+          selectedPatchDirs={selectedPatchDirs}
+          onBackupComplete={() => {
+            // Optionally reload patches after backup
+          }}
+          onRestoreComplete={() => {
+            // Reload patches after restore
+            if (currentFolder) {
+              loadPatches(currentFolder, true);
+            }
+          }}
+        />
+      </Suspense>
 
-      <PlaylistsModal
-        isOpen={playlistsModalIsOpen}
-        onClose={() => setPlaylistsModalIsOpen(false)}
-        currentFolder={currentFolder}
-        patches={patches}
-        selectedPatchDirs={selectedPatchDirs}
-        onMovePlaylistToTop={handleMovePlaylistToTop}
-      />
+      <Suspense fallback={<div />}>
+        <PlaylistsModal
+          isOpen={playlistsModalIsOpen}
+          onClose={() => setPlaylistsModalIsOpen(false)}
+          currentFolder={currentFolder}
+          patches={patches}
+          selectedPatchDirs={selectedPatchDirs}
+          onMovePlaylistToTop={handleMovePlaylistToTop}
+        />
+      </Suspense>
 
       <ToastContainer
         position="bottom-right"

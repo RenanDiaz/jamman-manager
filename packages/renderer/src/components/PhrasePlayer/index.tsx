@@ -1,4 +1,4 @@
-import { FC, useEffect, useState } from 'react';
+import { FC, useEffect, useState, memo } from 'react';
 import { ButtonGroup, Spinner } from 'reactstrap';
 import { toast } from 'react-toastify';
 import { ImageButton } from '../../utils/Common';
@@ -8,7 +8,7 @@ interface Props {
   wavPath: string;
 }
 
-const PhrasePlayer: FC<Props> = ({ wavPath }) => {
+const PhrasePlayer: FC<Props> = memo(({ wavPath }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
@@ -192,6 +192,8 @@ const PhrasePlayer: FC<Props> = ({ wavPath }) => {
       </ImageButton>
     </ButtonGroup>
   );
-};
+});
+
+PhrasePlayer.displayName = 'PhrasePlayer';
 
 export default PhrasePlayer;
