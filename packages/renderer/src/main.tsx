@@ -59,6 +59,10 @@ declare global {
       createPatch: (data: PatchForm) => Promise<void>;
       updatePatch: (data: PatchForm) => Promise<void>;
       deletePatch(basePath: string, directory: string): Promise<void>;
+      deletePatchBatch(
+        basePath: string,
+        directories: string[],
+      ): Promise<{ success: boolean; deleted: string[]; failed: number }>;
       reorderPatches(basePath: string, patches: string[]): Promise<void>;
       exportPatchesTXT(patches: Patch[], basePath: string): Promise<ExportResult>;
       exportPatchesPDF(patches: Patch[], basePath: string): Promise<ExportResult>;

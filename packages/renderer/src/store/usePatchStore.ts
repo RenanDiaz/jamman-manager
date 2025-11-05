@@ -27,6 +27,7 @@ interface PatchStore {
   createPatch: (data: any) => Promise<void>;
   updatePatch: (data: any) => Promise<void>;
   deletePatch: (directory: string) => Promise<void>;
+  deletePatches: (directories: string[]) => Promise<void>;
   reorderPatches: (newOrder: Patch[]) => Promise<void>;
 
   // Utility
@@ -155,6 +156,37 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     } catch (error) {
       console.error('Error deleting patch:', error);
       toast.error('Failed to delete patch. Please try again.');
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  deletePatches: async (directories: string[]) => {
+    const { currentFolder, loadPatches } = get();
+    if (!currentFolder) return;
+
+    try {
+      set({ loading: true });
+      const result = await window.electronAPI.deletePatchBatch(currentFolder, directories);
+
+      if (result.success) {
+        const deletedCount = result.deleted.length;
+        const failedCount = result.failed;
+
+        if (failedCount > 0) {
+          toast.warning(`Deleted ${deletedCount} patches successfully, but ${failedCount} failed.`);
+        } else {
+          toast.success(`Successfully deleted ${deletedCount} patches`);
+        }
+
+        await loadPatches(currentFolder, true);
+        // Clear selection after successful delete
+        set({ selectedPatchDirs: [] });
+      }
+    } catch (error) {
+      console.error('Error deleting patches:', error);
+      toast.error('Failed to delete patches. Please try again.');
       throw error;
     } finally {
       set({ loading: false });

@@ -50,6 +50,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updatePatch: (data: PatchPayload): Promise<void> => ipcRenderer.invoke('patches:update', data),
   deletePatch: (basePath: string, directory: string): Promise<void> =>
     ipcRenderer.invoke('patches:delete', basePath, directory),
+  deletePatchBatch: (
+    basePath: string,
+    directories: string[],
+  ): Promise<{ success: boolean; deleted: string[]; failed: number }> =>
+    ipcRenderer.invoke('patches:deleteBatch', basePath, directories),
   reorderPatches: (basePath: string, patches: string[]): Promise<void> =>
     ipcRenderer.invoke('patches:reorder', basePath, patches),
   exportPatchesTXT: (

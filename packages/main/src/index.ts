@@ -703,6 +703,75 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
+  ipcMain.handle('patches:deleteBatch', async (_event, basePath: string, directories: string[]) => {
+    const backups: Record<string, string> = {};
+    const deleted: string[] = [];
+
+    // Enqueue operation with high priority (delete is user-initiated)
+    return operationQueue.enqueue(
+      'patches:deleteBatch',
+      `Delete ${directories.length} patches`,
+      async () => {
+        try {
+          // Delete each patch with individual locks
+          for (const directory of directories) {
+            const patchPath = path.join(basePath, directory);
+            const backupDir = path.join(basePath, `__deleted_${directory}_${Date.now()}`);
+
+            await lockManager.withLock(patchPath, async () => {
+              if (!fs.existsSync(patchPath)) {
+                log.warn(`Patch not found, skipping: ${directory}`);
+                return;
+              }
+
+              // Move to backup instead of immediate deletion for safety
+              fse.moveSync(patchPath, backupDir);
+              backups[directory] = backupDir;
+              deleted.push(directory);
+              log.info(`Moved patch to backup before deletion: ${directory}`);
+            });
+          }
+
+          // Actually delete the backups after a short delay
+          setTimeout(() => {
+            Object.values(backups).forEach(backupDir => {
+              if (fs.existsSync(backupDir)) {
+                fse.removeSync(backupDir);
+                log.info(`Permanently deleted patch backup: ${backupDir}`);
+              }
+            });
+          }, 5000); // 5 second safety window
+
+          // Invalidate cache
+          patchCache.delete(basePath);
+
+          log.info(`Successfully deleted ${deleted.length} patches`);
+          return { success: true, deleted, failed: directories.length - deleted.length };
+        } catch (error) {
+          log.error(`Error during batch delete:`, error);
+
+          // Rollback: Restore all backed up patches
+          for (const [directory, backupDir] of Object.entries(backups)) {
+            const patchPath = path.join(basePath, directory);
+            if (fs.existsSync(backupDir) && !fs.existsSync(patchPath)) {
+              try {
+                fse.moveSync(backupDir, patchPath);
+                log.info(`Restored patch from backup: ${directory}`);
+              } catch (rollbackError) {
+                log.error(`Failed to restore deleted patch ${directory}:`, rollbackError);
+              }
+            }
+          }
+
+          throw new Error(
+            `Failed to delete patches: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
+        }
+      },
+      OperationPriority.HIGH,
+    );
+  });
+
   ipcMain.handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
     const jammanPath = path.join(basePath);
     const tempMap: Record<string, string> = {};

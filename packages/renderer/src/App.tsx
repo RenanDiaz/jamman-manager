@@ -33,6 +33,7 @@ function App() {
     patches,
     loading,
     selectedPatch,
+    selectedPatchDirs,
     loadPatches,
     clearPatches,
     setSelectedPatch,
@@ -43,6 +44,7 @@ function App() {
   const [sortingModalIsOpen, setSortingModalIsOpen] = useState<boolean>(false);
   const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
+  const [patchesToDelete, setPatchesToDelete] = useState<string[]>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
 
   const handleLoad = useCallback(async () => {
@@ -72,7 +74,7 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleLoad]);
 
-  const { deletePatch, reorderPatches, clearSelection } = usePatchStore();
+  const { deletePatch, deletePatches, reorderPatches, clearSelection } = usePatchStore();
 
   const togglePatchModal = () => {
     setPatchFormModalIsOpen(prev => !prev);
@@ -101,20 +103,37 @@ function App() {
   }, []);
 
   const confirmDelete = async () => {
-    if (!patchToDelete) return;
-
-    try {
-      await deletePatch(patchToDelete);
-    } finally {
-      setDeleteModalIsOpen(false);
-      setPatchToDelete(null);
+    if (patchesToDelete.length > 0) {
+      // Batch delete
+      try {
+        await deletePatches(patchesToDelete);
+      } finally {
+        setDeleteModalIsOpen(false);
+        setPatchesToDelete([]);
+      }
+    } else if (patchToDelete) {
+      // Single delete
+      try {
+        await deletePatch(patchToDelete);
+      } finally {
+        setDeleteModalIsOpen(false);
+        setPatchToDelete(null);
+      }
     }
   };
 
   const cancelDelete = () => {
     setDeleteModalIsOpen(false);
     setPatchToDelete(null);
+    setPatchesToDelete([]);
   };
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedPatchDirs.length === 0) return;
+
+    setPatchesToDelete(selectedPatchDirs);
+    setDeleteModalIsOpen(true);
+  }, [selectedPatchDirs]);
 
   const toggleSortingModal = () => {
     setSortingModalIsOpen(prev => {
@@ -218,6 +237,15 @@ function App() {
                     </ButtonDropdown>
                   </FormGroup>
                 </Col>
+                {selectedPatchDirs.length > 0 && (
+                  <Col xs="auto">
+                    <FormGroup>
+                      <Button type="button" color="danger" outline onClick={handleBatchDelete}>
+                        Delete Selected ({selectedPatchDirs.length})
+                      </Button>
+                    </FormGroup>
+                  </Col>
+                )}
                 <Col xs="auto" className="ms-auto">
                   <FormGroup>
                     <Button type="button" color="primary" onClick={togglePatchModal}>
@@ -307,7 +335,8 @@ function App() {
 
       <DeleteConfirmModal
         isOpen={deleteModalIsOpen}
-        itemName={patchToDelete || ''}
+        itemName={patchToDelete || undefined}
+        itemNames={patchesToDelete.length > 0 ? patchesToDelete : undefined}
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       />
