@@ -71,11 +71,16 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    padding: '12px',
+    backgroundColor: isDragging ? '#2c3e50' : '#212529',
+    border: '1px solid #495057',
+    borderRadius: '4px',
+    marginBottom: '8px',
   };
 
   return (
-    <ListGroupItem
-      innerRef={setNodeRef}
+    <div
+      ref={setNodeRef}
       className="d-flex justify-content-between align-items-center"
       style={style}
       {...attributes}
@@ -83,7 +88,7 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
       <div className="d-flex align-items-center gap-2 flex-grow-1">
         <span
           className="text-muted"
-          style={{ cursor: 'grab', userSelect: 'none', padding: '0 4px' }}
+          style={{ cursor: 'grab', userSelect: 'none', padding: '0 8px', fontSize: '18px' }}
           {...listeners}
         >
           ⋮⋮
@@ -94,18 +99,10 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
           {patchName && <small className="ms-2 text-muted">{patchName}</small>}
         </div>
       </div>
-      <Button
-        color="danger"
-        size="sm"
-        outline
-        onClick={e => {
-          e.stopPropagation();
-          onRemove(patchDir);
-        }}
-      >
+      <Button color="danger" size="sm" outline onClick={() => onRemove(patchDir)}>
         Remove
       </Button>
-    </ListGroupItem>
+    </div>
   );
 };
 
@@ -528,18 +525,18 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                     ) : (
                       <div>
                         <small className="text-muted d-block mb-2">
-                          💡 Drag patches to reorder them within the playlist
+                          💡 Drag the ⋮⋮ handle to reorder patches within the playlist
                         </small>
-                        <ListGroup>
-                          <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEnd}
+                        >
+                          <SortableContext
+                            items={selectedPlaylist.patches}
+                            strategy={verticalListSortingStrategy}
                           >
-                            <SortableContext
-                              items={selectedPlaylist.patches}
-                              strategy={verticalListSortingStrategy}
-                            >
+                            <div style={{ minHeight: '50px' }}>
                               {selectedPlaylist.patches.map((patchDir, index) => {
                                 const patchName = getPatchName(patchDir);
                                 return (
@@ -552,9 +549,9 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                                   />
                                 );
                               })}
-                            </SortableContext>
-                          </DndContext>
-                        </ListGroup>
+                            </div>
+                          </SortableContext>
+                        </DndContext>
                       </div>
                     )}
                   </div>
