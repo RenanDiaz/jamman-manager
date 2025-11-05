@@ -37,6 +37,8 @@ function App() {
     loadPatches,
     clearPatches,
     setSelectedPatch,
+    toggleSelection,
+    selectAll,
   } = usePatchStore();
 
   // Local UI state (modals)
@@ -266,7 +268,24 @@ function App() {
             <>
               <Row>
                 <Col>
-                  <p>Found {patches.length} patches</p>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <p className="mb-0">Found {patches.length} patches</p>
+                    {selectedPatchDirs.length > 0 && (
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="text-primary">
+                          <strong>{selectedPatchDirs.length} selected</strong>
+                        </span>
+                        <Button color="link" size="sm" onClick={clearSelection}>
+                          Clear Selection
+                        </Button>
+                      </div>
+                    )}
+                    {selectedPatchDirs.length === 0 && (
+                      <Button color="link" size="sm" onClick={selectAll}>
+                        Select All
+                      </Button>
+                    )}
+                  </div>
                 </Col>
               </Row>
               <Row style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
@@ -276,8 +295,10 @@ function App() {
                       <PatchListItem
                         key={patch.dir}
                         patch={patch}
+                        isSelected={selectedPatchDirs.includes(patch.dir)}
                         onEdit={handleEditPatch}
                         onDelete={handleDeletePatch}
+                        onToggleSelection={toggleSelection}
                       />
                     ))}
                   </UncontrolledAccordion>
