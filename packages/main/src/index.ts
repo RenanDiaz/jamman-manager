@@ -21,6 +21,7 @@ import PDFDocument from 'pdfkit';
 import { BackupManager } from './BackupManager.js';
 import { PlaylistManager } from './PlaylistManager.js';
 import { PathValidator } from './PathValidator.js';
+import { SecureXMLParser } from './SecureXMLParser.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -280,8 +281,8 @@ export async function initApp(initConfig: AppInitConfig) {
             }
 
             const patchXml = fs.readFileSync(patchXmlPath, 'utf-8');
-            const parser = new xml2js.Parser();
-            const patchData = await parser.parseStringPromise(patchXml);
+            // Security: Use hardened XML parser to prevent XXE attacks
+            const patchData = await SecureXMLParser.parsePatchXML(patchXml);
 
             // Read all PhraseX folders (PhraseA, PhraseB, etc.)
             const phraseDirs = fs
@@ -299,7 +300,8 @@ export async function initApp(initConfig: AppInitConfig) {
                   const phraseWavPath = path.join(patchDirPath, phraseDir, 'phrase.wav');
 
                   const phraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
-                  const phraseData = await parser.parseStringPromise(phraseXml);
+                  // Security: Use hardened XML parser to prevent XXE attacks
+                  const phraseData = await SecureXMLParser.parsePhraseXML(phraseXml);
                   return {
                     dir: phraseDir,
                     data: phraseData,
@@ -628,7 +630,8 @@ export async function initApp(initConfig: AppInitConfig) {
 
               if (fs.existsSync(phraseXmlPath)) {
                 const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
-                const parsed = await new xml2js.Parser().parseStringPromise(existingPhraseXml);
+                // Security: Use hardened XML parser to prevent XXE attacks
+                const parsed = await SecureXMLParser.parsePhraseXML(existingPhraseXml);
                 phraseId = parsed.JamManPhrase?.ID?.[0] ?? phraseId;
                 originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
               }
@@ -1334,8 +1337,8 @@ export async function initApp(initConfig: AppInitConfig) {
 
           try {
             const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
-            const parser = new xml2js.Parser();
-            const result = await parser.parseStringPromise(xmlContent);
+            // Security: Use hardened XML parser to prevent XXE attacks
+            const result = await SecureXMLParser.parsePatchXML(xmlContent);
             const patchName = result.JamManPatch?.PatchName?.[0] || '';
             return { dir: patchDir, name: patchName };
           } catch {

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { SecureXMLParser } from './SecureXMLParser.js';
 
 export interface Playlist {
   id: string;
@@ -36,10 +37,9 @@ export class PlaylistManager {
     }
 
     try {
-      const xml2js = await import('xml2js');
       const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
-      const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(xmlContent);
+      // Security: Use hardened XML parser to prevent XXE attacks
+      const result = await SecureXMLParser.parsePatchXML(xmlContent);
       return result.JamManPatch?.ID?.[0] || null;
     } catch {
       return null;
