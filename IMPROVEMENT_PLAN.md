@@ -508,7 +508,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 6. **Add file size validation for WAV imports** - 2 hours
 7. ✅ **Configure Prettier and ESLint for all packages** - 2 hours (DONE)
 8. **Add basic JSDoc comments to IPC handlers** - 3 hours
-9. **Batch Delete functionality** - 1-2 hours (NEW - leverage existing multi-select)
+9. ✅ **Batch Delete functionality** - 1-2 hours (DONE)
 
 ---
 
@@ -557,13 +557,13 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [ ] Implement undo/redo functionality
 - [x] Add keyboard shortcuts
 - [x] Add multi-select functionality for batch reordering
-- [ ] Implement search/filter
+- [x] Implement search/filter (integrated into sorting UI)
 - [x] Add patch list export functionality (TXT/PDF)
 
 ### Priority 7: New Features
 
-- [ ] **Batch Delete:** Delete multiple selected patches at once
-- [ ] **Enhanced Sorting UI:** Dedicated sort mode with split view and quick sort options
+- [x] **Batch Delete:** Delete multiple selected patches at once ✅ COMPLETED
+- [x] **Enhanced Sorting UI:** Dedicated sort mode with split view and quick sort options ✅ COMPLETED
 - [ ] **Backup/Restore System:** ZIP-based single-file backup with selective restore
 - [ ] **Playlist Management:** Virtual playlists for live performance organization
   - [ ] Create/edit/delete playlists
