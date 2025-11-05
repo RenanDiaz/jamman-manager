@@ -8,10 +8,32 @@ interface Props {
   wavPath: string;
 }
 
+/**
+ * Formats duration in seconds to MM:SS format
+ */
+const formatDuration = (seconds: number | null): string => {
+  if (seconds === null || !isFinite(seconds)) return '--:--';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+/**
+ * Formats file size in bytes to human-readable format
+ */
+const formatFileSize = (bytes: number | null): string => {
+  if (bytes === null) return '-- KB';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
 const PhrasePlayer: FC<Props> = memo(({ wavPath }) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [fileSize, setFileSize] = useState<number | null>(null);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -47,6 +69,14 @@ const PhrasePlayer: FC<Props> = memo(({ wavPath }) => {
         toast.error(`Cannot play audio: ${validation.error}`);
         setIsLoading(false);
         return null;
+      }
+
+      // Store metadata
+      if (validation.duration !== undefined) {
+        setDuration(validation.duration);
+      }
+      if (validation.fileSizeBytes !== undefined) {
+        setFileSize(validation.fileSizeBytes);
       }
 
       // Show warnings for files that can't be validated but might work
@@ -167,30 +197,41 @@ const PhrasePlayer: FC<Props> = memo(({ wavPath }) => {
   };
 
   return (
-    <ButtonGroup>
-      {isLoading ? (
-        <ImageButton type="button" title="Loading..." className="btn px-1" disabled>
-          <Spinner size="sm" />
+    <div className="d-flex align-items-center gap-2">
+      <ButtonGroup>
+        {isLoading ? (
+          <ImageButton type="button" title="Loading..." className="btn px-1" disabled>
+            <Spinner size="sm" />
+          </ImageButton>
+        ) : isPlaying ? (
+          <ImageButton type="button" title="Pause" className="btn px-1" onClick={handlePause}>
+            <PauseIcon />
+          </ImageButton>
+        ) : (
+          <ImageButton type="button" title="Play" className="btn px-1" onClick={handlePlay}>
+            <PlayIcon />
+          </ImageButton>
+        )}
+        <ImageButton
+          type="button"
+          title="Stop"
+          className="btn px-1"
+          onClick={handleStop}
+          disabled={isLoading}
+        >
+          <StopIcon />
         </ImageButton>
-      ) : isPlaying ? (
-        <ImageButton type="button" title="Pause" className="btn px-1" onClick={handlePause}>
-          <PauseIcon />
-        </ImageButton>
-      ) : (
-        <ImageButton type="button" title="Play" className="btn px-1" onClick={handlePlay}>
-          <PlayIcon />
-        </ImageButton>
-      )}
-      <ImageButton
-        type="button"
-        title="Stop"
-        className="btn px-1"
-        onClick={handleStop}
-        disabled={isLoading}
-      >
-        <StopIcon />
-      </ImageButton>
-    </ButtonGroup>
+      </ButtonGroup>
+      {/* Audio metadata */}
+      <div className="d-flex gap-2" style={{ fontSize: '0.75rem' }}>
+        <span className="text-muted" title="Duration">
+          ⏱️ {formatDuration(duration)}
+        </span>
+        <span className="text-muted" title="File size">
+          📦 {formatFileSize(fileSize)}
+        </span>
+      </div>
+    </div>
   );
 });
 

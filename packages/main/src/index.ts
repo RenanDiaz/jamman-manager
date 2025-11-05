@@ -396,8 +396,12 @@ export async function initApp(initConfig: AppInitConfig) {
       const metadata = await mm.parseFile(filePath);
       const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = metadata.format;
 
+      // Get file size
+      const stats = await fs.stat(filePath);
+      const fileSizeBytes = stats.size;
+
       log.info(
-        `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch`,
+        `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch, ${(fileSizeBytes / 1024 / 1024).toFixed(2)}MB`,
       );
 
       const isValid =
@@ -412,6 +416,7 @@ export async function initApp(initConfig: AppInitConfig) {
         bitsPerSample,
         numberOfChannels,
         duration,
+        fileSizeBytes,
         error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
         canAttemptPlayback: true, // Even if format is unexpected, let browser try
       };
