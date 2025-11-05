@@ -247,16 +247,207 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### **Priority 7: Feature Additions**
 
-#### 12. **Additional Features to Consider**
+#### 12. **Backup/Restore System**
 
-- **Backup/Restore:** Full SD card backup functionality
-- **Batch Operations:** Edit multiple patches at once
-- **Import/Export:** Share patches between users
+**Goal:** Single-file backup solution for preserving and sharing patch collections
+
+**Implementation Details:**
+
+- **Format:** ZIP-based (`.jamman-backup.zip`) for transparency and future-proofing
+- **Structure:**
+  ```
+  backup-2025-01-04.jamman-backup.zip
+  ├── README.txt (structure explanation)
+  ├── manifest.json (metadata: patch count, date, app version)
+  ├── playlists.json (playlist metadata)
+  ├── Patch01/
+  │   ├── patch.xml
+  │   └── PhraseA/
+  │       ├── phrase.xml
+  │       └── phrase.wav
+  ├── Patch02/
+  ...
+  ```
+
+**Features:**
+
+- Full backup (all patches + playlists)
+- Selective backup (choose specific patches)
+- Restore modes:
+  - Replace all (wipes current, restores backup)
+  - Merge (adds to existing patches, renumbers if needed)
+- Auto-backup before major operations (optional)
+- Backup verification and integrity checks
+- Export playlist as standalone backup
+
+**Benefits:**
+
+- Users can inspect backup contents (ZIP is standard)
+- Future-proof (works without app)
+- Shareable between users
+- Can manually extract individual patches
+- Professional archival format
+
+**Libraries:** `adm-zip` or `jszip`
+
+**Files to Create/Update:**
+
+- `packages/main/src/BackupManager.ts` (new)
+- `packages/main/src/index.ts` (add IPC handlers)
+- `packages/renderer/src/components/BackupRestore.tsx` (new UI)
+- `packages/renderer/src/App.tsx` (add backup/restore buttons)
+
+**Estimated Time:** 6-8 hours
+
+---
+
+#### 13. **Playlist Management System**
+
+**Goal:** Virtual playlist organization for live performances without altering SD card structure
+
+**Key Concepts:**
+
+- **Virtual Organization:** Playlists are metadata-only, don't change patch folder names
+- **Multi-membership:** Patches can appear in multiple playlists
+- **Custom Ordering:** Each playlist has its own patch order
+- **Hardware Compatible:** Physical `Patch01`, `Patch02` structure preserved
+
+**Data Structure:**
+
+```json
+{
+  "playlists": [
+    {
+      "id": "uuid-1",
+      "name": "Friday Night Set",
+      "order": ["Patch01", "Patch12", "Patch05", "Patch03"],
+      "color": "#4A90E2",
+      "created": "2025-01-04T12:00:00Z",
+      "notes": "Open with blues, end with rock"
+    }
+  ]
+}
+```
+
+**Features:**
+
+- Create/edit/delete playlists
+- Drag patches into/out of playlists
+- Reorder within playlist (doesn't affect device order)
+- Color-coded playlists for quick identification
+- **Live Performance Mode:**
+  - "Move Playlist to Top" action: physically renumbers patches to match playlist order
+  - Reorders Patch01, Patch02, etc. on SD card to match setlist
+  - Backup created automatically before reorder
+  - Confirmation dialog showing the reordering plan
+- Export playlist as setlist (text/PDF)
+- Search within playlist
+- Playlist statistics (duration, patch count, etc.)
+
+**UI Design:**
+
+- Tab view: "All Patches" | "Playlists"
+- Playlist section: collapsible groups with drag-and-drop
+- Context menu: "Add to Playlist", "Remove from Playlist"
+- Playlist editor: dedicated view for managing playlist details
+
+**Storage:** `.jamman-playlists.json` file alongside patches
+
+**Files to Create/Update:**
+
+- `packages/main/src/PlaylistManager.ts` (new)
+- `packages/main/src/index.ts` (add IPC handlers)
+- `packages/renderer/src/components/PlaylistView.tsx` (new)
+- `packages/renderer/src/components/PlaylistEditor.tsx` (new)
+- `packages/renderer/src/store/usePlaylistStore.ts` (new)
+- `packages/renderer/src/App.tsx` (add playlist tab)
+
+**Estimated Time:** 8-10 hours
+
+---
+
+#### 14. **Enhanced Sorting UI**
+
+**Current Limitation:** Modal-based sorting is cramped and doesn't scale well
+
+**New Design: Dedicated Sort Mode (Option B)**
+
+**Features:**
+
+- **Dedicated View:** Click "Sort Patches" enters full-screen sort mode
+- **Split View Layout:**
+  - Left panel: Current patch order (reference)
+  - Right panel: Working order (drag-and-drop enabled)
+- **Quick Sort Options:**
+  - Alphabetical (A-Z / Z-A)
+  - By patch number
+  - By BPM (if phrase data available)
+  - By date modified
+  - Custom (manual drag-and-drop)
+- **Search/Filter:** Real-time search while sorting
+- **Visual Aids:**
+  - Large drag handles
+  - Drop zone indicators
+  - "Modified" badge on changed items
+- **Batch Actions:**
+  - Select multiple patches
+  - Move selected to top/bottom
+  - Reverse selection order
+- **Apply/Cancel:**
+  - Preview changes before applying
+  - "Apply" saves new order to disk
+  - "Cancel" discards changes
+
+**Integration with Playlists:**
+
+- "Sort by Playlist" option: dropdown to select playlist
+- "Move Playlist to Top" action available in sort mode
+- Shows playlist membership badges on patches
+
+**Files to Update:**
+
+- `packages/renderer/src/components/SortView.tsx` (major refactor)
+- `packages/renderer/src/App.tsx` (add sort mode state)
+- `packages/renderer/src/components/PatchList.tsx` (enhance drag-and-drop)
+
+**Estimated Time:** 4-6 hours
+
+---
+
+#### 15. **Batch Delete Functionality**
+
+**Goal:** Delete multiple patches at once efficiently
+
+**Implementation:**
+
+- Leverage existing multi-select from sorting feature
+- Add "Delete Selected" button when items are selected
+- Confirmation modal:
+  - Shows count and list of patches to be deleted
+  - Warning about irreversibility
+  - Checkbox: "Create backup before deleting"
+- Progress indicator for batch operations
+- Success toast: "Deleted 5 patches successfully"
+- Error handling: partial success reporting
+
+**Files to Update:**
+
+- `packages/renderer/src/App.tsx` (add batch delete action)
+- `packages/renderer/src/components/DeleteConfirmModal.tsx` (enhance for batch)
+- `packages/main/src/index.ts` (add batch delete IPC handler)
+
+**Estimated Time:** 1-2 hours
+
+---
+
+#### 16. **Additional Features to Consider (Future)**
+
 - **Templates:** Pre-configured patch templates
 - **Cloud Sync:** Optional cloud backup (privacy-focused)
 - **MIDI Integration:** Direct JamMan control (if feasible)
 - **Metadata Search:** Find patches by BPM, time signature, etc.
-- **Auto-organize:** Sort patches by tempo, date, etc.
+- **Waveform Visualization:** Visual audio preview
+- **Batch Edit:** Edit multiple patches at once
 
 ---
 
@@ -285,30 +476,39 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ### Phase 4: Enhancement (Weeks 7-8)
 
-13. Improve UI/UX with custom modals
-14. Add undo/redo functionality
-15. Implement waveform visualization
-16. Add security hardening measures
+13. Improve UI/UX with custom modals ✅
+14. Implement batch delete functionality
+15. Enhanced sorting UI with split view
+16. Add undo/redo functionality
+17. Add security hardening measures
 
-### Phase 5: Polish (Weeks 9-10)
+### Phase 5: Feature Additions (Weeks 9-10)
 
-17. Add keyboard shortcuts
-18. Implement search/filter
-19. Configure code signing
-20. Set up CI/CD pipeline
+18. Backup/Restore system (ZIP-based)
+19. Playlist management system
+20. "Move Playlist to Top" for live performance
+21. Implement waveform visualization
+
+### Phase 6: Polish & Production (Weeks 11-12)
+
+22. Implement search/filter
+23. Configure code signing
+24. Set up CI/CD pipeline
+25. Comprehensive documentation update
 
 ---
 
 ## 📝 Quick Wins (Can Implement Immediately)
 
-1. **Add PropTypes/TypeScript types to React components** - 1 hour
-2. **Replace browser `confirm()` with custom modal** - 2 hours
-3. **Add loading spinner during patch operations** - 2 hours
-4. **Implement basic error toast notifications** - 3 hours
-5. **Add keyboard shortcut for "Load Folder" (Cmd/Ctrl+O)** - 1 hour
+1. ✅ **Add PropTypes/TypeScript types to React components** - 1 hour (DONE)
+2. ✅ **Replace browser `confirm()` with custom modal** - 2 hours (DONE)
+3. ✅ **Add loading spinner during patch operations** - 2 hours (DONE)
+4. ✅ **Implement basic error toast notifications** - 3 hours (DONE)
+5. ✅ **Add keyboard shortcut for "Load Folder" (Cmd/Ctrl+O)** - 1 hour (DONE)
 6. **Add file size validation for WAV imports** - 2 hours
-7. **Configure Prettier and ESLint for all packages** - 2 hours
+7. ✅ **Configure Prettier and ESLint for all packages** - 2 hours (DONE)
 8. **Add basic JSDoc comments to IPC handlers** - 3 hours
+9. **Batch Delete functionality** - 1-2 hours (NEW - leverage existing multi-select)
 
 ---
 
@@ -358,6 +558,19 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [x] Add keyboard shortcuts
 - [x] Add multi-select functionality for batch reordering
 - [ ] Implement search/filter
+- [x] Add patch list export functionality (TXT/PDF)
+
+### Priority 7: New Features
+
+- [ ] **Batch Delete:** Delete multiple selected patches at once
+- [ ] **Enhanced Sorting UI:** Dedicated sort mode with split view and quick sort options
+- [ ] **Backup/Restore System:** ZIP-based single-file backup with selective restore
+- [ ] **Playlist Management:** Virtual playlists for live performance organization
+  - [ ] Create/edit/delete playlists
+  - [ ] Multi-playlist membership (patches in multiple playlists)
+  - [ ] Drag-and-drop playlist management
+  - [ ] "Move Playlist to Top" for live performance preparation
+  - [ ] Export playlist as setlist
 
 ### Priority 5: Security
 
