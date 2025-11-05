@@ -301,9 +301,11 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
                   <Alert color="success">
                     <strong>Valid Backup</strong>
                     <ul className="mb-0 mt-2">
-                      <li>Patches: {backupInfo.manifest.patchCount}</li>
-                      <li>Created: {new Date(backupInfo.manifest.createdAt).toLocaleString()}</li>
-                      <li>App Version: {backupInfo.manifest.appVersion}</li>
+                      <li>Patches: {backupInfo.manifest?.patchCount}</li>
+                      <li>
+                        Created: {new Date(backupInfo.manifest?.createdAt || '').toLocaleString()}
+                      </li>
+                      <li>App Version: {backupInfo.manifest?.appVersion}</li>
                     </ul>
                   </Alert>
                 ) : (

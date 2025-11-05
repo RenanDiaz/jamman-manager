@@ -15,7 +15,7 @@
  */
 
 import { create } from 'zustand';
-import { Patch, CreatePatchPayload } from '../types';
+import { Patch } from '../types';
 import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
 import { useUndoStore } from './useUndoStore';
@@ -136,13 +136,13 @@ interface PatchStore {
    * Creates a new patch with the specified data
    * @param data - Patch payload with metadata and phrases
    */
-  createPatch: (data: CreatePatchPayload) => Promise<void>;
+  createPatch: (data: unknown) => Promise<void>;
 
   /**
    * Updates an existing patch
    * @param data - Patch payload with updated metadata
    */
-  updatePatch: (data: CreatePatchPayload) => Promise<void>;
+  updatePatch: (data: unknown) => Promise<void>;
 
   /**
    * Deletes a single patch
@@ -273,13 +273,15 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  createPatch: async (data: CreatePatchPayload) => {
+  createPatch: async (data: unknown) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
 
     try {
       set({ loading: true });
-      await window.electronAPI.createPatch(data);
+      await window.electronAPI.createPatch(
+        data as Parameters<typeof window.electronAPI.createPatch>[0],
+      );
       toast.success('Patch created successfully');
       await loadPatches(currentFolder, true);
     } catch (error) {
@@ -291,13 +293,15 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  updatePatch: async (data: CreatePatchPayload) => {
+  updatePatch: async (data: unknown) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
 
     try {
       set({ loading: true });
-      await window.electronAPI.updatePatch(data);
+      await window.electronAPI.updatePatch(
+        data as Parameters<typeof window.electronAPI.updatePatch>[0],
+      );
       toast.success('Patch updated successfully');
       await loadPatches(currentFolder, true);
     } catch (error) {
