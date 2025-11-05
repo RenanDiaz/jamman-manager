@@ -18,6 +18,7 @@ import { create } from 'zustand';
 import { Patch } from '../types';
 import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
+import { useUndoStore } from './useUndoStore';
 
 /** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
@@ -61,6 +62,9 @@ interface PatchStore {
 
   /** Loading state for async operations */
   loading: boolean;
+
+  /** Total size of the current folder in bytes */
+  folderSizeBytes: number | null;
 
   /** Currently selected patch for editing (single selection) */
   selectedPatch: Patch | undefined;
@@ -156,8 +160,9 @@ interface PatchStore {
    * Reorders patches by renaming directories
    * Uses optimistic updates with rollback on error
    * @param newOrder - Array of patches in desired order
+   * @param skipUndo - If true, doesn't create undo entry (for undo/redo operations)
    */
-  reorderPatches: (newOrder: Patch[]) => Promise<void>;
+  reorderPatches: (newOrder: Patch[], skipUndo?: boolean) => Promise<void>;
 
   // ==================== Utility ====================
 
@@ -186,6 +191,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   loading: false,
   selectedPatch: undefined,
   selectedPatchDirs: [],
+  folderSizeBytes: null,
 
   // Simple setters
   setCurrentFolder: folder => set({ currentFolder: folder }),
@@ -243,6 +249,15 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       console.log(result);
 
       set({ patches: result, currentFolder: folder });
+
+      // Calculate folder size
+      try {
+        const folderSize = await window.electronAPI.getFolderSize(folder);
+        set({ folderSizeBytes: folderSize.sizeBytes });
+      } catch (error) {
+        console.warn('Failed to calculate folder size:', error);
+        set({ folderSizeBytes: null });
+      }
 
       // Save to localStorage for auto-load on next launch
       saveLastFolder(folder);
@@ -343,9 +358,12 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  reorderPatches: async (newOrder: Patch[]) => {
-    const { currentFolder, loadPatches } = get();
+  reorderPatches: async (newOrder: Patch[], skipUndo = false) => {
+    const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+
+    // Store previous order for undo (before reordering)
+    const previousOrder = [...patches];
 
     // Optimistic update
     set({ patches: newOrder });
@@ -358,6 +376,18 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
           newOrder.map(p => p.dir),
         ),
       );
+
+      // Push undo action after successful reorder (unless we're executing an undo/redo)
+      if (!skipUndo) {
+        useUndoStore.getState().pushUndo({
+          type: 'REORDER_PATCHES',
+          timestamp: Date.now(),
+          description: `Reorder ${newOrder.length} patches`,
+          previousOrder,
+          newOrder,
+        });
+      }
+
       toast.success('Successfully reordered patches');
       await loadPatches(currentFolder, true);
       // Clear selection after successful reorder
@@ -374,7 +404,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   },
 
   clearPatches: () => {
-    set({ patches: [], currentFolder: null, selectedPatchDirs: [] });
+    set({ patches: [], currentFolder: null, selectedPatchDirs: [], folderSizeBytes: null });
   },
 
   // Get last folder from localStorage

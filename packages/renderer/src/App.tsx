@@ -17,8 +17,12 @@ import {
 } from 'reactstrap';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { Tooltip } from 'react-tooltip';
+import 'react-tooltip/dist/react-tooltip.css';
 import PatchListItem from './components/PatchListItem';
 import { usePatchStore } from './store/usePatchStore';
+import { useUndoStore } from './store/useUndoStore';
+import { executeUndo, executeRedo, canUndo, canRedo } from './utils/undoHandler';
 
 // Lazy load heavy components for better initial load performance
 const PatchForm = lazy(() => import('./components/PatchForm'));
@@ -26,6 +30,9 @@ const SortView = lazy(() => import('./components/SortView').then(m => ({ default
 const DeleteConfirmModal = lazy(() => import('./components/DeleteConfirmModal'));
 const BackupRestoreModal = lazy(() => import('./components/BackupRestoreModal'));
 const PlaylistsModal = lazy(() => import('./components/PlaylistsModal'));
+const FooterPlayer = lazy(() =>
+  import('./components/FooterPlayer').then(m => ({ default: m.FooterPlayer })),
+);
 
 const PATCH_FORM_ID = 'create-patch-form';
 
@@ -37,6 +44,7 @@ function App() {
     loading,
     selectedPatch,
     selectedPatchDirs,
+    folderSizeBytes,
     loadPatches,
     clearPatches,
     setSelectedPatch,
@@ -55,6 +63,10 @@ function App() {
   const [backupRestoreModalIsOpen, setBackupRestoreModalIsOpen] = useState<boolean>(false);
   const [playlistsModalIsOpen, setPlaylistsModalIsOpen] = useState<boolean>(false);
 
+  // Undo/Redo state
+  const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
+  const [redoAvailable, setRedoAvailable] = useState<boolean>(false);
+
   const handleLoad = useCallback(async () => {
     try {
       const folder = await window.electronAPI.selectFolder();
@@ -67,20 +79,52 @@ function App() {
     }
   }, [loadPatches]);
 
+  // Undo/Redo handlers
+  const handleUndo = useCallback(async () => {
+    await executeUndo();
+    // Update undo/redo availability after action
+    setUndoAvailable(canUndo());
+    setRedoAvailable(canRedo());
+  }, []);
+
+  const handleRedo = useCallback(async () => {
+    await executeRedo();
+    // Update undo/redo availability after action
+    setUndoAvailable(canUndo());
+    setRedoAvailable(canRedo());
+  }, []);
+
   useEffect(() => {
     document.body.setAttribute('data-bs-theme', 'dark');
 
-    // Keyboard shortcut: Ctrl/Cmd + O to load patches
+    // Keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + O to load patches
       if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
         e.preventDefault();
         handleLoad();
+      }
+
+      // Ctrl/Cmd + Z to undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (canUndo()) {
+          handleUndo();
+        }
+      }
+
+      // Ctrl/Cmd + Shift + Z to redo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        if (canRedo()) {
+          handleRedo();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleLoad]);
+  }, [handleLoad, handleUndo, handleRedo]);
 
   // Auto-load last folder on mount
   useEffect(() => {
@@ -93,6 +137,20 @@ function App() {
 
     autoLoad();
   }, [tryLoadLastFolder]);
+
+  // Subscribe to undo store changes
+  useEffect(() => {
+    const unsubscribe = useUndoStore.subscribe(state => {
+      setUndoAvailable(state.undoStack.length > 0);
+      setRedoAvailable(state.redoStack.length > 0);
+    });
+
+    // Initial check
+    setUndoAvailable(canUndo());
+    setRedoAvailable(canRedo());
+
+    return unsubscribe;
+  }, []);
 
   const { deletePatch, deletePatches, reorderPatches, clearSelection } = usePatchStore();
 
@@ -281,9 +339,21 @@ function App() {
               <div>
                 <h3 className="mb-0">JamMan Manager</h3>
                 {currentFolder && (
-                  <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                    {currentFolder}
-                  </small>
+                  <div className="d-flex align-items-center gap-2">
+                    <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                      {currentFolder}
+                    </small>
+                    {folderSizeBytes !== null && (
+                      <span className="badge bg-secondary" style={{ fontSize: '0.7rem' }}>
+                        📦{' '}
+                        {folderSizeBytes < 1024 * 1024
+                          ? `${(folderSizeBytes / 1024).toFixed(1)} KB`
+                          : folderSizeBytes < 1024 * 1024 * 1024
+                            ? `${(folderSizeBytes / 1024 / 1024).toFixed(1)} MB`
+                            : `${(folderSizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB`}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -299,6 +369,34 @@ function App() {
                 >
                   📁 Load Patches
                 </Button>
+
+                {/* Undo/Redo - Always visible but disabled when not available */}
+                <div className="d-flex gap-1">
+                  <Button
+                    type="button"
+                    color="secondary"
+                    outline
+                    onClick={handleUndo}
+                    disabled={!undoAvailable || loading}
+                    size="sm"
+                    data-tooltip-id="undo-tooltip"
+                    data-tooltip-content="Undo last action (Ctrl+Z / Cmd+Z)"
+                  >
+                    ↶
+                  </Button>
+                  <Button
+                    type="button"
+                    color="secondary"
+                    outline
+                    onClick={handleRedo}
+                    disabled={!redoAvailable || loading}
+                    size="sm"
+                    data-tooltip-id="redo-tooltip"
+                    data-tooltip-content="Redo action (Ctrl+Shift+Z / Cmd+Shift+Z)"
+                  >
+                    ↷
+                  </Button>
+                </div>
 
                 {currentFolder && (
                   <>
@@ -320,8 +418,9 @@ function App() {
                         outline
                         onClick={enterSortMode}
                         size="sm"
-                        title="Sort patches"
                         disabled={patches.length === 0}
+                        data-tooltip-id="sort-tooltip"
+                        data-tooltip-content="Drag and drop to reorder patches. Changes sync to SD card. Supports multi-select!"
                       >
                         ⇅ Sort
                       </Button>
@@ -350,7 +449,8 @@ function App() {
                         outline
                         onClick={() => setBackupRestoreModalIsOpen(true)}
                         size="sm"
-                        title="Backup and Restore"
+                        data-tooltip-id="backup-tooltip"
+                        data-tooltip-content="Create ZIP backups of patches. Restore with merge or replace modes. Great for sharing collections!"
                       >
                         💾 Backup
                       </Button>
@@ -360,7 +460,8 @@ function App() {
                         outline
                         onClick={() => setPlaylistsModalIsOpen(true)}
                         size="sm"
-                        title="Manage Playlists"
+                        data-tooltip-id="playlists-tooltip"
+                        data-tooltip-content="Organize patches into setlists. Use 'Move to Top' to reorder patches on SD card for live performance!"
                       >
                         📋 Playlists
                       </Button>
@@ -375,7 +476,8 @@ function App() {
                           outline
                           onClick={handleBatchDelete}
                           size="sm"
-                          title={`Delete ${selectedPatchDirs.length} selected patches`}
+                          data-tooltip-id="batch-delete-tooltip"
+                          data-tooltip-content={`Delete ${selectedPatchDirs.length} selected patches. Hold Shift to select ranges, Cmd/Ctrl to select multiple.`}
                         >
                           🗑️ Delete ({selectedPatchDirs.length})
                         </Button>
@@ -435,6 +537,7 @@ function App() {
 
                 {/* Patch List */}
                 <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+                  {/* @ts-expect-error - reactstrap bug: toggle prop exists but types are incorrect */}
                   <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
                     {patches.map(patch => (
                       <PatchListItem
@@ -563,6 +666,19 @@ function App() {
         pauseOnHover
         theme="dark"
       />
+
+      {/* Tooltips */}
+      <Tooltip id="undo-tooltip" place="bottom" />
+      <Tooltip id="redo-tooltip" place="bottom" />
+      <Tooltip id="sort-tooltip" place="bottom" />
+      <Tooltip id="backup-tooltip" place="bottom" />
+      <Tooltip id="playlists-tooltip" place="bottom" />
+      <Tooltip id="batch-delete-tooltip" place="bottom" />
+
+      {/* Footer Player */}
+      <Suspense fallback={null}>
+        <FooterPlayer />
+      </Suspense>
     </Container>
   );
 }

@@ -135,13 +135,9 @@ export async function initApp(initConfig: AppInitConfig) {
     // This leverages Chromium's native file streaming which properly supports range requests
     protocol.handle('jamman', request => {
       try {
-        log.info(`Protocol handler received request: ${request.url}`);
-
         // Extract file path from URL
         const url = request.url.replace('jamman://', '');
         const filePath = decodeURIComponent(url);
-
-        log.info(`Decoded file path: ${filePath}`);
 
         // Validate file path is not empty
         if (!filePath || filePath.trim() === '') {
@@ -164,8 +160,6 @@ export async function initApp(initConfig: AppInitConfig) {
         // Convert to file:// URL and let Chromium handle the streaming
         // This properly supports range requests natively
         const fileUrl = `file://${filePath}`;
-        log.info(`Proxying to: ${fileUrl}`);
-
         return net.fetch(fileUrl);
       } catch (error) {
         log.error('Error serving audio file:', error);
@@ -187,6 +181,62 @@ export async function initApp(initConfig: AppInitConfig) {
     } catch (error) {
       log.error('Error selecting folder:', error);
       throw new Error('Failed to open folder selection dialog');
+    }
+  });
+
+  ipcMain.handle('folder:getSize', async (_event, folderPath: string) => {
+    try {
+      // Security: Validate folder path
+      if (!folderPath || typeof folderPath !== 'string') {
+        throw new Error('Invalid folder path');
+      }
+
+      if (!PathValidator.pathExists(folderPath, 'directory')) {
+        throw new Error('Folder does not exist');
+      }
+
+      /**
+       * Recursively calculates the total size of a directory
+       */
+      const calculateFolderSize = async (dirPath: string): Promise<number> => {
+        let totalSize = 0;
+
+        try {
+          const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+
+            if (entry.isDirectory()) {
+              // Recursively calculate subdirectory size
+              totalSize += await calculateFolderSize(fullPath);
+            } else if (entry.isFile()) {
+              // Add file size
+              const stats = await fs.promises.stat(fullPath);
+              totalSize += stats.size;
+            }
+          }
+        } catch (error) {
+          log.warn(`Error reading directory ${dirPath}:`, error);
+          // Continue even if a subdirectory fails
+        }
+
+        return totalSize;
+      };
+
+      const sizeBytes = await calculateFolderSize(folderPath);
+      log.info(`Folder size for ${folderPath}: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
+
+      return {
+        sizeBytes,
+        sizeMB: sizeBytes / 1024 / 1024,
+        sizeGB: sizeBytes / 1024 / 1024 / 1024,
+      };
+    } catch (error) {
+      log.error('Error calculating folder size:', error);
+      throw new Error(
+        `Failed to calculate folder size: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   });
 
@@ -396,8 +446,12 @@ export async function initApp(initConfig: AppInitConfig) {
       const metadata = await mm.parseFile(filePath);
       const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = metadata.format;
 
+      // Get file size
+      const stats = await fs.promises.stat(filePath);
+      const fileSizeBytes = stats.size;
+
       log.info(
-        `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch`,
+        `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch, ${(fileSizeBytes / 1024 / 1024).toFixed(2)}MB`,
       );
 
       const isValid =
@@ -412,6 +466,7 @@ export async function initApp(initConfig: AppInitConfig) {
         bitsPerSample,
         numberOfChannels,
         duration,
+        fileSizeBytes,
         error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
         canAttemptPlayback: true, // Even if format is unexpected, let browser try
       };
@@ -424,6 +479,37 @@ export async function initApp(initConfig: AppInitConfig) {
         warning: 'File format could not be validated, but playback will be attempted.',
         canAttemptPlayback: true, // Let the browser try to play it
       };
+    }
+  });
+
+  ipcMain.handle('audio:readFile', async (_event, filePath: string) => {
+    // Security: Validate file path
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path');
+    }
+
+    // Validate file extension
+    if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
+      throw new Error('Invalid file extension');
+    }
+
+    // Check if file exists
+    if (!PathValidator.pathExists(filePath, 'file')) {
+      throw new Error('File not found');
+    }
+
+    try {
+      // Read file as buffer
+      const buffer = await fs.promises.readFile(filePath);
+      log.info(`Read audio file: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
+      // Return as Uint8Array (which can be transferred to renderer as ArrayBuffer)
+      return buffer;
+    } catch (error) {
+      log.error('Error reading audio file:', error);
+      throw new Error(
+        `Failed to read audio file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   });
 

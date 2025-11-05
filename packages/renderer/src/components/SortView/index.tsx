@@ -48,9 +48,15 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({ patch, isModified, orig
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    cursor: 'grab',
+    transition: isDragging ? transition : `${transition}, background-color 0.2s ease`,
+    opacity: isDragging ? 0.8 : 1,
+    cursor: isDragging ? 'grabbing' : 'grab',
+    backgroundColor: isDragging ? '#0d6efd' : undefined,
+    border: isDragging ? '2px solid #6ea8fe' : '1px solid #495057',
+    boxShadow: isDragging ? '0 8px 16px rgba(13, 110, 253, 0.4)' : undefined,
+    zIndex: isDragging ? 1000 : 'auto',
+    borderRadius: '0.375rem',
+    marginBottom: '0.5rem',
   };
 
   const patchName = patch.data.JamManPatch.PatchName?.[0] || 'Unnamed';
@@ -64,7 +70,18 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({ patch, isModified, orig
       {...listeners}
     >
       <div className="d-flex align-items-center gap-2">
-        <span className="text-muted">::</span>
+        {/* Enhanced drag handle */}
+        <span
+          className="text-muted"
+          style={{
+            fontSize: '1.2rem',
+            lineHeight: 1,
+            opacity: isDragging ? 1 : 0.6,
+            transition: 'opacity 0.2s ease',
+          }}
+        >
+          ⋮⋮
+        </span>
         <div>
           <strong>{patch.dir}</strong>
           <small className="ms-2 text-muted">{patchName}</small>
@@ -73,6 +90,11 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({ patch, isModified, orig
       {isModified && (
         <span className="badge bg-warning text-dark" style={{ fontSize: '0.7rem' }}>
           Moved from #{originalIndex + 1}
+        </span>
+      )}
+      {isDragging && (
+        <span className="badge bg-light text-dark" style={{ fontSize: '0.7rem' }}>
+          Dragging...
         </span>
       )}
     </div>

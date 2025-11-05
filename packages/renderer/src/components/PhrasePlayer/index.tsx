@@ -1,196 +1,80 @@
-import { FC, useEffect, useState, memo } from 'react';
-import { ButtonGroup, Spinner } from 'reactstrap';
+/**
+ * Phrase Player Button
+ *
+ * A simple play button that loads audio into the global footer player.
+ * Replaces the old inline player with a cleaner, more scalable approach.
+ */
+
+import { FC, memo } from 'react';
+import { Button } from 'reactstrap';
 import { toast } from 'react-toastify';
-import { ImageButton } from '../../utils/Common';
-import { PauseIcon, PlayIcon, StopIcon } from '../../utils/Images';
+import { useAudioPlayerStore } from '../../store/useAudioPlayerStore';
+import { PlayIcon } from '../../utils/Images';
 
 interface Props {
   wavPath: string;
+  patchDir: string;
+  patchName: string;
+  phraseName: string;
 }
 
-const PhrasePlayer: FC<Props> = memo(({ wavPath }) => {
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+const PhrasePlayer: FC<Props> = memo(({ wavPath, patchDir, patchName, phraseName }) => {
+  const { audioInfo, loadAudio, play } = useAudioPlayerStore();
 
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      if (audio) {
-        audio.pause();
-        audio.src = '';
-        audio.load();
-      }
-    };
-  }, [audio]);
-
-  const createAudioElement = async (): Promise<HTMLAudioElement | null> => {
+  const handlePlay = async () => {
     try {
-      setIsLoading(true);
-
-      // Validate wavPath is not empty
-      if (!wavPath || wavPath.trim() === '') {
-        console.error('Empty wavPath provided to PhrasePlayer');
-        toast.error('Audio file path is missing');
-        setIsLoading(false);
-        return null;
-      }
-
-      console.log(`Loading audio file: ${wavPath}`);
-
-      // Validate WAV file
+      // Validate WAV file and get metadata
       const validation = await window.electronAPI.validateWav(wavPath);
 
-      // Check if we can attempt playback
       if (validation.canAttemptPlayback === false) {
         console.error(`Cannot play WAV file ${wavPath}:`, validation.error);
         toast.error(`Cannot play audio: ${validation.error}`);
-        setIsLoading(false);
-        return null;
-      }
-
-      // Show warnings for files that can't be validated but might work
-      if (!validation.valid && validation.warning) {
-        console.warn(`WAV validation warning for ${wavPath}:`, validation.warning);
-        toast.warning(validation.warning, { autoClose: 5000 });
-      } else if (!validation.valid && validation.error) {
-        console.warn(`WAV format issue for ${wavPath}:`, validation.error);
-        toast.warning(`${validation.error} - Attempting playback anyway.`, { autoClose: 5000 });
-      }
-
-      // Get audio URL
-      const url = await window.electronAPI.getAudioURL(wavPath);
-      console.log(`Audio URL received: ${url}`);
-
-      if (!url || url.trim() === '') {
-        console.error(`Empty URL returned for wavPath: ${wavPath}`);
-        toast.error('Failed to load audio file - empty URL returned');
-        setIsLoading(false);
-        return null;
-      }
-
-      // Create audio element
-      const newAudio = new Audio(url);
-      console.log(`Audio element created with src: ${newAudio.src}`);
-
-      // Set up event listeners
-      newAudio.onended = () => {
-        console.log('Audio playback ended');
-        setIsPlaying(false);
-      };
-
-      newAudio.onplay = () => {
-        console.log('Audio playback started');
-        setIsPlaying(true);
-        setIsLoading(false);
-      };
-
-      newAudio.oncanplay = () => {
-        console.log('Audio can play');
-        setIsLoading(false);
-      };
-
-      newAudio.onerror = () => {
-        const error = newAudio.error;
-        const errorMessage = error
-          ? `MediaError code ${error.code}: ${error.message || 'Unknown error'}`
-          : 'Unknown playback error';
-
-        console.error('Audio playback error:', errorMessage);
-
-        setIsPlaying(false);
-        setIsLoading(false);
-        setAudio(null);
-
-        toast.error(
-          `Failed to play audio. ${error?.code === 4 ? 'The file format may not be supported.' : 'Click play to try again.'}`,
-        );
-      };
-
-      return newAudio;
-    } catch (error) {
-      console.error('Error creating audio element:', error);
-      setIsLoading(false);
-      toast.error('Failed to load audio file');
-      return null;
-    }
-  };
-
-  const handlePlay = async () => {
-    // If audio exists, just resume playback
-    if (audio) {
-      try {
-        await audio.play();
-      } catch (error) {
-        console.error('Error resuming audio:', error);
-        toast.error('Failed to resume playback. Click play to try again.');
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    // Create new audio and play once
-    try {
-      const newAudio = await createAudioElement();
-
-      if (!newAudio) {
-        console.log('Failed to create audio element');
         return;
       }
 
-      setAudio(newAudio);
+      // Load audio into footer player
+      loadAudio({
+        wavPath,
+        patchDir,
+        patchName,
+        phraseName,
+        duration: validation.duration ?? null,
+        fileSizeBytes: validation.fileSizeBytes ?? null,
+      });
 
-      console.log('Attempting to play audio');
-      await newAudio.play();
-      console.log('Audio play succeeded');
+      // Auto-play after loading
+      play();
+
+      // Show warnings if any
+      if (!validation.valid && validation.warning) {
+        console.warn(`WAV validation warning for ${wavPath}:`, validation.warning);
+        toast.warning(validation.warning, { autoClose: 3000 });
+      }
     } catch (error) {
-      console.error('Play attempt failed:', error);
-      setAudio(null);
-      setIsLoading(false);
-      toast.error('Failed to play audio. Click play to try again.');
+      console.error('Error loading audio:', error);
+      toast.error('Failed to load audio');
     }
   };
 
-  const handlePause = () => {
-    if (audio) {
-      audio.pause();
-      setIsPlaying(false);
-    }
-  };
-
-  const handleStop = () => {
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-      setIsPlaying(false);
-    }
-  };
+  // Check if this phrase is currently loaded
+  const isActive = audioInfo?.wavPath === wavPath;
 
   return (
-    <ButtonGroup>
-      {isLoading ? (
-        <ImageButton type="button" title="Loading..." className="btn px-1" disabled>
-          <Spinner size="sm" />
-        </ImageButton>
-      ) : isPlaying ? (
-        <ImageButton type="button" title="Pause" className="btn px-1" onClick={handlePause}>
-          <PauseIcon />
-        </ImageButton>
-      ) : (
-        <ImageButton type="button" title="Play" className="btn px-1" onClick={handlePlay}>
-          <PlayIcon />
-        </ImageButton>
+    <Button
+      size="sm"
+      color={isActive ? 'primary' : 'secondary'}
+      outline={!isActive}
+      onClick={handlePlay}
+      title={`Play ${phraseName}`}
+      className="d-flex align-items-center gap-1"
+    >
+      <PlayIcon />
+      {isActive && (
+        <span className="badge bg-light text-dark ms-1" style={{ fontSize: '0.6rem' }}>
+          Now Playing
+        </span>
       )}
-      <ImageButton
-        type="button"
-        title="Stop"
-        className="btn px-1"
-        onClick={handleStop}
-        disabled={isLoading}
-      >
-        <StopIcon />
-      </ImageButton>
-    </ButtonGroup>
+    </Button>
   );
 });
 

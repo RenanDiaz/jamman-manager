@@ -37,6 +37,7 @@ interface AudioValidationResult {
   bitsPerSample?: number;
   numberOfChannels?: number;
   duration?: number;
+  fileSizeBytes?: number;
   error?: string | null;
   warning?: string;
   canAttemptPlayback?: boolean;
@@ -108,6 +109,10 @@ declare global {
         patches?: string[],
       ): Promise<{ success: boolean; patchesRestored: number }>;
       selectBackupFile(): Promise<string | null>;
+      // Utility
+      getFolderSize(
+        folderPath: string,
+      ): Promise<{ sizeBytes: number; sizeMB: number; sizeGB: number }>;
       // Playlists
       loadPlaylists(basePath: string): Promise<PlaylistData>;
       createPlaylist(basePath: string, name: string, patches?: string[]): Promise<Playlist>;
