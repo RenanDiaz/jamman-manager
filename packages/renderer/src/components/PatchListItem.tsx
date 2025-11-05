@@ -137,16 +137,21 @@ export const PatchListItem: FC<Props> = memo(
               </tr>
             </thead>
             <tbody>
-              {phrases.map(({ dir, data: { JamManPhrase: phrase }, wavPath }) => (
-                <tr key={dir}>
-                  <td>{dir}</td>
+              {phrases.map(({ dir: phraseDir, data: { JamManPhrase: phrase }, wavPath }) => (
+                <tr key={phraseDir}>
+                  <td>{phraseDir}</td>
                   <td className="text-truncate">{phrase.ID?.[0] || 'N/A'}</td>
                   <td>{phrase.BeatsPerMinute?.[0] || 'N/A'}</td>
                   <td>{phrase.IsLoop[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
                   <td>{phrase.IsReversed[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
                   <td>{phrase.BeatsPerMeasure?.[0] || 'N/A'}</td>
                   <td>
-                    <PhrasePlayer wavPath={wavPath} />
+                    <PhrasePlayer
+                      wavPath={wavPath}
+                      patchDir={dir}
+                      patchName={patchName}
+                      phraseName={phraseDir}
+                    />
                   </td>
                 </tr>
               ))}

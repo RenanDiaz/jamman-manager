@@ -30,6 +30,9 @@ const SortView = lazy(() => import('./components/SortView').then(m => ({ default
 const DeleteConfirmModal = lazy(() => import('./components/DeleteConfirmModal'));
 const BackupRestoreModal = lazy(() => import('./components/BackupRestoreModal'));
 const PlaylistsModal = lazy(() => import('./components/PlaylistsModal'));
+const FooterPlayer = lazy(() =>
+  import('./components/FooterPlayer').then(m => ({ default: m.FooterPlayer })),
+);
 
 const PATCH_FORM_ID = 'create-patch-form';
 
@@ -657,6 +660,11 @@ function App() {
       <Tooltip id="backup-tooltip" place="bottom" />
       <Tooltip id="playlists-tooltip" place="bottom" />
       <Tooltip id="batch-delete-tooltip" place="bottom" />
+
+      {/* Footer Player */}
+      <Suspense fallback={null}>
+        <FooterPlayer />
+      </Suspense>
     </Container>
   );
 }

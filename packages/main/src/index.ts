@@ -397,7 +397,7 @@ export async function initApp(initConfig: AppInitConfig) {
       const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = metadata.format;
 
       // Get file size
-      const stats = await fs.stat(filePath);
+      const stats = await fs.promises.stat(filePath);
       const fileSizeBytes = stats.size;
 
       log.info(
