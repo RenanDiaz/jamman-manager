@@ -213,10 +213,14 @@ describe('patches:read', () => {
     expect(names(second).Patch01).toBe('Changed');
   });
 
-  it('skips folders without patch.xml and unreadable patches', async () => {
+  it('skips internal folders, folders without patch.xml and unreadable patches', async () => {
     fs.mkdirSync(path.join(sd.path, 'Notes'));
     fs.mkdirSync(path.join(sd.path, 'Patch09'));
     fs.writeFileSync(path.join(sd.path, 'Patch09', 'patch.xml'), 'garbage');
+    // Folders parked by delete/update/reorder hold a valid patch.xml but are not patches.
+    for (const parked of ['__deleted_Patch01_1', '__backup_Patch01_1', '__tmp_Patch01']) {
+      fs.cpSync(path.join(sd.path, 'Patch01'), path.join(sd.path, parked), { recursive: true });
+    }
     const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
     expect(patches.map(p => p.dir).sort()).toEqual(['Patch01', 'Patch02', 'Patch03']);
   });
@@ -373,8 +377,7 @@ describe('patches:create', () => {
     );
   });
 
-  // Known bug: the rollback removes the existing patch folder. Fixed in the next commit.
-  it.fails('refuses to create over an existing patch and leaves it intact', async () => {
+  it('refuses to create over an existing patch and leaves it intact', async () => {
     const before = patchXml('Patch01');
     await expect(app.invoke('patches:create', form({ directory: 'Patch01' }))).rejects.toThrow(
       'Failed to create patch: Patch directory Patch01 already exists',
@@ -457,8 +460,7 @@ describe('patches:delete and patches:deleteBatch', () => {
 
   const deletedDirs = () => fs.readdirSync(sd.path).filter(d => d.startsWith('__deleted_'));
 
-  // Known bug: patches:read lists the __deleted_* folder. Fixed in the next commit.
-  it.fails('moves the patch aside and removes it for good after 5 seconds', async () => {
+  it('moves the patch aside and removes it for good after 5 seconds', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await expect(app.invoke('patches:delete', sd.path, 'Patch02')).resolves.toBe(true);
     expect(fs.existsSync(path.join(sd.path, 'Patch02'))).toBe(false);

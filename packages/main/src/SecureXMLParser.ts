@@ -100,26 +100,30 @@ export class SecureXMLParser {
       throw new Error('Invalid XML: must start with opening tag');
     }
 
-    // Security: Check for balanced tags (basic check)
-    const openTags = xmlString.match(/<[^/][^>]*[^/]>/g)?.length || 0;
-    const closeTags = xmlString.match(/<\/[^>]+>/g)?.length || 0;
-    if (openTags !== closeTags) {
-      // This is a basic check; actual validation happens during parsing
-      log.warn('XML appears to have unbalanced tags');
-    }
-
-    // Security: Check nesting depth
+    // Security: Check for balanced tags and nesting depth (basic check; the
+    // parser does the real validation). Declarations (`<?xml ?>`), comments,
+    // CDATA (`<!…>`) and self-closing tags (`<Metadata/>`) neither open nor
+    // close an element.
+    let openTags = 0;
+    let closeTags = 0;
     let depth = 0;
     let maxDepth = 0;
-    for (let i = 0; i < xmlString.length; i++) {
-      if (xmlString[i] === '<') {
-        if (xmlString[i + 1] !== '/') {
-          depth++;
-          maxDepth = Math.max(maxDepth, depth);
-        } else {
-          depth--;
-        }
+    for (const [tag] of xmlString.matchAll(/<[^>]*>/g)) {
+      if (tag.startsWith('<?') || tag.startsWith('<!')) {
+        continue;
+      } else if (tag.endsWith('/>')) {
+        maxDepth = Math.max(maxDepth, depth + 1);
+      } else if (tag.startsWith('</')) {
+        closeTags++;
+        depth--;
+      } else {
+        openTags++;
+        depth++;
+        maxDepth = Math.max(maxDepth, depth);
       }
+    }
+    if (openTags !== closeTags) {
+      log.warn('XML appears to have unbalanced tags');
     }
 
     if (maxDepth > this.MAX_DEPTH) {

@@ -38,6 +38,9 @@ type CacheEntry = {
 
 const patchCache = new Map<string, CacheEntry>();
 
+/** Temporary folders created by patches:delete (`__deleted_`), update (`__backup_`) and reorder (`__tmp_`). */
+const INTERNAL_DIR_RE = /^__(deleted|backup|tmp)_/;
+
 type PhraseForm = {
   name: string;
   beatsPerMinute: number;
@@ -251,6 +254,10 @@ export async function initApp(initConfig: AppInitConfig) {
       // Collect current modification times
       const currentModTimes = new Map<string, number>();
       const patchDirs = fs.readdirSync(jammanPath).filter(d => {
+        // Folders the app itself parks during delete/update/reorder are not patches.
+        if (INTERNAL_DIR_RE.test(d)) {
+          return false;
+        }
         try {
           return fs.statSync(path.join(jammanPath, d)).isDirectory();
         } catch {
@@ -565,12 +572,13 @@ export async function initApp(initConfig: AppInitConfig) {
       async () => {
         // Use lock to prevent concurrent operations on the same patch
         return lockManager.withLock(patchDir, async () => {
-          try {
-            // Check if patch already exists
-            if (fs.existsSync(patchDir)) {
-              throw new Error(`Patch directory ${directory} already exists`);
-            }
+          // Check if patch already exists. Outside the try: the rollback below
+          // removes patchDir, which here is someone else's patch.
+          if (fs.existsSync(patchDir)) {
+            throw new Error(`Failed to create patch: Patch directory ${directory} already exists`);
+          }
 
+          try {
             fse.ensureDirSync(patchDir);
 
             // Patch UUIDs
