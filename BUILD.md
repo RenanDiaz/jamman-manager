@@ -4,7 +4,7 @@ This guide explains how to build distributable installers for JamMan Manager on 
 
 ## Prerequisites
 
-- **Node.js** >= 23.0.0
+- **Node.js** >= 24 (LTS; pinned in `.nvmrc`, run `nvm use` to pick it up)
 - **npm** (comes with Node.js)
 - All project dependencies installed: `npm install`
 
@@ -365,12 +365,12 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '23'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -396,7 +396,7 @@ jobs:
         run: npm run dist:mac
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installers
           path: dist/*.dmg
@@ -404,12 +404,12 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '23'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -429,7 +429,7 @@ jobs:
         run: npm run dist:win
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installers
           path: dist/*.exe
@@ -629,37 +629,33 @@ npm run dist
 
 ## CI/CD Integration
 
-Example GitHub Actions workflow for automated builds:
+The repository ships two workflows in `.github/workflows/`:
 
-```yaml
-name: Build Installers
+- **`ci.yml`** runs on every pull request to `main` and every push to `main`. It
+  type-checks, lints, checks formatting and audits production dependencies
+  (`npm audit --omit=dev --audit-level=high`) on Ubuntu, then builds and runs the
+  unit tests on Ubuntu, macOS and Windows. Every step is blocking.
+- **`release.yml`** runs when a `v*` tag is pushed. It checks that the tag matches
+  the `version` in `package.json`, creates a draft GitHub release, and each
+  platform job runs `electron-builder --publish always` to upload the installers
+  and the `latest*.yml` auto-update metadata to that draft. Review the draft and
+  publish it manually.
 
-on:
-  push:
-    tags:
-      - 'v*'
+All actions are pinned to a commit SHA (with the version in a trailing comment) and
+Node is read from `.nvmrc`. Dependabot keeps them up to date.
 
-jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+To cut a release:
 
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '23'
-
-      - run: npm install
-      - run: npm run dist
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: installers-${{ matrix.os }}
-          path: dist/*
+```bash
+npm version <major|minor|patch> --no-git-tag-version   # bump package.json
+git commit -am "Releases vX.Y.Z"
+git tag vX.Y.Z
+git push origin main vX.Y.Z
 ```
+
+Signing secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are read from GitHub Actions
+secrets by `release.yml`; see [Code Signing](#code-signing).
 
 ## File Size Optimization
 

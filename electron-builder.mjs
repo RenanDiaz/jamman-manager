@@ -11,6 +11,14 @@ export default /** @type import('electron-builder').Configuration */
     output: 'dist',
     buildResources: 'buildResources',
   },
+  // Release workflow (.github/workflows/release.yml) runs electron-builder with `--publish always`,
+  // which uploads installers and `latest*.yml` to a draft GitHub release for this repository.
+  publish: {
+    provider: 'github',
+    owner: 'RenanDiaz',
+    repo: 'jamman-manager',
+    releaseType: 'draft',
+  },
   generateUpdatesFilesForAllChannels: true,
   /**
    * It is recommended to avoid using non-standard characters such as spaces in artifact names,

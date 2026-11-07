@@ -1,5 +1,8 @@
 # Quick Wins Implementation Summary
 
+> Historical record of the October 2025 quick wins. The current backlog lives in
+> [`specs/project-review-remediation.md`](specs/project-review-remediation.md).
+
 **Date:** 2025-10-28
 **Status:** ✅ Completed
 
@@ -176,7 +179,7 @@ toast.error('Failed to load patches. Please check the folder and try again.');
 
 ```json
 {
-  "react-toastify": "^11.0.3"
+  "react-toastify": "^11.0.5"
 }
 ```
 
@@ -226,7 +229,7 @@ These quick wins lay the foundation for:
 3. **Priority 3:** Performance optimizations
 4. **Priority 4:** Additional UX enhancements
 
-See `IMPROVEMENT_PLAN.md` for the full roadmap.
+See [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md) for the full roadmap.
 
 ---
 

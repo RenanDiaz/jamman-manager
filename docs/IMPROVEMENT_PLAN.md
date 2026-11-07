@@ -1,5 +1,11 @@
 # JamMan Manager - Comprehensive Improvement Plan
 
+> **Status note (2026-11-07):** This is the original roadmap from 2025-10-28, kept as history.
+> A later project review found that several items below marked "completed" were only partly
+> done (security hardening, test depth, CI enforcement, undo coverage, dependency audit).
+> Those items are annotated inline with **⚠️ Reopened**. The active, authoritative backlog is
+> [`docs/specs/project-review-remediation.md`](specs/project-review-remediation.md).
+
 Based on the codebase analysis, here's a prioritized improvement plan:
 
 ## 📊 Project Overview
@@ -8,10 +14,10 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 **Key Strengths:**
 
-- ✅ Security-first design with context isolation
+- ✅ Context isolation enabled (⚠️ the renderer sandbox is still off and the `jamman://` protocol is not yet restricted; see the remediation spec, phase 1)
 - ✅ Modern ESM architecture throughout
 - ✅ Clean modular plugin system
-- ✅ Strong type safety with TypeScript
+- ✅ Strong type safety with TypeScript (⚠️ residual `any` usages are being removed; see remediation spec, 4.2)
 
 ---
 
@@ -82,11 +88,14 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ---
 
-### **✅ Priority 2: Testing & Quality Assurance** (COMPLETED)
+### **⚠️ Priority 2: Testing & Quality Assurance** (PARTIALLY COMPLETED)
 
 #### 4. **Comprehensive Testing Suite** ✅
 
-**Status:** All testing infrastructure implemented and 127 unit/integration tests passing
+**Status:** Test infrastructure exists and 127 unit/integration tests pass. **⚠️ Reopened:** the
+integration tests (`ipc.integration.test.ts`, `index.test.ts`) mock Electron and do not import the real
+handlers, and `BackupManager`, `PlaylistManager`, `LockManager` and `OperationQueue` have no tests of their own.
+The e2e specs were written but have not been verified locally or in CI. See remediation spec, phase 4.
 
 **Completed Improvements:**
 
@@ -96,7 +105,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - ✅ Common.test.tsx (19 tests) - Utility functions
 
 - **Integration Tests:** ✅
-  - ✅ ipc.integration.test.ts (23 tests) - IPC communication flows
+  - ⚠️ ipc.integration.test.ts (23 tests) - IPC communication flows (mocked Electron; does not exercise the real handlers)
   - ✅ Dialog operations (folder/file selection)
   - ✅ Patch CRUD operations
   - ✅ Audio file validation
@@ -104,7 +113,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - ✅ Operation queue management
   - ✅ Security validation
 
-- **E2E Tests:** ✅
+- **E2E Tests:** ⚠️ written, not verified in CI
   - ✅ e2e.spec.ts - Basic application tests
   - ✅ jamman.e2e.spec.ts - Comprehensive workflow tests
   - ✅ Application launch and initialization
@@ -118,7 +127,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 **Test Configuration:** ✅
 
-- ✅ vitest.config.ts - Enhanced with coverage thresholds (70%), timeouts, CI optimizations
+- ✅ vitest.config.ts - Enhanced with coverage thresholds (70%), timeouts, CI optimizations (⚠️ `npm run test:coverage` needs `@vitest/coverage-v8`, which is not installed yet)
 - ✅ playwright.config.ts - New E2E configuration with retries, trace, screenshots
 
 **Test Coverage:**
@@ -175,7 +184,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 ---
 
-### **✅ Priority 4: User Experience Enhancements** (COMPLETED)
+### **⚠️ Priority 4: User Experience Enhancements** (MOSTLY COMPLETED)
 
 #### 7. **UI/UX Improvements** ✅
 
@@ -183,7 +192,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 
 **Completed Improvements:**
 
-- ✅ **Undo/Redo System** - Implemented for patch reordering
+- ⚠️ **Undo/Redo System** - Implemented for patch reordering only. Undo for deleting a patch, batch delete, patch edits and backup restores is still a TODO in `undoHandler.ts` (remediation spec, 5.1)
   - Keyboard shortcuts: Cmd+Z (undo), Cmd+Shift+Z (redo)
   - Visual feedback with toast notifications
   - State persistence through refreshes
@@ -229,21 +238,25 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - Current time / total duration display
 
 - ✅ **Technical Improvements**
-  - Replaced WaveSurfer.js with HTML5 audio (more reliable)
+  - Playback uses a plain HTML5 audio element (more reliable than the waveform library tried earlier)
   - Fixed duration display (filters Infinity values)
   - Simplified audio architecture
   - Custom protocol audio streaming
 
 **Not Implemented (Future Considerations):**
 
-- ⏸️ **Waveform Visualization** - Initially attempted with WaveSurfer.js but removed due to infinite loop issues with custom protocol
+- ⏸️ **Waveform Visualization** - An earlier attempt was removed due to infinite loop issues with the custom protocol; the library is no longer a dependency
 - ⏸️ **Audio Trimming/Editing** - Not prioritized for current release
 - ⏸️ **Volume Normalization** - Not prioritized for current release
 - ⏸️ **Batch WAV Import** - Not prioritized for current release
 
 ---
 
-### **Priority 5: Security Hardening**
+### **⚠️ Priority 5: Security Hardening** (REOPENED)
+
+> The checklist at the end of this document marked most of this priority as done. The project review
+> contradicted that: see remediation spec, phases 1 and 3. Open items: restrict `jamman://`, verify IPC
+> senders, `sandbox: true`, a CSP, minimal macOS entitlements, and the production dependency vulnerabilities.
 
 #### 9. **Security Enhancements**
 
@@ -501,7 +514,6 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - **Cloud Sync:** Optional cloud backup (privacy-focused)
 - **MIDI Integration:** Direct JamMan control (if feasible)
 - **Metadata Search:** Find patches by BPM, time signature, etc.
-- **Waveform Visualization:** Visual audio preview
 - **Batch Edit:** Edit multiple patches at once
 
 ---
@@ -542,7 +554,7 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 18. Backup/Restore system (ZIP-based)
 19. Playlist management system
 20. "Move Playlist to Top" for live performance
-21. Implement waveform visualization
+21. ~~Implement waveform visualization~~ (dropped; out of scope)
 
 ### Phase 6: Polish & Production (Weeks 11-12)
 
@@ -593,8 +605,9 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [x] Set up Vitest for unit testing
 - [x] Write unit tests for XML parsing
 - [x] Write unit tests for file operations
-- [ ] Add integration tests for IPC flows
-- [ ] Complete E2E test suite with Playwright
+- [ ] Add integration tests for IPC flows (⚠️ the existing ones mock Electron and do not run the real handlers)
+- [ ] Complete E2E test suite with Playwright (⚠️ not verified locally or in CI)
+- [ ] Tests for `BackupManager`, `PlaylistManager`, `LockManager` and `OperationQueue`
 
 ### Priority 3: Performance
 
@@ -605,11 +618,12 @@ Based on the codebase analysis, here's a prioritized improvement plan:
 - [ ] Move XML parsing to worker threads
 - [ ] Optimize bundle size
 
-### Priority 4: UX ✅ COMPLETED
+### Priority 4: UX ⚠️ MOSTLY COMPLETED
 
 - [x] Replace browser confirm() with custom modals
 - [x] Add loading states and progress bars
-- [x] Implement undo/redo functionality (Cmd+Z, Cmd+Shift+Z)
+- [x] Implement undo/redo functionality (Cmd+Z, Cmd+Shift+Z) for reordering
+- [ ] Undo for delete, batch delete, patch edit and backup restore (remediation spec, 5.1)
 - [x] Add keyboard shortcuts
 - [x] Add multi-select functionality for batch reordering
 - [x] Implement search/filter (integrated into sorting UI)
@@ -644,24 +658,30 @@ Based on the codebase analysis, here's a prioritized improvement plan:
   - [x] **Sorting Feature:** Added drag-and-drop reordering within playlists
   - [x] Automatic migration from v1.0 (directory-based) to v2.0 (ID-based)
 
-### Priority 5: Security
+### Priority 5: Security ⚠️ REOPENED
 
-- [x] Add path validation and sanitization ✅ COMPLETED
+- [x] Add path validation and sanitization for IPC file operations
+- [ ] Restrict the `jamman://` protocol to `.wav` files inside the chosen SD folder (remediation spec, 1.1)
+- [ ] Verify the sender of every IPC call (1.2)
+- [ ] Enable `sandbox: true` (1.3)
+- [ ] Add a Content Security Policy (1.4)
+- [ ] Reduce macOS entitlements to the minimum (1.5)
 - [x] Harden XML parser configuration ✅ COMPLETED
-- [x] Set up code signing documentation ✅ COMPLETED
-- [x] Add input validation ✅ COMPLETED
-- [x] Security audit dependencies (0 vulnerabilities) ✅ COMPLETED
+- [x] Document code signing (documentation only)
+- [ ] Configure code signing and notarization in the release workflow (remediation spec, phase 7)
+- [x] Add input validation (basic `typeof` checks; schema validation still to do)
+- [ ] Security audit dependencies (⚠️ reopened: `npm audit` reported 51 vulnerabilities, 12 of them in production dependencies; remediation spec, 3.2)
 
 ### Priority 6: Developer Experience
 
-- [x] Add comprehensive JSDoc comments ✅ COMPLETED
+- [x] Add JSDoc comments to the main modules (not yet to every IPC handler)
 - [x] Add README architecture documentation ✅ COMPLETED
 - [x] Document IPC API ✅ COMPLETED
-- [x] Set up GitHub Actions CI/CD pipeline ✅ COMPLETED
+- [x] Set up GitHub Actions CI/CD pipeline (⚠️ checks were non-blocking until the 2026-11 CI cleanup; branch protection on `main` still has to be enabled in GitHub)
 - [x] Update README with architecture docs ✅ COMPLETED
 - [x] Add IPC API reference ✅ COMPLETED
 - [x] Set up Prettier and ESLint ✅ COMPLETED
-- [x] Configure pre-commit hooks ✅ COMPLETED
+- [x] Configure pre-commit hooks (Husky + lint-staged) and a `pre-push` hook that runs `npm run verify`
 
 ---
 

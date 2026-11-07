@@ -23,7 +23,7 @@ JamMan Manager is a desktop app that allows musicians to manage loops on their D
 
 ### Requirements
 
-- Node.js >= 23.0.0
+- Node.js >= 24 (see `.nvmrc`; with nvm run `nvm use`)
 
 ### Running Locally
 
@@ -39,6 +39,19 @@ npm run compile
 ```
 
 This will create platform-specific installers (DMG for macOS, NSIS for Windows, AppImage for Linux).
+
+### Development Workflow
+
+```bash
+npm run verify   # typecheck + lint + unit tests (also runs in the pre-push hook)
+npm run format   # format the whole repository with Prettier
+```
+
+Husky runs `lint-staged` before each commit and `npm run verify` before each push.
+Continuous integration (`.github/workflows/ci.yml`) runs the same checks plus a
+formatting check and a production dependency audit; they must pass before merging
+into `main`. See [CHANGELOG.md](CHANGELOG.md) for release notes and [BUILD.md](BUILD.md)
+for packaging and release details.
 
 ## 🏗️ Architecture
 
