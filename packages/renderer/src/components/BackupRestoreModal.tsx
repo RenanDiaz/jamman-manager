@@ -20,6 +20,7 @@ import {
 } from 'reactstrap';
 import { toast } from 'react-toastify';
 import type { Patch } from '../types';
+import { usePatchStore } from '../store/usePatchStore';
 
 interface BackupInfo {
   valid: boolean;
@@ -51,6 +52,7 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
   onRestoreComplete,
 }) => {
   const [activeTab, setActiveTab] = useState<'backup' | 'restore'>('backup');
+  const restoreBackup = usePatchStore(state => state.restoreBackup);
   const [loading, setLoading] = useState(false);
 
   // Backup state
@@ -139,11 +141,7 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
     try {
       setLoading(true);
 
-      const result = await window.electronAPI.restoreBackup(
-        backupFilePath,
-        currentFolder,
-        restoreMode,
-      );
+      const result = await restoreBackup(backupFilePath, restoreMode);
 
       if (result.success) {
         toast.success(

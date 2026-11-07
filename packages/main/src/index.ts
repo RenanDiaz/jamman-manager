@@ -19,6 +19,7 @@ import PDFDocument from 'pdfkit';
 import { BackupManager } from './BackupManager.js';
 import { PlaylistManager } from './PlaylistManager.js';
 import { PathValidator } from './PathValidator.js';
+import { PatchRestore, toIpcResult, type SnapshotScope, type RestoreMode } from './PatchRestore.js';
 import { SecureXMLParser } from './SecureXMLParser.js';
 import {
   createJammanProtocolHandler,
@@ -1276,6 +1277,51 @@ export async function initApp(initConfig: AppInitConfig) {
       );
     }
   });
+
+  // ==================== UNDO SNAPSHOTS ====================
+  // Pre-operation snapshots that let the renderer undo/redo deletes, edits and backup restores.
+  // The logic lives in PatchRestore.ts; these handlers only wire it to IPC.
+
+  const patchRestore = new PatchRestore({
+    snapshotRoot: path.join(app.getPath('userData'), 'undo-snapshots'),
+    withLock: (key, fn) => lockManager.withLock(key, fn),
+    logger: log,
+  });
+  // The undo history lives in memory, so snapshots from a previous run are unreachable.
+  patchRestore.purgeAll().catch(error => log.warn('Failed to purge undo snapshots:', error));
+
+  ipcMain.handle('undo:createSnapshot', (_event, basePath: string, scope: SnapshotScope) =>
+    operationQueue.enqueue(
+      'undo:createSnapshot',
+      'Create undo snapshot',
+      () =>
+        toIpcResult(async () => ({ snapshot: await patchRestore.createSnapshot(basePath, scope) })),
+      OperationPriority.HIGH,
+    ),
+  );
+
+  ipcMain.handle(
+    'undo:restoreSnapshot',
+    (_event, snapshotId: string, basePath: string, mode: RestoreMode, only?: string[]) =>
+      operationQueue.enqueue(
+        'undo:restoreSnapshot',
+        'Restore undo snapshot',
+        async () => {
+          try {
+            return await toIpcResult(() =>
+              patchRestore.restoreSnapshot(snapshotId, basePath, mode, only),
+            );
+          } finally {
+            patchCache.delete(basePath);
+          }
+        },
+        OperationPriority.HIGH,
+      ),
+  );
+
+  ipcMain.handle('undo:discardSnapshot', (_event, snapshotId: string) =>
+    patchRestore.discardSnapshot(snapshotId),
+  );
 
   // ==================== PLAYLIST OPERATIONS ====================
 
