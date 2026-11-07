@@ -82,19 +82,21 @@ export class SecureXMLParser {
     }
 
     // Security: Block DOCTYPE declarations (prevents XXE and billion laughs)
-    if (xmlString.includes('<!DOCTYPE')) {
+    if (/<!DOCTYPE/i.test(xmlString)) {
       log.warn('Blocked XML with DOCTYPE declaration');
       throw new Error('DOCTYPE declarations are not allowed for security reasons');
     }
 
     // Security: Block ENTITY declarations
-    if (xmlString.includes('<!ENTITY')) {
+    if (/<!ENTITY/i.test(xmlString)) {
       log.warn('Blocked XML with ENTITY declaration');
       throw new Error('ENTITY declarations are not allowed for security reasons');
     }
 
-    // Security: Block external references
-    if (xmlString.includes('SYSTEM') || xmlString.includes('PUBLIC')) {
+    // Security: Block external references. SYSTEM/PUBLIC only mean something
+    // inside a markup declaration (`<!NOTATION x SYSTEM "…">`); the same words
+    // in element text or attributes ("SYSTEM of a Down") are just content.
+    if (/<!(?!--|\[CDATA\[)[^>]*\b(?:SYSTEM|PUBLIC)\b/i.test(xmlString)) {
       log.warn('Blocked XML with external references');
       throw new Error('External references are not allowed for security reasons');
     }
