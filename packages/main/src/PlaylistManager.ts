@@ -2,6 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { SecureXMLParser } from './SecureXMLParser.js';
+import {
+  PLAYLIST_SCHEMA_VERSION,
+  collectLegacyPatchDirs,
+  migratePlaylistFile,
+} from './PlaylistSchema.js';
 
 export interface Playlist {
   id: string;
@@ -12,6 +17,8 @@ export interface Playlist {
 }
 
 export interface PlaylistData {
+  /** Written on save; a file without it is the legacy v1 schema (see PlaylistSchema.ts). */
+  schemaVersion?: number;
   version: string;
   playlists: Playlist[];
 }
@@ -109,29 +116,21 @@ export class PlaylistManager {
 
     try {
       const content = fs.readFileSync(playlistPath, 'utf-8');
-      const data: any = JSON.parse(content);
+      const raw: unknown = JSON.parse(content);
 
-      // Migrate from v1 (directory-based) to v2 (ID-based)
-      if (!data.version || data.version === '1.0') {
-        console.log('Migrating playlists from v1 to v2...');
-        for (const playlist of data.playlists || []) {
-          if (playlist.patches && !playlist.patchIds) {
-            // Convert directory names to IDs
-            playlist.patchIds = await this.dirsToIds(basePath, playlist.patches);
-            delete playlist.patches;
-          }
+      // Migrate older schemas (see PlaylistSchema.ts). Legacy directory-based
+      // playlists need their directories resolved to patch IDs first.
+      const dirToId = new Map<string, string>();
+      for (const dir of collectLegacyPatchDirs(raw)) {
+        const id = await this.getPatchId(basePath, dir);
+        if (id) {
+          dirToId.set(dir, id);
         }
-        data.version = this.VERSION;
+      }
+      const { data, migrated } = migratePlaylistFile(raw, dirToId);
+      if (migrated) {
+        console.log(`Migrating playlists to schemaVersion ${PLAYLIST_SCHEMA_VERSION}...`);
         this.savePlaylists(basePath, data);
-      }
-
-      // Validate structure
-      if (!data.version) {
-        data.version = this.VERSION;
-      }
-
-      if (!Array.isArray(data.playlists)) {
-        data.playlists = [];
       }
 
       // Resolve patch IDs to current directory names for each playlist
@@ -167,7 +166,7 @@ export class PlaylistManager {
     const playlistPath = this.getPlaylistPath(basePath);
 
     try {
-      const content = JSON.stringify(data, null, 2);
+      const content = JSON.stringify({ ...data, schemaVersion: PLAYLIST_SCHEMA_VERSION }, null, 2);
       fs.writeFileSync(playlistPath, content, 'utf-8');
     } catch (error) {
       throw new Error(
