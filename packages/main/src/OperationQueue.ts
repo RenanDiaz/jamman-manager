@@ -208,10 +208,16 @@ export class OperationQueue {
    * Notify renderer process of status changes
    */
   private notifyStatusChange(): void {
-    const windows = BrowserWindow.getAllWindows();
-    if (windows.length > 0) {
-      const status = this.getStatus();
-      windows[0].webContents.send('operation-queue:status', status);
+    // A status push must never break the queue: the window can be destroyed mid-flight,
+    // in which case webContents.send throws.
+    try {
+      const windows = BrowserWindow.getAllWindows();
+      if (windows.length > 0) {
+        const status = this.getStatus();
+        windows[0].webContents.send('operation-queue:status', status);
+      }
+    } catch (error) {
+      log.warn('Failed to send operation queue status to renderer:', error);
     }
   }
 
