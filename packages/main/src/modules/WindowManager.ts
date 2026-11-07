@@ -83,7 +83,7 @@ class WindowManager implements AppModule {
       webPreferences: {
         nodeIntegration: false, // Security: Disable Node.js in renderer
         contextIsolation: true, // Security: Isolate renderer from preload context
-        sandbox: false, // Disabled to allow preload script Node.js API access
+        sandbox: true, // Security: the preload only uses contextBridge/ipcRenderer, no Node.js APIs
         webviewTag: false, // Security: Disable deprecated webview tag
         preload: this.#preload.path, // Security bridge to main process
       },

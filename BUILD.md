@@ -71,6 +71,27 @@ The build configuration is defined in:
 - `buildResources/icon.icns` - macOS app icon
 - `buildResources/entitlements.mac.plist` - macOS entitlements
 
+### macOS Entitlements
+
+The app is signed with the hardened runtime (`hardenedRuntime: true` in `electron-builder.mjs`), and `buildResources/entitlements.mac.plist` is used both for the app and for its helpers (`entitlements` and `entitlementsInherit`). It holds only what the app needs:
+
+| Entitlement                                         | Why it is there                                                                                                                                                                                                                                       |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `com.apple.security.cs.allow-jit`                   | V8 (Chromium and Node.js inside Electron) compiles JavaScript to machine code at runtime. Without it the hardened runtime kills the renderer and the main process. Electron requires it.                                                              |
+| `com.apple.security.files.user-selected.read-write` | Access to the files and folders the user picks in open/save dialogs (SD folder, WAVs, backups, exports). It only takes effect under the App Sandbox, which is not enabled; it is kept so turning the sandbox on later does not break the SD workflow. |
+
+Removed (2026-11, security review), with the reason they are not needed:
+
+| Entitlement                                              | Why it was removed                                                                                                                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `com.apple.security.cs.allow-unsigned-executable-memory` | Needed only by old Electron versions. `allow-jit` covers V8 on current Electron.                                                                                        |
+| `com.apple.security.cs.allow-dyld-environment-variables` | Lets `DYLD_*` variables inject libraries into the process. The app does not use them, and it is a common code-injection vector.                                         |
+| `com.apple.security.cs.disable-library-validation`       | Lets the app load libraries signed by other teams. The app ships no third-party native modules (`.node`), so everything it loads is signed with the app's own identity. |
+| `com.apple.security.device.usb`                          | The app talks to the JamMan only through its SD card mounted as a volume, never over USB.                                                                               |
+| `com.apple.security.device.audio-input`                  | The app plays WAV files but never records audio.                                                                                                                        |
+
+If a signed build fails to open (for example a crash on start under the hardened runtime), add back only the entitlement that fixes it and document the reason in this table. Check the entitlements of a build with `codesign -d --entitlements - "JamMan Manager.app"`.
+
 ## Code Signing
 
 Code signing is **critical for security and user trust**. It verifies that your app comes from a known developer and hasn't been tampered with.

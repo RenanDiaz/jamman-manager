@@ -13,7 +13,7 @@
  * @module preload
  */
 
-import { sha256sum } from './nodeCrypto.js';
+import { sha256sum } from './sha256.js';
 import { versions } from './versions.js';
 import { contextBridge, ipcRenderer } from 'electron';
 

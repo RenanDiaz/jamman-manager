@@ -13,16 +13,21 @@ export default /**
     target: `chrome${getChromeMajorVersion()}`,
     assetsDir: '.',
     lib: {
-      entry: ['src/exposed.ts', 'virtual:browser.js'],
+      entry: ['src/exposed.ts'],
+      formats: ['cjs'],
     },
     rollupOptions: {
-      output: [
-        {
-          // ESM preload scripts must have the .mjs extension
-          // https://www.electronjs.org/docs/latest/tutorial/esm#esm-preload-scripts-must-have-the-mjs-extension
-          entryFileNames: '[name].mjs',
-        },
-      ],
+      output: {
+        // The window runs with `sandbox: true`, and sandboxed preload scripts are
+        // plain scripts: no ES modules, and `require` only resolves 'electron'
+        // and a few built-ins. So the preload is a single self-contained
+        // CommonJS file. It keeps the `.mjs` name that `entry-point.mjs` and the
+        // package `exports` reference; Electron does not look at the extension
+        // of a sandboxed preload.
+        // https://www.electronjs.org/docs/latest/tutorial/sandbox#preload-scripts
+        entryFileNames: '[name].mjs',
+        inlineDynamicImports: true,
+      },
     },
     emptyOutDir: true,
     reportCompressedSize: false,
@@ -48,30 +53,24 @@ export default /**
  * ```
  */
 function mockExposed() {
-  const virtualModuleId = 'virtual:browser.js';
-  const resolvedVirtualModuleId = '\0' + virtualModuleId;
-
   return {
     name: 'electron-main-exposer',
-    resolveId(id) {
-      if (id.endsWith(virtualModuleId)) {
-        return resolvedVirtualModuleId;
-      }
-    },
-    async load(id) {
-      if (id === resolvedVirtualModuleId) {
-        const exportedNames = await resolveModuleExportNames('./src/index.ts', {
-          url: import.meta.url,
-        });
-        return exportedNames.reduce((s, key) => {
-          return (
-            s +
-            (key === 'default'
-              ? `export default globalThis['${btoa(key)}'];\n`
-              : `export const ${key} = globalThis['${btoa(key)}'];\n`)
-          );
-        }, '');
-      }
+    async generateBundle() {
+      const exportedNames = await resolveModuleExportNames('./src/index.ts', {
+        url: import.meta.url,
+      });
+      const source = exportedNames.reduce((s, key) => {
+        return (
+          s +
+          (key === 'default'
+            ? `export default globalThis['${btoa(key)}'];\n`
+            : `export const ${key} = globalThis['${btoa(key)}'];\n`)
+        );
+      }, '');
+
+      // Emitted as an asset (not a second entry) so it stays an ES module while
+      // the preload itself is built as CommonJS.
+      this.emitFile({ type: 'asset', fileName: '_virtual_browser.mjs', source });
     },
   };
 }
