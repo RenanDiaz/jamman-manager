@@ -86,12 +86,121 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Build installers and publish to the release
-        run: npx electron-builder --${{ matrix.platform }} --publish always --config electron-builder.mjs
+      # --- Signing --------------------------------------------------------------------------
+      # Signing is optional: without the secrets the installers are built UNSIGNED and the job
+      # still succeeds (with a warning). A half-configured platform is an error, because shipping
+      # a build that is signed but not notarized (or the reverse) is worse than failing early.
+      # The check steps only look at whether secrets exist; the values are never printed.
+      # Each platform's secrets are passed as environment variables only to that platform's steps.
+      # See "Code signing and releases" in BUILD.md for how to create each one.
+
+      - name: Check macOS signing secrets
+        id: mac-signing
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          HAS_CERT: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' }}
+          ANY_CERT: ${{ secrets.MAC_CSC_LINK != '' || secrets.MAC_CSC_KEY_PASSWORD != '' }}
+          HAS_NOTARIZE: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '' }}
+          ANY_NOTARIZE: ${{ secrets.APPLE_API_KEY_P8 != '' || secrets.APPLE_API_KEY_ID != '' || secrets.APPLE_API_ISSUER != '' }}
+        run: |
+          if [ "$ANY_CERT" = "true" ] && [ "$HAS_CERT" != "true" ]; then
+            echo "::error::Incomplete macOS certificate: set both MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD, or neither."
+            exit 1
+          fi
+          if [ "$ANY_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE" != "true" ]; then
+            echo "::error::Incomplete notarization credentials: set APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER, or none."
+            exit 1
+          fi
+          if [ "$HAS_CERT" = "true" ] && [ "$HAS_NOTARIZE" != "true" ]; then
+            echo "::error::A Developer ID certificate without notarization credentials would produce a build Gatekeeper still blocks."
+            exit 1
+          fi
+          if [ "$HAS_NOTARIZE" = "true" ] && [ "$HAS_CERT" != "true" ]; then
+            echo "::error::Notarization credentials without a Developer ID certificate: nothing to notarize."
+            exit 1
+          fi
+          if [ "$HAS_CERT" != "true" ]; then
+            echo "::warning title=macOS build is UNSIGNED::MAC_CSC_LINK and the notarization secrets are not set. The macOS installers are not signed or notarized (Gatekeeper blocks them) and macOS auto-update will not work."
+          fi
+          echo "notarize=${HAS_NOTARIZE}" >> "$GITHUB_OUTPUT"
+
+      # electron-builder reads the App Store Connect key from a file whose path is in APPLE_API_KEY.
+      - name: Write App Store Connect API key
+        if: matrix.platform == 'mac' && steps.mac-signing.outputs.notarize == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
+          (umask 077 && printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH")
+          echo "APPLE_API_KEY=${KEY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Check Windows signing secrets
+        if: matrix.platform == 'win'
+        shell: bash
+        env:
+          HAS_AZURE: ${{ secrets.AZURE_TENANT_ID != '' && secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_CLIENT_SECRET != '' && vars.AZURE_SIGNING_ENDPOINT != '' && vars.AZURE_SIGNING_ACCOUNT != '' && vars.AZURE_SIGNING_PROFILE != '' && vars.AZURE_SIGNING_PUBLISHER_NAME != '' }}
+          ANY_AZURE: ${{ secrets.AZURE_TENANT_ID != '' || secrets.AZURE_CLIENT_ID != '' || secrets.AZURE_CLIENT_SECRET != '' || vars.AZURE_SIGNING_ENDPOINT != '' || vars.AZURE_SIGNING_ACCOUNT != '' || vars.AZURE_SIGNING_PROFILE != '' || vars.AZURE_SIGNING_PUBLISHER_NAME != '' }}
+          HAS_PFX: ${{ secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' }}
+          ANY_PFX: ${{ secrets.WIN_CSC_LINK != '' || secrets.WIN_CSC_KEY_PASSWORD != '' }}
+        run: |
+          if [ "$ANY_AZURE" = "true" ] && [ "$HAS_AZURE" != "true" ]; then
+            echo "::error::Incomplete Azure Trusted Signing configuration: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET (secrets) and AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE, AZURE_SIGNING_PUBLISHER_NAME (variables) must all be set, or none."
+            exit 1
+          fi
+          if [ "$ANY_PFX" = "true" ] && [ "$HAS_PFX" != "true" ]; then
+            echo "::error::Incomplete Windows certificate: set both WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD, or neither."
+            exit 1
+          fi
+          if [ "$HAS_AZURE" = "true" ]; then
+            echo "Windows signing: Azure Trusted Signing."
+          elif [ "$HAS_PFX" = "true" ]; then
+            echo "Windows signing: .pfx certificate."
+          else
+            echo "::warning title=Windows build is UNSIGNED::No Azure Trusted Signing settings and no WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD. The Windows installers are not signed (SmartScreen will warn)."
+          fi
+
+      # --- Build and publish ----------------------------------------------------------------
+
+      - name: Build installers and publish to the release (macOS)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac --publish always --config electron-builder.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Developer ID Application certificate (.p12, base64) and its password.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Notarization with an App Store Connect API key. APPLE_API_KEY (the .p8 path) comes from
+          # the "Write App Store Connect API key" step through GITHUB_ENV.
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+      - name: Build installers and publish to the release (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win --publish always --config electron-builder.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Option A, Azure Trusted Signing. electron-builder.mjs enables it only when all are set.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_SIGNING_PUBLISHER_NAME: ${{ vars.AZURE_SIGNING_PUBLISHER_NAME }}
+          # Option B, a .pfx certificate (base64) and its password. Used when Azure is not configured.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # rpm packages need `rpmbuild`; installing it is a no-op if the runner image already has it.
+      - name: Install rpm tooling
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      # Linux packages are not signed.
+      - name: Build installers and publish to the release (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux --publish always --config electron-builder.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

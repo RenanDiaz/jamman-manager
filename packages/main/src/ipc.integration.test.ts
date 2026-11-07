@@ -10,6 +10,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+/**
+ * `node:fs` is a frozen ESM namespace, so a failure cannot be injected with
+ * `vi.spyOn`. Instead `renameSync` runs `renameHook.fn` first (which may throw)
+ * and then the real rename. Without a hook it is a pure pass-through.
+ */
+const renameHook = vi.hoisted(() => ({
+  fn: undefined as undefined | ((from: string, to: string) => void),
+}));
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const renameSync: typeof actual.renameSync = (from, to) => {
+    renameHook.fn?.(String(from), String(to));
+    return actual.renameSync(from, to);
+  };
+  return { ...actual, renameSync, default: { ...actual, renameSync } };
+});
+
 vi.mock('electron', () => import('./test-utils/electronMock.js'));
 vi.mock('electron-log', () => import('./test-utils/logMock.js'));
 vi.mock('electron-updater', () => import('./test-utils/updaterMock.js'));
@@ -45,6 +62,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  renameHook.fn = undefined;
   vi.useRealTimers();
   vi.restoreAllMocks();
   app.cleanup();
@@ -358,6 +376,32 @@ describe('patches:create', () => {
     expect(names(patches).Patch04).toBe('New One');
   });
 
+  it('escapes user text in patch.xml so it reads back unchanged', async () => {
+    const patchName = `Tom & Jerry <Live> "Q" 'x' &amp; 🎸`;
+    const rhythmType = 'Rock & <Roll>';
+    const stopMode = 'Stop > Now & Then';
+    await expect(
+      app.invoke('patches:create', form({ patchName, rhythmType, stopMode })),
+    ).resolves.toBe(true);
+
+    const [created] = (await app.invoke<ReadPatch[]>('patches:read', sd.path)).filter(
+      p => p.dir === 'Patch04',
+    );
+    expect(created, 'the new patch must stay readable').toBeDefined();
+    const read = created.data.JamManPatch as unknown as Record<string, string[]>;
+    expect(read.PatchName[0]).toBe(patchName);
+    expect(read.RhythmType[0]).toBe(rhythmType);
+    expect(read.StopMode[0]).toBe(stopMode);
+  });
+
+  it('lists a patch whose text contains the words SYSTEM and PUBLIC', async () => {
+    await expect(
+      app.invoke('patches:create', form({ patchName: 'SYSTEM of a Down', rhythmType: 'PUBLIC' })),
+    ).resolves.toBe(true);
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches).Patch04).toBe('SYSTEM of a Down');
+  });
+
   it('rolls back the new folder when a source WAV is missing', async () => {
     const wav = outsideWav();
     await app.selectFile(wav);
@@ -417,6 +461,32 @@ describe('patches:update', () => {
     const phrase = fs.readFileSync(path.join(sd.path, 'Patch02', 'PhraseA', 'phrase.xml'), 'utf-8');
     expect(phrase).toContain('<ID>000000b0-0000-4000-8000-000000000021</ID>');
     expect(fs.readdirSync(sd.path).filter(d => d.startsWith('__backup_'))).toEqual([]);
+  });
+
+  it('escapes user text in patch.xml so it reads back unchanged', async () => {
+    const patchName = 'Fish & Chips <2>';
+    await expect(
+      app.invoke('patches:update', {
+        basePath: sd.path,
+        directory: 'Patch02',
+        patchName,
+        rhythmType: 'A & B',
+        stopMode: '<Stop>',
+        settingsVersion: '1',
+        patchID: SD_FIXTURE_PATCHES[1].id,
+        patchOriginID: 'origin & 1',
+        phrases: [existingPhrase('Patch02', 'PhraseA')],
+      }),
+    ).resolves.toBe(true);
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    const updated = patches.find(p => p.dir === 'Patch02');
+    expect(updated, 'the updated patch must stay readable').toBeDefined();
+    const read = updated!.data.JamManPatch as unknown as Record<string, string[]>;
+    expect(read.PatchName[0]).toBe(patchName);
+    expect(read.RhythmType[0]).toBe('A & B');
+    expect(read.StopMode[0]).toBe('<Stop>');
+    expect(read.OriginID[0]).toBe('origin & 1');
   });
 
   it('restores the original patch when the update fails half-way', async () => {
@@ -561,6 +631,31 @@ describe('patches:reorder', () => {
     expect(fs.existsSync(path.join(sd.path, '__tmp_Patch03'))).toBe(false);
     expect(fs.existsSync(path.join(sd.path, '__tmp_Patch01'))).toBe(false);
   });
+
+  it.each([1, 2, 3])(
+    'puts every folder back when rename %i of the second step fails',
+    async failAt => {
+      const before = names(await app.invoke<ReadPatch[]>('patches:read', sd.path));
+      let finalRenames = 0;
+      let failed = false;
+      renameHook.fn = from => {
+        // Step 2 moves "__tmp_*" to "PatchNN": fail the failAt-th one. The
+        // rollback's own renames (also from "__tmp_*") must not be counted or failed.
+        if (!failed && path.basename(from).startsWith('__tmp_') && ++finalRenames === failAt) {
+          failed = true;
+          throw new Error('disk error');
+        }
+      };
+
+      await expect(
+        app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch01', 'Patch02']),
+      ).rejects.toThrow('Failed to reorder patches: disk error');
+
+      expect(finalRenames).toBe(failAt);
+      expect(fs.readdirSync(sd.path).sort()).toEqual(['Patch01', 'Patch02', 'Patch03']);
+      expect(names(await app.invoke<ReadPatch[]>('patches:read', sd.path))).toEqual(before);
+    },
+  );
 
   it('fails before touching anything when a patch is missing', async () => {
     await expect(app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch09'])).rejects.toThrow(

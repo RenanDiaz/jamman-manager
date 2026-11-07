@@ -102,6 +102,28 @@ describe('SecureXMLParser', () => {
       );
     });
 
+    it('should accept SYSTEM and PUBLIC as plain text content', async () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<JamManPatch>
+  <PatchName>SYSTEM of a Down</PatchName>
+  <RhythmType>PUBLIC Enemy</RhythmType>
+</JamManPatch>`;
+
+      expect(() => SecureXMLParser.validateXML(xml)).not.toThrow();
+      const parsed = (await SecureXMLParser.parseXML(xml)) as {
+        JamManPatch: { PatchName: string[]; RhythmType: string[] };
+      };
+      expect(parsed.JamManPatch.PatchName[0]).toBe('SYSTEM of a Down');
+      expect(parsed.JamManPatch.RhythmType[0]).toBe('PUBLIC Enemy');
+    });
+
+    it('should still reject a DOCTYPE or ENTITY even after SYSTEM text content', () => {
+      const xml = `<?xml version="1.0"?>
+<!DOCTYPE foo [ <!ENTITY x SYSTEM "file:///etc/passwd"> ]>
+<JamManPatch><PatchName>SYSTEM</PatchName></JamManPatch>`;
+      expect(() => SecureXMLParser.validateXML(xml)).toThrow();
+    });
+
     it('should reject XML exceeding size limit', () => {
       const largeXML = '<root>' + 'a'.repeat(11 * 1024 * 1024) + '</root>';
 

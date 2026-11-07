@@ -69,16 +69,35 @@ type PatchXmlFields = {
   originId: string;
 };
 
+/** Characters XML 1.0 cannot contain at all, not even escaped (control codes, lone surrogates, U+FFFE/F; the `u` flag keeps emoji pairs). */
+// eslint-disable-next-line no-control-regex
+const XML_ILLEGAL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu;
+
+/**
+ * Makes user text safe inside an XML element: escapes `& < > " '` and drops the
+ * characters XML 1.0 forbids. The parser decodes the five entities on read, so
+ * write → read keeps the original text.
+ */
+export function escapeXml(text: string): string {
+  return String(text)
+    .replace(XML_ILLEGAL_CHARS, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function buildPatchXml(p: PatchXmlFields): string {
   return `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
-  <PatchName>${p.patchName}</PatchName>
-  <RhythmType>${p.rhythmType}</RhythmType>
-  <StopMode>${p.stopMode}</StopMode>
-  <SettingsVersion>${p.settingsVersion}</SettingsVersion>
-  <ID>${p.id}</ID>
-  <OriginID>${p.originId}</OriginID>
+  <PatchName>${escapeXml(p.patchName)}</PatchName>
+  <RhythmType>${escapeXml(p.rhythmType)}</RhythmType>
+  <StopMode>${escapeXml(p.stopMode)}</StopMode>
+  <SettingsVersion>${escapeXml(String(p.settingsVersion))}</SettingsVersion>
+  <ID>${escapeXml(p.id)}</ID>
+  <OriginID>${escapeXml(p.originId)}</OriginID>
   <Metadata/>
 </JamManPatch>`.trim();
 }
@@ -94,8 +113,8 @@ function buildPhraseXml(phrase: PhraseForm, id: string, originId: string): strin
   <IsReversed>${phrase.isReversed ? 1 : 0}</IsReversed>
   <SettingsVersion>1</SettingsVersion>
   <AudioVersion>1</AudioVersion>
-  <ID>${id}</ID>
-  <OriginID>${originId}</OriginID>
+  <ID>${escapeXml(id)}</ID>
+  <OriginID>${escapeXml(originId)}</OriginID>
   <Metadata/>
 </JamManPhrase>`.trim();
 }
@@ -656,7 +675,15 @@ export function createPatchHandlers({
         throw new Error('Invalid patch directory names');
       }
       const jammanPath = path.join(basePath);
-      const tempMap: Record<string, string> = {};
+
+      // Where each folder is right now, so a failure can put every one back.
+      type Move = {
+        original: string;
+        temp: string;
+        final: string;
+        at: 'original' | 'temp' | 'final';
+      };
+      const moves: Move[] = [];
 
       return operationQueue.enqueue(
         'patches:reorder',
@@ -674,15 +701,25 @@ export function createPatchHandlers({
 
               // 1. Temporary rename to avoid conflicts
               for (let i = 0; i < newOrder.length; i++) {
-                const currentName = newOrder[i];
-                const tempName = `__tmp_${currentName}`;
-                fs.renameSync(path.join(jammanPath, currentName), path.join(jammanPath, tempName));
-                tempMap[tempName] = `Patch${String(i + 1).padStart(2, '0')}`;
+                const original = newOrder[i];
+                const move: Move = {
+                  original,
+                  temp: `__tmp_${original}`,
+                  final: `Patch${String(i + 1).padStart(2, '0')}`,
+                  at: 'original',
+                };
+                moves.push(move);
+                fs.renameSync(
+                  path.join(jammanPath, move.original),
+                  path.join(jammanPath, move.temp),
+                );
+                move.at = 'temp';
               }
 
               // 2. Rename all temporary folders to their final names
-              for (const [tempName, finalName] of Object.entries(tempMap)) {
-                fs.renameSync(path.join(jammanPath, tempName), path.join(jammanPath, finalName));
+              for (const move of moves) {
+                fs.renameSync(path.join(jammanPath, move.temp), path.join(jammanPath, move.final));
+                move.at = 'final';
               }
 
               log.info(`Successfully reordered ${newOrder.length} patches`);
@@ -691,18 +728,36 @@ export function createPatchHandlers({
             } catch (error) {
               log.error('Error reordering patches:', error);
 
-              // Rollback: Try to restore original names from temp
-              for (const tempName of Object.keys(tempMap)) {
-                const tempPath = path.join(jammanPath, tempName);
-                const originalName = tempName.replace('__tmp_', '');
+              // Rollback in two passes. A folder already at its final name goes
+              // back to its temporary name first: that frees every PatchNN, so the
+              // second pass can restore each original name without colliding with
+              // a folder that was already renamed.
+              for (const move of moves) {
+                if (move.at !== 'final') continue;
                 try {
-                  if (fs.existsSync(tempPath)) {
-                    fs.renameSync(tempPath, path.join(jammanPath, originalName));
-                  }
+                  fs.renameSync(
+                    path.join(jammanPath, move.final),
+                    path.join(jammanPath, move.temp),
+                  );
+                  move.at = 'temp';
                 } catch (rollbackError) {
-                  log.error(`Failed to rollback rename for ${originalName}:`, rollbackError);
+                  log.error(`Failed to rollback rename of ${move.final}:`, rollbackError);
                 }
               }
+              for (const move of moves) {
+                if (move.at !== 'temp') continue;
+                try {
+                  fs.renameSync(
+                    path.join(jammanPath, move.temp),
+                    path.join(jammanPath, move.original),
+                  );
+                  move.at = 'original';
+                } catch (rollbackError) {
+                  log.error(`Failed to rollback rename for ${move.original}:`, rollbackError);
+                }
+              }
+              // Some folders may now have moved: never serve the old listing.
+              patchCache.invalidate(basePath);
 
               throw new Error(`Failed to reorder patches: ${errorMessage(error)}`);
             }
