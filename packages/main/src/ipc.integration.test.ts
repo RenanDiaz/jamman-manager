@@ -10,6 +10,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+/**
+ * `node:fs` is a frozen ESM namespace, so a failure cannot be injected with
+ * `vi.spyOn`. Instead `renameSync` runs `renameHook.fn` first (which may throw)
+ * and then the real rename. Without a hook it is a pure pass-through.
+ */
+const renameHook = vi.hoisted(() => ({
+  fn: undefined as undefined | ((from: string, to: string) => void),
+}));
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const renameSync: typeof actual.renameSync = (from, to) => {
+    renameHook.fn?.(String(from), String(to));
+    return actual.renameSync(from, to);
+  };
+  return { ...actual, renameSync, default: { ...actual, renameSync } };
+});
+
 vi.mock('electron', () => import('./test-utils/electronMock.js'));
 vi.mock('electron-log', () => import('./test-utils/logMock.js'));
 vi.mock('electron-updater', () => import('./test-utils/updaterMock.js'));
@@ -45,6 +62,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  renameHook.fn = undefined;
   vi.useRealTimers();
   vi.restoreAllMocks();
   app.cleanup();
@@ -613,6 +631,31 @@ describe('patches:reorder', () => {
     expect(fs.existsSync(path.join(sd.path, '__tmp_Patch03'))).toBe(false);
     expect(fs.existsSync(path.join(sd.path, '__tmp_Patch01'))).toBe(false);
   });
+
+  it.each([1, 2, 3])(
+    'puts every folder back when rename %i of the second step fails',
+    async failAt => {
+      const before = names(await app.invoke<ReadPatch[]>('patches:read', sd.path));
+      let finalRenames = 0;
+      let failed = false;
+      renameHook.fn = from => {
+        // Step 2 moves "__tmp_*" to "PatchNN": fail the failAt-th one. The
+        // rollback's own renames (also from "__tmp_*") must not be counted or failed.
+        if (!failed && path.basename(from).startsWith('__tmp_') && ++finalRenames === failAt) {
+          failed = true;
+          throw new Error('disk error');
+        }
+      };
+
+      await expect(
+        app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch01', 'Patch02']),
+      ).rejects.toThrow('Failed to reorder patches: disk error');
+
+      expect(finalRenames).toBe(failAt);
+      expect(fs.readdirSync(sd.path).sort()).toEqual(['Patch01', 'Patch02', 'Patch03']);
+      expect(names(await app.invoke<ReadPatch[]>('patches:read', sd.path))).toEqual(before);
+    },
+  );
 
   it('fails before touching anything when a patch is missing', async () => {
     await expect(app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch09'])).rejects.toThrow(
