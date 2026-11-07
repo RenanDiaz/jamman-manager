@@ -24,7 +24,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npx playwright test ./tests/e2e.spec.ts",
+    "test:e2e": "playwright test",
     "start": "node packages/dev-mode.js",
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",

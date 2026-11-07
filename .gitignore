@@ -60,3 +60,8 @@ thumbs.db
 
 # JetBrains IDE project settings (user-specific)
 .idea/
+
+# Test and coverage output
+coverage/
+test-results/
+playwright-report/
