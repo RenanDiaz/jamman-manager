@@ -19,6 +19,7 @@ import { Patch } from '../types';
 import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
 import { useUndoStore } from './useUndoStore';
+import { discardSnapshots, snapshotOrWarn } from '../utils/undoSnapshots';
 
 /** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
@@ -139,22 +140,36 @@ interface PatchStore {
   createPatch: (data: unknown) => Promise<void>;
 
   /**
-   * Updates an existing patch
+   * Updates an existing patch. The edit is undoable (the previous state is snapshotted first).
    * @param data - Patch payload with updated metadata
    */
   updatePatch: (data: unknown) => Promise<void>;
 
   /**
-   * Deletes a single patch
+   * Deletes a single patch. The delete is undoable (the patch is snapshotted first).
    * @param directory - Patch directory name
+   * @param skipUndo - If true, doesn't create undo entry (for redo)
    */
-  deletePatch: (directory: string) => Promise<void>;
+  deletePatch: (directory: string, skipUndo?: boolean) => Promise<void>;
 
   /**
-   * Deletes multiple patches in a batch operation
+   * Deletes multiple patches in a batch operation. The delete is undoable.
    * @param directories - Array of patch directory names
+   * @param skipUndo - If true, doesn't create undo entry (for redo)
    */
-  deletePatches: (directories: string[]) => Promise<void>;
+  deletePatches: (directories: string[], skipUndo?: boolean) => Promise<void>;
+
+  /**
+   * Restores a backup into the current folder. The whole folder is snapshotted first so the
+   * restore can be undone.
+   * @param backupPath - Backup ZIP file
+   * @param mode - 'replace' wipes the folder first, 'merge' adds with auto-renumbering
+   * @returns Restore result from the main process
+   */
+  restoreBackup: (
+    backupPath: string,
+    mode: 'replace' | 'merge',
+  ) => Promise<{ success: boolean; patchesRestored: number }>;
 
   /**
    * Reorders patches by renaming directories
@@ -239,6 +254,12 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
 
   // Async operations
   loadPatches: async (folder: string, update = false) => {
+    // Undo entries refer to a specific folder; they make no sense once another one is opened
+    const previousFolder = get().currentFolder;
+    if (previousFolder && previousFolder !== folder) {
+      useUndoStore.getState().clearHistory();
+    }
+
     try {
       set({ loading: true });
       if (!update) set({ patches: [] });
@@ -297,14 +318,31 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
 
+    const directory = (data as { directory?: string }).directory;
+    // Snapshot the patch as it is now (audio included) so the edit can be undone
+    const snapshotId = directory
+      ? await snapshotOrWarn(currentFolder, { kind: 'patches', patches: [directory] })
+      : null;
+
     try {
       set({ loading: true });
       await window.electronAPI.updatePatch(
         data as Parameters<typeof window.electronAPI.updatePatch>[0],
       );
+      if (snapshotId && directory) {
+        useUndoStore.getState().pushUndo({
+          type: 'UPDATE_PATCH',
+          timestamp: Date.now(),
+          description: `Edit ${directory}`,
+          folder: currentFolder,
+          directory,
+          beforeSnapshotId: snapshotId,
+        });
+      }
       toast.success('Patch updated successfully');
       await loadPatches(currentFolder, true);
     } catch (error) {
+      discardSnapshots([snapshotId]);
       console.error('Error updating patch:', error);
       toast.error('Failed to update patch. Please try again.');
       throw error;
@@ -313,16 +351,33 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  deletePatch: async (directory: string) => {
-    const { currentFolder, loadPatches } = get();
+  deletePatch: async (directory: string, skipUndo = false) => {
+    const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+
+    // Snapshot first: it is the only copy of the patch's phrases and audio once it is deleted
+    const snapshotId = skipUndo
+      ? null
+      : await snapshotOrWarn(currentFolder, { kind: 'patches', patches: [directory] });
 
     try {
       set({ loading: true });
       await window.electronAPI.deletePatch(currentFolder, directory);
+      if (snapshotId) {
+        useUndoStore.getState().pushUndo({
+          type: 'DELETE_PATCH',
+          timestamp: Date.now(),
+          description: `Delete ${directory}`,
+          folder: currentFolder,
+          directory,
+          patch: patches.find(p => p.dir === directory),
+          snapshotId,
+        });
+      }
       toast.success(`Successfully deleted ${directory}`);
       await loadPatches(currentFolder, true);
     } catch (error) {
+      discardSnapshots([snapshotId]);
       console.error('Error deleting patch:', error);
       toast.error('Failed to delete patch. Please try again.');
       throw error;
@@ -331,9 +386,16 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     }
   },
 
-  deletePatches: async (directories: string[]) => {
-    const { currentFolder, loadPatches } = get();
+  deletePatches: async (directories: string[], skipUndo = false) => {
+    const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+
+    // Only patches that exist can be snapshotted
+    const existing = directories.filter(dir => patches.some(p => p.dir === dir));
+    const snapshotId =
+      skipUndo || existing.length === 0
+        ? null
+        : await snapshotOrWarn(currentFolder, { kind: 'patches', patches: existing });
 
     try {
       set({ loading: true });
@@ -342,6 +404,21 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       if (result.success) {
         const deletedCount = result.deleted.length;
         const failedCount = result.failed;
+
+        // The batch can partly fail: undo only what was really deleted
+        if (snapshotId && deletedCount > 0) {
+          useUndoStore.getState().pushUndo({
+            type: 'DELETE_PATCHES',
+            timestamp: Date.now(),
+            description: `Delete ${deletedCount} patches`,
+            folder: currentFolder,
+            directories: result.deleted,
+            patches: patches.filter(p => result.deleted.includes(p.dir)),
+            snapshotId,
+          });
+        } else {
+          discardSnapshots([snapshotId]);
+        }
 
         if (failedCount > 0) {
           toast.warning(`Deleted ${deletedCount} patches successfully, but ${failedCount} failed.`);
@@ -352,13 +429,53 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
         await loadPatches(currentFolder, true);
         // Clear selection after successful delete
         set({ selectedPatchDirs: [] });
+      } else {
+        discardSnapshots([snapshotId]);
       }
     } catch (error) {
+      discardSnapshots([snapshotId]);
       console.error('Error deleting patches:', error);
       toast.error('Failed to delete patches. Please try again.');
       throw error;
     } finally {
       set({ loading: false });
+    }
+  },
+
+  restoreBackup: async (backupPath: string, mode: 'replace' | 'merge') => {
+    const { currentFolder, loadPatches } = get();
+    if (!currentFolder) throw new Error('No folder loaded');
+
+    // Snapshot the whole folder (patches and playlists): replace mode wipes it
+    const snapshotId = await snapshotOrWarn(currentFolder, { kind: 'all' });
+
+    const pushRestoreUndo = (description: string, patchesRestored: number) => {
+      if (!snapshotId) return;
+      useUndoStore.getState().pushUndo({
+        type: 'RESTORE_BACKUP',
+        timestamp: Date.now(),
+        description,
+        folder: currentFolder,
+        beforeSnapshotId: snapshotId,
+        patchesRestored,
+      });
+    };
+
+    try {
+      const result = await window.electronAPI.restoreBackup(backupPath, currentFolder, mode);
+      if (result.success) {
+        pushRestoreUndo(`Restore backup (${mode})`, result.patchesRestored);
+      } else {
+        discardSnapshots([snapshotId]);
+      }
+      await loadPatches(currentFolder, true);
+      return result;
+    } catch (error) {
+      // A restore that fails half way can already have removed patches: keep the snapshot
+      // reachable so the user can still get back to where they were.
+      pushRestoreUndo(`Restore backup (${mode}, failed)`, 0);
+      await loadPatches(currentFolder, true);
+      throw error;
     }
   },
 

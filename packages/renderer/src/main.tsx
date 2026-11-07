@@ -64,6 +64,30 @@ interface BackupInfo {
   error?: string;
 }
 
+interface UndoSnapshotInfo {
+  id: string;
+  basePath: string;
+  scope: 'patches' | 'all';
+  patches: string[];
+  hasPlaylists: boolean;
+  sizeBytes: number;
+  createdAt: number;
+}
+
+type UndoResult<T> =
+  | ({ ok: true } & T)
+  | {
+      ok: false;
+      code:
+        | 'INVALID_ARGUMENT'
+        | 'NOT_FOUND'
+        | 'TOO_LARGE'
+        | 'SLOT_OCCUPIED'
+        | 'WRONG_FOLDER'
+        | 'FAILED';
+      message: string;
+    };
+
 declare global {
   interface Window {
     electronAPI: {
@@ -96,6 +120,18 @@ declare global {
         patches?: string[],
       ): Promise<{ success: boolean; patchesRestored: number }>;
       selectBackupFile(): Promise<string | null>;
+      // Undo snapshots
+      createUndoSnapshot(
+        basePath: string,
+        scope: { kind: 'patches'; patches: string[] } | { kind: 'all' },
+      ): Promise<UndoResult<{ snapshot: UndoSnapshotInfo }>>;
+      restoreUndoSnapshot(
+        snapshotId: string,
+        basePath: string,
+        mode: 'add' | 'replace',
+        only?: string[],
+      ): Promise<UndoResult<{ restored: string[]; removed: string[] }>>;
+      discardUndoSnapshot(snapshotId: string): Promise<void>;
       // Utility
       getFolderSize(
         folderPath: string,
