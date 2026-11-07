@@ -390,8 +390,11 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
 
-    // Only patches that exist can be snapshotted
-    const existing = directories.filter(dir => patches.some(p => p.dir === dir));
+    // Only real patch folders that exist can be snapshotted (the list can also hold the
+    // short-lived `__deleted_*` folders the main process leaves after a delete)
+    const existing = directories.filter(
+      dir => /^Patch\d{2}$/.test(dir) && patches.some(p => p.dir === dir),
+    );
     const snapshotId =
       skipUndo || existing.length === 0
         ? null

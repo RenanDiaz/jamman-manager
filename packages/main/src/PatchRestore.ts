@@ -14,7 +14,7 @@
  * @module PatchRestore
  */
 
-import * as fse from 'fs-extra';
+import fse from 'fs-extra';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
