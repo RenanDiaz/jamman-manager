@@ -203,6 +203,7 @@ export class PlaylistManager {
     } catch (error) {
       throw new Error(
         `Failed to save playlists: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error },
       );
     }
   }

@@ -416,7 +416,7 @@ export function createPatchHandlers({
                 }
               }
 
-              throw new Error(`Failed to create patch: ${errorMessage(error)}`);
+              throw new Error(`Failed to create patch: ${errorMessage(error)}`, { cause: error });
             }
           }),
         OperationPriority.NORMAL,
@@ -539,7 +539,7 @@ export function createPatchHandlers({
                 }
               }
 
-              throw new Error(`Failed to update patch: ${errorMessage(error)}`);
+              throw new Error(`Failed to update patch: ${errorMessage(error)}`, { cause: error });
             }
           }),
         OperationPriority.NORMAL,
@@ -595,7 +595,7 @@ export function createPatchHandlers({
                 }
               }
 
-              throw new Error(`Failed to delete patch: ${errorMessage(error)}`);
+              throw new Error(`Failed to delete patch: ${errorMessage(error)}`, { cause: error });
             }
           }),
         OperationPriority.HIGH,
@@ -661,7 +661,7 @@ export function createPatchHandlers({
               }
             }
 
-            throw new Error(`Failed to delete patches: ${errorMessage(error)}`);
+            throw new Error(`Failed to delete patches: ${errorMessage(error)}`, { cause: error });
           }
         },
         OperationPriority.HIGH,
@@ -759,7 +759,9 @@ export function createPatchHandlers({
               // Some folders may now have moved: never serve the old listing.
               patchCache.invalidate(basePath);
 
-              throw new Error(`Failed to reorder patches: ${errorMessage(error)}`);
+              throw new Error(`Failed to reorder patches: ${errorMessage(error)}`, {
+                cause: error,
+              });
             }
           }),
         OperationPriority.NORMAL,

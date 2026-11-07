@@ -16,7 +16,7 @@ export default /**
       entry: ['src/exposed.ts'],
       formats: ['cjs'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // The window runs with `sandbox: true`, and sandboxed preload scripts are
         // plain scripts: no ES modules, and `require` only resolves 'electron'
@@ -26,7 +26,7 @@ export default /**
         // of a sandboxed preload.
         // https://www.electronjs.org/docs/latest/tutorial/sandbox#preload-scripts
         entryFileNames: '[name].mjs',
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
     emptyOutDir: true,
