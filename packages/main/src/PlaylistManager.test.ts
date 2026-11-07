@@ -372,7 +372,7 @@ describe('PlaylistManager', () => {
     it('rejects an order with missing patches and keeps the old order', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
       await expect(PlaylistManager.reorderPlaylistPatches(base, pl.id, [P2.dir])).rejects.toThrow(
-        'Invalid patch order: some patches are missing',
+        /Invalid patch order/,
       );
       expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
     });
@@ -400,13 +400,29 @@ describe('PlaylistManager', () => {
       await expect(PlaylistManager.reorderPlaylistPatches(base, full.id, [])).rejects.toThrow();
     });
 
-    // BUG: validation only compares lengths, so a duplicated entry stands in for a
-    // missing one: [P1, P1] passes for a playlist of [P1, P2] and silently drops P2.
-    it.fails('rejects an order that repeats a patch instead of dropping another', async () => {
+    // Validation used to compare only lengths, so a duplicated entry stood in for a
+    // missing one: [P1, P1] passed for a playlist of [P1, P2] and silently dropped P2.
+    it('rejects an order that repeats a patch instead of dropping another', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
       await expect(
         PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P1.dir]),
       ).rejects.toThrow();
+      expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
+    });
+
+    it('rejects a longer order that repeats a patch', async () => {
+      const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
+      await expect(
+        PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P2.dir, P1.dir]),
+      ).rejects.toThrow(/Invalid patch order/);
+      expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
+    });
+
+    it('rejects a same-length order where one patch is swapped for a foreign one', async () => {
+      const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
+      await expect(
+        PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P3.dir]),
+      ).rejects.toThrow(/Invalid patch order/);
       expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
     });
 

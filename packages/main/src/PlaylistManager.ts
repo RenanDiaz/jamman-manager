@@ -343,17 +343,26 @@ export class PlaylistManager {
       throw new Error(`Playlist not found: ${playlistId}`);
     }
 
-    // Convert new order to IDs
+    // Convert new order to IDs. A directory without a readable ID is dropped here, so a
+    // shorter result means the request named something that is not a patch.
     const newOrderIds = await this.dirsToIds(basePath, newOrderDirs);
 
-    // Validate that all patches in newOrder are in the playlist
-    const validIds = newOrderIds.filter(id => playlist.patchIds.includes(id));
+    // The new order must be an exact permutation of the current one: same length, no
+    // repeats, nothing missing and nothing foreign. (Comparing only lengths let [P1, P1]
+    // replace [P1, P2] and silently lose P2.)
+    const current = new Set(playlist.patchIds);
+    const requested = new Set(newOrderIds);
+    const isPermutation =
+      newOrderIds.length === newOrderDirs.length &&
+      newOrderIds.length === playlist.patchIds.length &&
+      requested.size === newOrderIds.length &&
+      newOrderIds.every(id => current.has(id));
 
-    if (validIds.length !== playlist.patchIds.length) {
-      throw new Error('Invalid patch order: some patches are missing');
+    if (!isPermutation) {
+      throw new Error('Invalid patch order: it must contain every patch of the playlist once');
     }
 
-    playlist.patchIds = validIds;
+    playlist.patchIds = newOrderIds;
     playlist.updatedAt = new Date().toISOString();
     this.savePlaylists(basePath, data);
 
