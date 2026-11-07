@@ -41,6 +41,114 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** Content tag of every patch folder, in folder order: what the user sees as the order */
+const tags = () => sd.patchDirs().map(d => sd.read(`${d}/patch.xml`).toString());
+const patchesByDir = () => patchStore().patches;
+/** The `Patch` objects of the store, reordered by the tag of their content (as the UI would) */
+const reorderTo = async (order: string[]) => {
+  const byTag = new Map(
+    patchesByDir().map(p => [sd.read(`${p.dir}/patch.xml`).toString(), p] as const),
+  );
+  await patchStore().reorderPatches(order.map(tag => byTag.get(`<patch>${tag}</patch>`)!));
+};
+
+describe('undo of REORDER_PATCHES', () => {
+  it('puts every patch back in its old folder with its phrases and audio, and redo reorders again', async () => {
+    const audio = (dir: string) => sd.read(`${dir}/PhraseA/phrase.wav`).toString();
+    await reorderTo(['three', 'one', 'two']);
+    expect(tags()).toEqual(['<patch>three</patch>', '<patch>one</patch>', '<patch>two</patch>']);
+    expect(audio('Patch01')).toBe('wav-A-three');
+    expect(undoStack()).toHaveLength(1);
+
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>two</patch>', '<patch>three</patch>']);
+    expect(audio('Patch01')).toBe('wav-A-one');
+    expect(audio('Patch02')).toBe('wav-A-two');
+    expect(audio('Patch03')).toBe('wav-A-three');
+    expect(sd.read('Patch02/PhraseB/phrase.xml').toString()).toBe('<phrase>B-two</phrase>');
+    expect(patchStore().patches.map(p => p.dir)).toEqual(['Patch01', 'Patch02', 'Patch03']);
+    expect(redoStack()).toHaveLength(1);
+    expect(undoStack()).toHaveLength(0);
+
+    expect(await executeRedo()).toBe(true);
+    expect(tags()).toEqual(['<patch>three</patch>', '<patch>one</patch>', '<patch>two</patch>']);
+    expect(audio('Patch01')).toBe('wav-A-three');
+    expect(undoStack()).toHaveLength(1);
+    expect(redoStack()).toHaveLength(0);
+
+    // and it can go back again
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>two</patch>', '<patch>three</patch>']);
+  });
+
+  it('undoes a swap of two patches (a permutation that is its own inverse)', async () => {
+    await reorderTo(['two', 'one', 'three']);
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>two</patch>', '<patch>three</patch>']);
+  });
+
+  it('undoes a rotation, which is not its own inverse', async () => {
+    // Re-sending the order the patches had before would leave them where they are
+    await reorderTo(['two', 'three', 'one']);
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>two</patch>', '<patch>three</patch>']);
+    expect(await executeRedo()).toBe(true);
+    expect(tags()).toEqual(['<patch>two</patch>', '<patch>three</patch>', '<patch>one</patch>']);
+  });
+
+  it('undoes two consecutive reorders one at a time, in reverse order', async () => {
+    await reorderTo(['two', 'three', 'one']);
+    await reorderTo(['one', 'three', 'two']);
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>two</patch>', '<patch>three</patch>', '<patch>one</patch>']);
+    expect(await executeUndo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>two</patch>', '<patch>three</patch>']);
+    expect(await executeRedo()).toBe(true);
+    expect(await executeRedo()).toBe(true);
+    expect(tags()).toEqual(['<patch>one</patch>', '<patch>three</patch>', '<patch>two</patch>']);
+  });
+
+  it('sends the folders the patches occupy now, not the ones they had before', async () => {
+    await reorderTo(['three', 'one', 'two']);
+    api.reorderPatches.mockClear();
+    await executeUndo();
+    // one lives in Patch02, two in Patch03, three in Patch01 after the reorder
+    expect(api.reorderPatches).toHaveBeenCalledWith(sd.base, ['Patch02', 'Patch03', 'Patch01']);
+    api.reorderPatches.mockClear();
+    await executeRedo();
+    expect(api.reorderPatches).toHaveBeenCalledWith(sd.base, ['Patch03', 'Patch01', 'Patch02']);
+  });
+
+  it('does not push a new history entry while undoing or redoing', async () => {
+    await reorderTo(['three', 'one', 'two']);
+    await executeUndo();
+    expect(undoStack()).toHaveLength(0);
+    await executeRedo();
+    expect(undoStack()).toHaveLength(1);
+    expect(redoStack()).toHaveLength(0);
+  });
+
+  it('refuses (and drops the entry) when the folders changed after the reorder', async () => {
+    await reorderTo(['three', 'one', 'two']);
+    await api.deletePatch(sd.base, 'Patch02');
+    await patchStore().loadPatches(sd.base, true);
+    api.reorderPatches.mockClear();
+
+    expect(await executeUndo()).toBe(false);
+    expect(api.reorderPatches).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('changed after the reorder'));
+    expect(undoStack()).toHaveLength(0);
+  });
+
+  it('refuses when another folder is open', async () => {
+    await reorderTo(['three', 'one', 'two']);
+    usePatchStore.setState({ currentFolder: '/somewhere/else' });
+    api.reorderPatches.mockClear();
+    expect(await executeUndo()).toBe(false);
+    expect(api.reorderPatches).not.toHaveBeenCalled();
+  });
+});
+
 describe('undo of DELETE_PATCH', () => {
   it('restores the deleted patch with its phrases and audio, and redo deletes it again', async () => {
     const audioA = sd.read('Patch02/PhraseA/phrase.wav');

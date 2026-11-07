@@ -9,6 +9,7 @@
  * - Renderer cannot directly access Node.js APIs
  * - All main process communication goes through IPC with validated channels
  * - Only explicitly exposed functions are available to renderer
+ * - Channels, arguments and results are declared in `ipc-contract.ts`
  *
  * @module preload
  */
@@ -16,419 +17,72 @@
 import { sha256sum } from './sha256.js';
 import { versions } from './versions.js';
 import { contextBridge, ipcRenderer } from 'electron';
+import type { ElectronAPI, IpcArgs, IpcChannel, IpcReturn } from './ipc-contract.js';
 
 /**
- * Internal helper to invoke IPC channels
- * @param channel - IPC channel name
- * @param message - Message to send
- * @returns Promise with result from main process
+ * Invokes an IPC channel with the arguments and result the contract declares.
  */
-function send(channel: string, message: string) {
-  return ipcRenderer.invoke(channel, message);
+function send<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcReturn<C>> {
+  return ipcRenderer.invoke(channel, ...args);
 }
 
 /**
- * Phrase data structure for creating/updating patches
+ * The API exposed as `window.electronAPI`: each method invokes one channel of
+ * the contract with the same arguments. Documentation of each method is in
+ * `ElectronAPI` (ipc-contract.ts).
  */
-export type PhrasePayload = {
-  /** Phrase name (e.g., "PhraseA", "PhraseB") */
-  name: string;
-  /** Absolute path to the source WAV file */
-  wavPath: string;
-  /** Beats per minute */
-  tempo: number;
-  /** Time signature (e.g., "4/4") */
-  timeSignature: string;
-  /** Loop type setting */
-  loopType: string;
+const electronAPI: ElectronAPI = {
+  // Dialogs
+  selectFolder: () => send('dialog:selectFolder'),
+  selectFile: () => send('dialog:selectFile'),
+
+  // Patches
+  readPatches: folderPath => send('patches:read', folderPath),
+  createPatch: form => send('patches:create', form),
+  updatePatch: form => send('patches:update', form),
+  deletePatch: (basePath, directory) => send('patches:delete', basePath, directory),
+  deletePatchBatch: (basePath, directories) => send('patches:deleteBatch', basePath, directories),
+  reorderPatches: (basePath, newOrder) => send('patches:reorder', basePath, newOrder),
+  exportPatchesTXT: (patches, basePath) => send('patches:exportTXT', patches, basePath),
+  exportPatchesPDF: (patches, basePath) => send('patches:exportPDF', patches, basePath),
+
+  // Audio
+  getAudioURL: filePath => send('phrase:getAudioURL', filePath),
+  validateWav: filePath => send('audio:validateWav', filePath),
+  readAudioFile: filePath => send('audio:readFile', filePath),
+
+  // Backups
+  createBackup: (basePath, patches, includePlaylist) =>
+    send('backup:create', basePath, patches, includePlaylist),
+  validateBackup: backupPath => send('backup:validate', backupPath),
+  restoreBackup: (backupPath, targetPath, mode, patches) =>
+    send('backup:restore', backupPath, targetPath, mode, patches),
+  selectBackupFile: () => send('backup:selectFile'),
+
+  // Undo snapshots
+  createUndoSnapshot: (basePath, scope) => send('undo:createSnapshot', basePath, scope),
+  restoreUndoSnapshot: (snapshotId, basePath, mode, only) =>
+    send('undo:restoreSnapshot', snapshotId, basePath, mode, only),
+  discardUndoSnapshot: snapshotId => send('undo:discardSnapshot', snapshotId),
+
+  // Utility
+  getFolderSize: folderPath => send('folder:getSize', folderPath),
+
+  // Playlists
+  loadPlaylists: basePath => send('playlists:load', basePath),
+  createPlaylist: (basePath, name, patches) => send('playlists:create', basePath, name, patches),
+  updatePlaylist: (basePath, playlistId, updates) =>
+    send('playlists:update', basePath, playlistId, updates),
+  deletePlaylist: (basePath, playlistId) => send('playlists:delete', basePath, playlistId),
+  addPatchesToPlaylist: (basePath, playlistId, patchDirs) =>
+    send('playlists:addPatches', basePath, playlistId, patchDirs),
+  removePatchesFromPlaylist: (basePath, playlistId, patchDirs) =>
+    send('playlists:removePatches', basePath, playlistId, patchDirs),
+  reorderPlaylistPatches: (basePath, playlistId, newOrder) =>
+    send('playlists:reorderPatches', basePath, playlistId, newOrder),
+  exportPlaylist: (basePath, playlistId) => send('playlists:export', basePath, playlistId),
 };
 
-/**
- * Patch data structure for creating/updating patches
- */
-export type PatchPayload = {
-  /** Base path to the JamMan folder */
-  basePath: string;
-  /** User-visible patch name */
-  patchName: string;
-  /** Directory name (e.g., "Patch01") */
-  directory: string;
-  /** Rhythm type setting */
-  rhythmType: string;
-  /** Stop mode setting */
-  stopMode: string;
-  /** Optional settings version for updates */
-  settingsVersion?: string;
-  /** Array of phrases in this patch */
-  phrases: PhrasePayload[];
-};
-
-/**
- * Description of an undo snapshot created in the main process
- */
-type UndoSnapshotInfo = {
-  id: string;
-  basePath: string;
-  scope: 'patches' | 'all';
-  patches: string[];
-  hasPlaylists: boolean;
-  sizeBytes: number;
-  createdAt: number;
-};
-
-/**
- * Result of an undo-snapshot IPC call: expected failures carry a code instead of throwing
- */
-type UndoResult<T> =
-  | ({ ok: true } & T)
-  | {
-      ok: false;
-      code:
-        | 'INVALID_ARGUMENT'
-        | 'NOT_FOUND'
-        | 'TOO_LARGE'
-        | 'SLOT_OCCUPIED'
-        | 'WRONG_FOLDER'
-        | 'FAILED';
-      message: string;
-    };
-
-/**
- * Audio validation result from the main process
- */
-type AudioValidationResult = {
-  /** Whether the WAV file is valid for JamMan */
-  valid: boolean;
-  /** Sample rate in Hz (should be 44100) */
-  sampleRate?: number;
-  /** Bits per sample (should be 16) */
-  bitsPerSample?: number;
-  /** Number of channels (1=mono, 2=stereo) */
-  numberOfChannels?: number;
-  /** Duration in seconds */
-  duration?: number;
-  /** File size in bytes */
-  fileSizeBytes?: number;
-  /** Error message if validation failed */
-  error?: string;
-  /** Warning message if format is unexpected but playable */
-  warning?: string;
-  /** Whether browser can attempt to play the file */
-  canAttemptPlayback?: boolean;
-};
-
-/**
- * Electron API exposed to the renderer process
- *
- * This API is available as `window.electronAPI` in the renderer.
- * All methods return Promises and communicate with the main process via IPC.
- */
-contextBridge.exposeInMainWorld('electronAPI', {
-  // ==================== Dialog Operations ====================
-
-  /**
-   * Opens a native folder selection dialog
-   * @returns Promise resolving to the selected folder path, or undefined if canceled
-   */
-  selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
-
-  /**
-   * Opens a native file selection dialog for WAV files
-   * @returns Promise resolving to the selected file path, or null if canceled
-   */
-  selectFile: (): Promise<string | null> =>
-    ipcRenderer.invoke('dialog:selectFile', {
-      filters: [{ name: 'Audio', extensions: ['wav'] }],
-      properties: ['openFile'],
-    }),
-
-  // ==================== Patch Operations ====================
-
-  /**
-   * Reads all patches from the specified JamMan folder
-   * @param folderPath - Absolute path to the JamMan folder
-   * @returns Promise resolving to an array of patch objects with metadata
-   */
-  readPatches: (folderPath: string) => ipcRenderer.invoke('patches:read', folderPath),
-
-  /**
-   * Creates a new patch with the specified data
-   * @param data - Patch payload with metadata and phrases
-   * @returns Promise resolving when patch is created
-   */
-  createPatch: (data: PatchPayload): Promise<void> => ipcRenderer.invoke('patches:create', data),
-
-  /**
-   * Updates an existing patch with new data
-   * @param data - Patch payload with updated metadata and phrases
-   * @returns Promise resolving when patch is updated
-   */
-  updatePatch: (data: PatchPayload): Promise<void> => ipcRenderer.invoke('patches:update', data),
-
-  /**
-   * Deletes a single patch with automatic backup
-   * @param basePath - Base path to the JamMan folder
-   * @param directory - Patch directory name (e.g., "Patch01")
-   * @returns Promise resolving when patch is deleted
-   */
-  deletePatch: (basePath: string, directory: string): Promise<void> =>
-    ipcRenderer.invoke('patches:delete', basePath, directory),
-
-  /**
-   * Deletes multiple patches in a batch operation
-   * @param basePath - Base path to the JamMan folder
-   * @param directories - Array of patch directory names to delete
-   * @returns Promise resolving with deletion results
-   */
-  deletePatchBatch: (
-    basePath: string,
-    directories: string[],
-  ): Promise<{ success: boolean; deleted: string[]; failed: number }> =>
-    ipcRenderer.invoke('patches:deleteBatch', basePath, directories),
-
-  /**
-   * Reorders patches by renaming directories (Patch01, Patch02, etc.)
-   * @param basePath - Base path to the JamMan folder
-   * @param patches - Array of patch directory names in desired order
-   * @returns Promise resolving when reorder is complete
-   */
-  reorderPatches: (basePath: string, patches: string[]): Promise<void> =>
-    ipcRenderer.invoke('patches:reorder', basePath, patches),
-
-  /**
-   * Exports patch list to a text file
-   * @param patches - Array of patch objects to export
-   * @param basePath - Base path to the JamMan folder
-   * @returns Promise resolving with export results
-   */
-  exportPatchesTXT: (
-    patches: unknown[],
-    basePath: string,
-  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
-    ipcRenderer.invoke('patches:exportTXT', patches, basePath),
-
-  /**
-   * Exports patch list to a PDF file
-   * @param patches - Array of patch objects to export
-   * @param basePath - Base path to the JamMan folder
-   * @returns Promise resolving with export results
-   */
-  exportPatchesPDF: (
-    patches: unknown[],
-    basePath: string,
-  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
-    ipcRenderer.invoke('patches:exportPDF', patches, basePath),
-
-  // ==================== Audio Operations ====================
-
-  /**
-   * Gets a secure URL for audio playback using custom protocol
-   * @param wavPath - Absolute path to the WAV file
-   * @returns Promise resolving to jamman:// protocol URL for audio element
-   */
-  getAudioURL: (wavPath: string) => ipcRenderer.invoke('phrase:getAudioURL', wavPath),
-
-  /**
-   * Validates a WAV file's format for JamMan compatibility
-   * @param wavPath - Absolute path to the WAV file
-   * @returns Promise resolving with validation results
-   */
-  validateWav: (wavPath: string): Promise<AudioValidationResult> =>
-    ipcRenderer.invoke('audio:validateWav', wavPath),
-
-  /**
-   * Reads an audio file as an ArrayBuffer for direct playback
-   * @param wavPath - Absolute path to the WAV file
-   * @returns Promise resolving to ArrayBuffer containing audio data
-   */
-  readAudioFile: (wavPath: string): Promise<ArrayBuffer> =>
-    ipcRenderer.invoke('audio:readFile', wavPath),
-
-  // ==================== Backup/Restore Operations ====================
-
-  /**
-   * Creates a ZIP backup of patches and/or playlists
-   * @param basePath - Base path to the JamMan folder
-   * @param patches - Optional array of patch IDs to back up (all if omitted)
-   * @param includePlaylist - Whether to include playlist metadata
-   * @returns Promise resolving with backup creation results
-   */
-  createBackup: (
-    basePath: string,
-    patches?: string[],
-    includePlaylist?: boolean,
-  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
-    ipcRenderer.invoke('backup:create', basePath, patches, includePlaylist),
-
-  /**
-   * Validates a backup file and reads its manifest
-   * @param backupPath - Absolute path to the backup ZIP file
-   * @returns Promise resolving with validation results and manifest
-   */
-  validateBackup: (
-    backupPath: string,
-  ): Promise<{ valid: boolean; manifest?: any; error?: string }> =>
-    ipcRenderer.invoke('backup:validate', backupPath),
-
-  /**
-   * Restores patches from a backup file
-   * @param backupPath - Absolute path to the backup ZIP file
-   * @param targetPath - Target JamMan folder path
-   * @param mode - 'replace' wipes folder first, 'merge' adds with auto-renumbering
-   * @param patches - Optional array of patch IDs to restore (all if omitted)
-   * @returns Promise resolving with restore results
-   */
-  restoreBackup: (
-    backupPath: string,
-    targetPath: string,
-    mode: 'replace' | 'merge',
-    patches?: string[],
-  ): Promise<{ success: boolean; patchesRestored: number }> =>
-    ipcRenderer.invoke('backup:restore', backupPath, targetPath, mode, patches),
-
-  /**
-   * Opens a native file selection dialog for backup files
-   * @returns Promise resolving to selected backup file path, or null if canceled
-   */
-  selectBackupFile: (): Promise<string | null> => ipcRenderer.invoke('backup:selectFile'),
-
-  // ==================== Undo Snapshots ====================
-
-  /**
-   * Copies patch directories (phrases and audio included) into an undo snapshot
-   * @param basePath - Base path to the JamMan folder
-   * @param scope - Specific patch directories, or the whole folder
-   * @returns Promise resolving with the snapshot (its `id` is used to restore) or an error code
-   */
-  createUndoSnapshot: (
-    basePath: string,
-    scope: { kind: 'patches'; patches: string[] } | { kind: 'all' },
-  ): Promise<UndoResult<{ snapshot: UndoSnapshotInfo }>> =>
-    ipcRenderer.invoke('undo:createSnapshot', basePath, scope),
-
-  /**
-   * Restores an undo snapshot into the folder it was taken from
-   * @param snapshotId - Id returned by createUndoSnapshot
-   * @param basePath - Base path to the JamMan folder
-   * @param mode - 'add' brings back deleted patches (fails if a slot is taken);
-   *               'replace' makes the folder match the snapshot
-   * @param only - Optional subset of the snapshot's patch directories to restore
-   */
-  restoreUndoSnapshot: (
-    snapshotId: string,
-    basePath: string,
-    mode: 'add' | 'replace',
-    only?: string[],
-  ): Promise<UndoResult<{ restored: string[]; removed: string[] }>> =>
-    ipcRenderer.invoke('undo:restoreSnapshot', snapshotId, basePath, mode, only),
-
-  /**
-   * Discards an undo snapshot that is no longer reachable from the undo history
-   * @param snapshotId - Id returned by createUndoSnapshot
-   */
-  discardUndoSnapshot: (snapshotId: string): Promise<void> =>
-    ipcRenderer.invoke('undo:discardSnapshot', snapshotId),
-
-  // ==================== Utility Operations ====================
-
-  /**
-   * Calculates the total size of a folder
-   * @param folderPath - Absolute path to the folder
-   * @returns Promise resolving with size information
-   */
-  getFolderSize: (
-    folderPath: string,
-  ): Promise<{ sizeBytes: number; sizeMB: number; sizeGB: number }> =>
-    ipcRenderer.invoke('folder:getSize', folderPath),
-
-  // ==================== Playlist Operations ====================
-
-  /**
-   * Loads all playlists from the JamMan folder metadata
-   * @param basePath - Base path to the JamMan folder
-   * @returns Promise resolving to playlists data structure
-   */
-  loadPlaylists: (basePath: string): Promise<any> => ipcRenderer.invoke('playlists:load', basePath),
-
-  /**
-   * Creates a new playlist
-   * @param basePath - Base path to the JamMan folder
-   * @param name - Playlist name
-   * @param patches - Optional initial array of patch directory names
-   * @returns Promise resolving to created playlist object
-   */
-  createPlaylist: (basePath: string, name: string, patches?: string[]): Promise<any> =>
-    ipcRenderer.invoke('playlists:create', basePath, name, patches),
-
-  /**
-   * Updates a playlist's name and/or patches
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @param updates - Object with optional name and/or patches array
-   * @returns Promise resolving to updated playlist object
-   */
-  updatePlaylist: (
-    basePath: string,
-    playlistId: string,
-    updates: { name?: string; patches?: string[] },
-  ): Promise<any> => ipcRenderer.invoke('playlists:update', basePath, playlistId, updates),
-
-  /**
-   * Deletes a playlist (does not affect patches)
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @returns Promise resolving with success status
-   */
-  deletePlaylist: (basePath: string, playlistId: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('playlists:delete', basePath, playlistId),
-
-  /**
-   * Adds patches to an existing playlist
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @param patchDirs - Array of patch directory names to add
-   * @returns Promise resolving to updated playlist object
-   */
-  addPatchesToPlaylist: (basePath: string, playlistId: string, patchDirs: string[]): Promise<any> =>
-    ipcRenderer.invoke('playlists:addPatches', basePath, playlistId, patchDirs),
-
-  /**
-   * Removes patches from a playlist
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @param patchDirs - Array of patch directory names to remove
-   * @returns Promise resolving to updated playlist object
-   */
-  removePatchesFromPlaylist: (
-    basePath: string,
-    playlistId: string,
-    patchDirs: string[],
-  ): Promise<any> => ipcRenderer.invoke('playlists:removePatches', basePath, playlistId, patchDirs),
-
-  /**
-   * Reorders patches within a playlist (virtual ordering, doesn't affect SD card)
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @param newOrder - Array of patch directory names in desired order
-   * @returns Promise resolving to updated playlist object
-   */
-  reorderPlaylistPatches: (
-    basePath: string,
-    playlistId: string,
-    newOrder: string[],
-  ): Promise<any> => ipcRenderer.invoke('playlists:reorderPatches', basePath, playlistId, newOrder),
-
-  /**
-   * Exports a playlist as a text setlist file for printing/reference
-   * @param basePath - Base path to the JamMan folder
-   * @param playlistId - Unique playlist ID
-   * @returns Promise resolving with export results
-   */
-  exportPlaylist: (
-    basePath: string,
-    playlistId: string,
-  ): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
-    ipcRenderer.invoke('playlists:export', basePath, playlistId),
-});
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
 export { sha256sum, versions, send };

@@ -1,408 +1,941 @@
 /**
- * IPC Integration Tests
+ * IPC handler tests against the real main process.
  *
- * Tests the integration between main process IPC handlers and their implementations.
- * These tests verify the end-to-end flow of IPC communication.
+ * `initApp` runs for real and registers its handlers; only Electron itself
+ * (`electron`, `electron-log`, `electron-updater`) is replaced by test doubles.
+ * Every handler works on a copy of the synthetic SD in `tests/fixtures/`, with
+ * the real file system.
  */
-
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ipcMain, dialog } from 'electron';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 
-// Mock electron modules
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn(),
-    removeHandler: vi.fn(),
-  },
-  dialog: {
-    showOpenDialog: vi.fn(),
-    showSaveDialog: vi.fn(),
-  },
-  app: {
-    getPath: vi.fn(() => '/mock/path'),
-  },
-}));
+vi.mock('electron', () => import('./test-utils/electronMock.js'));
+vi.mock('electron-log', () => import('./test-utils/logMock.js'));
+vi.mock('electron-updater', () => import('./test-utils/updaterMock.js'));
 
-// Mock electron-log
-vi.mock('electron-log', () => ({
-  default: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+import { startApp, type AppHarness } from './test-utils/appHarness.js';
+import {
+  createTempDir,
+  createTempSd,
+  SD_FIXTURE_PATCHES,
+  type TempSd,
+} from '../../../tests/fixtures/index.js';
+import { lockManager } from './LockManager.js';
+import { operationQueue, OperationPriority } from './OperationQueue.js';
 
-describe('IPC Integration Tests', () => {
-  let tempDir: string;
-  let handlers: Map<string, Function>;
+type ReadPatch = {
+  dir: string;
+  data: { JamManPatch: { PatchName: string[]; SettingsVersion: string[]; ID: string[] } };
+  phrases: {
+    dir: string;
+    wavPath: string;
+    data: { JamManPhrase: { ID: string[]; BeatsPerMinute: string[] } };
+  }[];
+};
 
-  beforeEach(() => {
-    // Create temporary directory for test files
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-test-'));
+let app: AppHarness;
+let sd: TempSd;
+let outside: TempSd;
 
-    // Track registered handlers
-    handlers = new Map();
-    vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: Function) => {
-      handlers.set(channel, handler);
-    });
+beforeEach(async () => {
+  app = await startApp();
+  sd = createTempSd();
+  outside = createTempDir('jamman-outside-');
+});
 
-    // Import index to register handlers (need to figure out how to do this properly)
-    // For now, we'll test the handler logic directly
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  app.cleanup();
+  sd.cleanup();
+  outside.cleanup();
+});
+
+const names = (patches: ReadPatch[]) =>
+  Object.fromEntries(patches.map(p => [p.dir, p.data.JamManPatch.PatchName[0]]));
+
+const patchXml = (dir: string) => fs.readFileSync(path.join(sd.path, dir, 'patch.xml'), 'utf-8');
+
+/** A WAV outside the SD, as the user would import it. */
+function outsideWav(name = 'import.wav'): string {
+  const file = path.join(outside.path, name);
+  fs.copyFileSync(path.join(sd.path, 'Patch01', 'PhraseA', 'phrase.wav'), file);
+  return file;
+}
+
+const phraseForm = (name: string, wavPath: string) => ({
+  name,
+  wavPath,
+  beatsPerMinute: 100,
+  beatsPerMeasure: 4,
+  isLoop: true,
+  isReversed: false,
+});
+
+describe('folder access', () => {
+  it('rejects every folder-scoped handler before a folder is selected', async () => {
+    await expect(app.invoke('patches:read', sd.path)).rejects.toThrow(
+      'Failed to read patches from folder: Access denied: no JamMan folder has been selected',
+    );
+    await expect(app.invoke('playlists:load', sd.path)).rejects.toThrow('Access denied');
+    await expect(app.invoke('backup:create', sd.path)).rejects.toThrow('Access denied');
+    await expect(app.invoke('patches:reorder', sd.path, ['Patch01'])).rejects.toThrow(
+      'Access denied',
+    );
   });
 
-  afterEach(() => {
-    // Clean up temp directory
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+  it('accepts only the folder picked in the dialog', async () => {
+    expect(await app.selectFolder(sd.path)).toBe(sd.path);
+    await expect(app.invoke('patches:read', sd.path)).resolves.toHaveLength(3);
+
+    await expect(app.invoke('patches:read', outside.path)).rejects.toThrow(
+      'Access denied: folder is not the selected JamMan folder',
+    );
+    await expect(app.invoke('patches:delete', outside.path, 'Patch01')).rejects.toThrow(
+      'Access denied',
+    );
+    await expect(app.invoke('folder:getSize', outside.path)).rejects.toThrow(
+      'Failed to calculate folder size: Access denied',
+    );
+    await expect(
+      app.invoke('playlists:create', path.join(sd.path, 'Patch01'), 'x'),
+    ).rejects.toThrow('Access denied');
+  });
+
+  it('keeps the approved folder across restarts', async () => {
+    await app.selectFolder(sd.path);
+    const restarted = await startApp({ userData: app.userData });
+    try {
+      await expect(restarted.invoke('patches:read', sd.path)).resolves.toHaveLength(3);
+      await expect(restarted.invoke('patches:read', outside.path)).rejects.toThrow('Access denied');
+    } finally {
+      restarted.cleanup();
     }
-
-    // Clear all mocks
-    vi.clearAllMocks();
-    handlers.clear();
   });
 
-  describe('Dialog IPC Handlers', () => {
-    it('should handle folder selection dialog', async () => {
-      const mockFolderPath = '/Users/test/JamMan';
-      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
-        canceled: false,
-        filePaths: [mockFolderPath],
-      } as any);
-
-      // Simulate handler behavior
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-        title: 'Select JamMan Folder',
-      });
-
-      expect(result.canceled).toBe(false);
-      expect(result.filePaths).toEqual([mockFolderPath]);
-      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
-        expect.objectContaining({
-          properties: ['openDirectory'],
-        }),
-      );
-    });
-
-    it('should handle canceled folder selection', async () => {
-      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
-        canceled: true,
-        filePaths: [],
-      } as any);
-
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-      });
-
-      expect(result.canceled).toBe(true);
-      expect(result.filePaths).toEqual([]);
-    });
-
-    it('should handle file selection dialog', async () => {
-      const mockFilePath = '/Users/test/backup.zip';
-      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
-        canceled: false,
-        filePaths: [mockFilePath],
-      } as any);
-
-      const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [{ name: 'ZIP Files', extensions: ['zip'] }],
-      });
-
-      expect(result.canceled).toBe(false);
-      expect(result.filePaths).toEqual([mockFilePath]);
-    });
+  it('returns undefined and approves nothing when the folder dialog is canceled', async () => {
+    await expect(app.invoke('dialog:selectFolder')).resolves.toBeUndefined();
+    await expect(app.invoke('patches:read', sd.path)).rejects.toThrow('no JamMan folder');
   });
 
-  describe('Patch Operations IPC', () => {
-    beforeEach(() => {
-      // Create test JamMan folder structure
-      const patch01Dir = path.join(tempDir, 'Patch01');
-      fs.mkdirSync(patch01Dir, { recursive: true });
+  it('rejects calls from a frame that is not the app page', async () => {
+    await app.selectFolder(sd.path);
+    await expect(
+      app.invokeFrom('https://evil.example/', 'patches:delete', sd.path, 'Patch01'),
+    ).rejects.toThrow('Blocked IPC call from untrusted sender');
+    expect(fs.existsSync(path.join(sd.path, 'Patch01'))).toBe(true);
+  });
 
-      // Create patch.xml
-      const patchXML = `<?xml version="1.0" encoding="UTF-8"?>
-<JamManPatch>
-  <PatchName>Test Patch</PatchName>
-  <RhythmType>0</RhythmType>
-  <StopMode>0</StopMode>
-</JamManPatch>`;
-      fs.writeFileSync(path.join(patch01Dir, 'patch.xml'), patchXML);
+  it('rejects WAVs outside the folder unless picked in the file dialog', async () => {
+    await app.selectFolder(sd.path);
+    const wav = outsideWav();
+
+    await expect(app.invoke('audio:readFile', wav)).rejects.toThrow(
+      'Access denied: file is outside the selected JamMan folder',
+    );
+    await expect(app.invoke('audio:validateWav', wav)).resolves.toEqual({
+      valid: false,
+      error: 'Access denied',
+      canAttemptPlayback: false,
     });
+    await expect(
+      app.invoke('patches:create', {
+        basePath: sd.path,
+        directory: 'Patch04',
+        patchName: 'x',
+        rhythmType: 'Silence',
+        stopMode: 'StopInstantly',
+        phrases: [phraseForm('PhraseA', wav)],
+      }),
+    ).rejects.toThrow('Access denied');
 
-    it('should read patches from folder', () => {
-      const patches = fs.readdirSync(tempDir).filter(dir => {
-        const fullPath = path.join(tempDir, dir);
-        return fs.statSync(fullPath).isDirectory() && /^Patch\d{2}$/.test(dir);
-      });
+    expect(await app.selectFile(wav)).toBe(wav);
+    await expect(app.invoke('audio:readFile', wav)).resolves.toBeInstanceOf(Buffer);
+  });
 
-      expect(patches).toContain('Patch01');
-      expect(patches).toHaveLength(1);
-    });
+  it('never plays audio from outside the folder, even a picked file', async () => {
+    await app.selectFolder(sd.path);
+    const wav = outsideWav();
+    await app.selectFile(wav);
+    await expect(app.invoke('phrase:getAudioURL', wav)).resolves.toBeNull();
+  });
+});
 
-    it('should validate patch XML structure', () => {
-      const patch01Dir = path.join(tempDir, 'Patch01');
-      const patchXMLPath = path.join(patch01Dir, 'patch.xml');
+describe('dialogs', () => {
+  it('dialog:selectFile returns null when canceled', async () => {
+    await expect(app.invoke('dialog:selectFile')).resolves.toBeNull();
+  });
 
-      expect(fs.existsSync(patchXMLPath)).toBe(true);
+  it('backup:selectFile returns the picked file and grants it', async () => {
+    const { dialog } = await import('./test-utils/electronMock.js');
+    const zip = path.join(outside.path, 'b.zip');
+    fs.writeFileSync(zip, 'not a zip');
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [zip] });
+    await expect(app.invoke('backup:selectFile')).resolves.toBe(zip);
+    expect(dialog.showOpenDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: 'Select Backup File', defaultPath: app.documents }),
+    );
+    // Granted: validation runs (and fails on content) instead of being denied.
+    await expect(app.invoke('backup:validate', zip)).resolves.toMatchObject({ valid: false });
+    await expect(app.invoke('backup:selectFile')).resolves.toBeNull();
+  });
+});
 
-      const xmlContent = fs.readFileSync(patchXMLPath, 'utf-8');
-      expect(xmlContent).toContain('<JamManPatch>');
-      expect(xmlContent).toContain('<PatchName>Test Patch</PatchName>');
-    });
+describe('patches:read', () => {
+  beforeEach(() => app.selectFolder(sd.path));
 
-    it('should create new patch directory', () => {
-      const patch02Dir = path.join(tempDir, 'Patch02');
-      fs.mkdirSync(patch02Dir, { recursive: true });
-
-      expect(fs.existsSync(patch02Dir)).toBe(true);
-      expect(fs.statSync(patch02Dir).isDirectory()).toBe(true);
-    });
-
-    it('should delete patch directory', () => {
-      const patch01Dir = path.join(tempDir, 'Patch01');
-      expect(fs.existsSync(patch01Dir)).toBe(true);
-
-      fs.rmSync(patch01Dir, { recursive: true, force: true });
-
-      expect(fs.existsSync(patch01Dir)).toBe(false);
+  it('parses every patch and its phrases', async () => {
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches)).toEqual(
+      Object.fromEntries(SD_FIXTURE_PATCHES.map(p => [p.dir, p.name])),
+    );
+    const patch02 = patches.find(p => p.dir === 'Patch02')!;
+    expect(patch02.data.JamManPatch.ID[0]).toBe(SD_FIXTURE_PATCHES[1].id);
+    expect(patch02.phrases.map(p => p.dir)).toEqual(['PhraseA', 'PhraseB']);
+    expect(patch02.phrases[1]).toMatchObject({
+      wavPath: path.join(sd.path, 'Patch02', 'PhraseB', 'phrase.wav'),
+      data: { JamManPhrase: { BeatsPerMinute: ['90'] } },
     });
   });
 
-  describe('Phrase Operations IPC', () => {
-    beforeEach(() => {
-      // Create test phrase structure
-      const phraseDir = path.join(tempDir, 'Patch01', 'PhraseA');
-      fs.mkdirSync(phraseDir, { recursive: true });
+  it('serves the cache until a patch or phrase XML changes', async () => {
+    const first = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(await app.invoke('patches:read', sd.path)).toBe(first);
 
-      // Create phrase.xml
-      const phraseXML = `<?xml version="1.0" encoding="UTF-8"?>
-<JamManPhrase>
-  <BeatsPerMinute>120</BeatsPerMinute>
-  <BeatsPerMeasure>4</BeatsPerMeasure>
-  <ID>phrase-a</ID>
-</JamManPhrase>`;
-      fs.writeFileSync(path.join(phraseDir, 'phrase.xml'), phraseXML);
+    const file = path.join(sd.path, 'Patch01', 'patch.xml');
+    fs.writeFileSync(file, patchXml('Patch01').replace('Rock Groove', 'Changed'));
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(file, later, later);
 
-      // Create dummy WAV file (just empty file for testing)
-      fs.writeFileSync(path.join(phraseDir, 'phrase.wav'), Buffer.alloc(44)); // WAV header size
+    const second = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(second).not.toBe(first);
+    expect(names(second).Patch01).toBe('Changed');
+  });
+
+  it('skips internal folders, folders without patch.xml and unreadable patches', async () => {
+    fs.mkdirSync(path.join(sd.path, 'Notes'));
+    fs.mkdirSync(path.join(sd.path, 'Patch09'));
+    fs.writeFileSync(path.join(sd.path, 'Patch09', 'patch.xml'), 'garbage');
+    // Folders parked by delete/update/reorder hold a valid patch.xml but are not patches.
+    for (const parked of ['__deleted_Patch01_1', '__backup_Patch01_1', '__tmp_Patch01']) {
+      fs.cpSync(path.join(sd.path, 'Patch01'), path.join(sd.path, parked), { recursive: true });
+    }
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(patches.map(p => p.dir).sort()).toEqual(['Patch01', 'Patch02', 'Patch03']);
+  });
+
+  it('rejects a missing folder and invalid arguments', async () => {
+    await expect(app.invoke('patches:read', '')).rejects.toThrow(
+      'Failed to read patches from folder: Invalid folder path',
+    );
+    fs.rmSync(sd.path, { recursive: true });
+    await expect(app.invoke('patches:read', sd.path)).rejects.toThrow(
+      'Folder does not exist or is not a directory',
+    );
+  });
+});
+
+describe('folder:getSize', () => {
+  it('adds up every file under the folder', async () => {
+    await app.selectFolder(sd.path);
+    let expected = 0;
+    for (const entry of fs.readdirSync(sd.path, { recursive: true, withFileTypes: true })) {
+      if (entry.isFile()) expected += fs.statSync(path.join(entry.parentPath, entry.name)).size;
+    }
+    const size = await app.invoke<{ sizeBytes: number; sizeMB: number; sizeGB: number }>(
+      'folder:getSize',
+      sd.path,
+    );
+    expect(size).toEqual({
+      sizeBytes: expected,
+      sizeMB: expected / 1024 / 1024,
+      sizeGB: expected / 1024 / 1024 / 1024,
     });
+  });
+});
 
-    it('should detect phrase directories', () => {
-      const patch01Dir = path.join(tempDir, 'Patch01');
-      const phrases = fs.readdirSync(patch01Dir).filter(dir => {
-        const fullPath = path.join(patch01Dir, dir);
-        return fs.statSync(fullPath).isDirectory() && /^Phrase[A-Z]$/.test(dir);
-      });
+describe('audio', () => {
+  const wavIn = () => path.join(sd.path, 'Patch01', 'PhraseA', 'phrase.wav');
+  beforeEach(() => app.selectFolder(sd.path));
 
-      expect(phrases).toContain('PhraseA');
-      expect(phrases).toHaveLength(1);
-    });
+  it('phrase:getAudioURL returns a jamman:// URL only for existing WAVs in the folder', async () => {
+    const url = await app.invoke<string>('phrase:getAudioURL', wavIn());
+    expect(url).toMatch(/^jamman:\/\//);
+    expect(decodeURIComponent(url)).toContain('Patch01/PhraseA/phrase.wav');
 
-    it('should validate phrase XML structure', () => {
-      const phraseXMLPath = path.join(tempDir, 'Patch01', 'PhraseA', 'phrase.xml');
-      expect(fs.existsSync(phraseXMLPath)).toBe(true);
+    await expect(app.invoke('phrase:getAudioURL', '')).resolves.toBeNull();
+    await expect(
+      app.invoke('phrase:getAudioURL', path.join(sd.path, 'Patch01', 'patch.xml')),
+    ).resolves.toBeNull();
+    await expect(
+      app.invoke('phrase:getAudioURL', path.join(sd.path, 'Patch01', 'missing.wav')),
+    ).resolves.toBeNull();
+    await expect(app.invoke('phrase:getAudioURL', outsideWav())).resolves.toBeNull();
+  });
 
-      const xmlContent = fs.readFileSync(phraseXMLPath, 'utf-8');
-      expect(xmlContent).toContain('<JamManPhrase>');
-      expect(xmlContent).toContain('<BeatsPerMinute>120</BeatsPerMinute>');
-    });
-
-    it('should detect phrase audio files', () => {
-      const phraseWavPath = path.join(tempDir, 'Patch01', 'PhraseA', 'phrase.wav');
-      expect(fs.existsSync(phraseWavPath)).toBe(true);
+  it('audio:validateWav reads the format of a real WAV', async () => {
+    const result = await app.invoke<Record<string, unknown>>('audio:validateWav', wavIn());
+    expect(result).toMatchObject({
+      valid: true,
+      sampleRate: 44100,
+      bitsPerSample: 16,
+      numberOfChannels: 2,
+      fileSizeBytes: fs.statSync(wavIn()).size,
+      error: null,
+      canAttemptPlayback: true,
     });
   });
 
-  describe('Audio Operations IPC', () => {
-    it('should validate WAV file header', () => {
-      // Create valid WAV file header
-      const wavHeader = Buffer.alloc(44);
-      wavHeader.write('RIFF', 0);
-      wavHeader.writeUInt32LE(36, 4); // File size - 8
-      wavHeader.write('WAVE', 8);
-      wavHeader.write('fmt ', 12);
-      wavHeader.writeUInt32LE(16, 16); // Subchunk1Size
-      wavHeader.writeUInt16LE(1, 20); // AudioFormat (PCM)
-      wavHeader.writeUInt16LE(2, 22); // NumChannels
-      wavHeader.writeUInt32LE(44100, 24); // SampleRate
-      wavHeader.writeUInt32LE(176400, 28); // ByteRate
-      wavHeader.writeUInt16LE(4, 32); // BlockAlign
-      wavHeader.writeUInt16LE(16, 34); // BitsPerSample
-      wavHeader.write('data', 36);
-      wavHeader.writeUInt32LE(0, 40); // Data size
-
-      const wavPath = path.join(tempDir, 'test.wav');
-      fs.writeFileSync(wavPath, wavHeader);
-
-      // Read and validate
-      const buffer = fs.readFileSync(wavPath);
-      expect(buffer.toString('ascii', 0, 4)).toBe('RIFF');
-      expect(buffer.toString('ascii', 8, 12)).toBe('WAVE');
+  it('audio:validateWav reports unreadable or invalid input without throwing', async () => {
+    await expect(app.invoke('audio:validateWav', 42)).resolves.toEqual({
+      valid: false,
+      error: 'Invalid file path',
+      canAttemptPlayback: false,
     });
+    await expect(app.invoke('audio:validateWav', path.join(sd.path, 'a.mp3'))).resolves.toEqual({
+      valid: false,
+      error: 'Invalid file extension',
+      canAttemptPlayback: false,
+    });
+    await expect(
+      app.invoke('audio:validateWav', path.join(sd.path, 'missing.wav')),
+    ).resolves.toEqual({ valid: false, error: 'File not found', canAttemptPlayback: false });
 
-    it('should reject invalid WAV file', () => {
-      const invalidWavPath = path.join(tempDir, 'invalid.wav');
-      fs.writeFileSync(invalidWavPath, 'Not a WAV file');
-
-      const buffer = fs.readFileSync(invalidWavPath);
-      expect(buffer.toString('ascii', 0, 4)).not.toBe('RIFF');
+    const broken = path.join(sd.path, 'broken.wav');
+    fs.writeFileSync(broken, 'not audio');
+    // music-metadata reads it without throwing, so it is reported as an unsupported format.
+    await expect(app.invoke('audio:validateWav', broken)).resolves.toMatchObject({
+      valid: false,
+      error: 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
+      fileSizeBytes: 9,
+      canAttemptPlayback: true,
     });
   });
 
-  describe('Backup Operations IPC', () => {
-    it('should validate backup ZIP structure', () => {
-      // For this test, we just verify the concept
-      // Actual ZIP validation would require adm-zip or similar
-      const backupPath = path.join(tempDir, 'backup.zip');
+  it('audio:readFile returns the bytes of the WAV', async () => {
+    const buffer = await app.invoke<Buffer>('audio:readFile', wavIn());
+    expect(Buffer.compare(buffer, fs.readFileSync(wavIn()))).toBe(0);
+    await expect(app.invoke('audio:readFile', '')).rejects.toThrow('Invalid file path');
+    await expect(app.invoke('audio:readFile', path.join(sd.path, 'x.txt'))).rejects.toThrow(
+      'Invalid file extension',
+    );
+    await expect(app.invoke('audio:readFile', path.join(sd.path, 'missing.wav'))).rejects.toThrow(
+      'File not found',
+    );
+  });
+});
 
-      // In a real implementation, this would create a proper ZIP
-      // For now, just test that we can write a file
-      fs.writeFileSync(backupPath, 'mock-zip-content');
+describe('patches:create', () => {
+  beforeEach(() => app.selectFolder(sd.path));
 
-      expect(fs.existsSync(backupPath)).toBe(true);
-      expect(path.extname(backupPath)).toBe('.zip');
+  const form = (over: Record<string, unknown> = {}) => ({
+    basePath: sd.path,
+    directory: 'Patch04',
+    patchName: 'New One',
+    rhythmType: 'Silence',
+    stopMode: 'StopInstantly',
+    phrases: [] as ReturnType<typeof phraseForm>[],
+    ...over,
+  });
+
+  it('writes patch.xml, phrase.xml and copies the WAV', async () => {
+    const wav = outsideWav();
+    await app.selectFile(wav);
+    await expect(
+      app.invoke('patches:create', form({ phrases: [phraseForm('PhraseA', wav)] })),
+    ).resolves.toBe(true);
+
+    expect(patchXml('Patch04')).toContain('<PatchName>New One</PatchName>');
+    const phrase = fs.readFileSync(path.join(sd.path, 'Patch04', 'PhraseA', 'phrase.xml'), 'utf-8');
+    expect(phrase).toContain('<BeatsPerMinute>100</BeatsPerMinute>');
+    expect(phrase).toContain('<IsLoop>1</IsLoop>');
+    expect(fs.readFileSync(path.join(sd.path, 'Patch04', 'PhraseA', 'phrase.wav'))).toEqual(
+      fs.readFileSync(wav),
+    );
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches).Patch04).toBe('New One');
+  });
+
+  it('rolls back the new folder when a source WAV is missing', async () => {
+    const wav = outsideWav();
+    await app.selectFile(wav);
+    fs.rmSync(wav);
+    await expect(
+      app.invoke('patches:create', form({ phrases: [phraseForm('PhraseA', wav)] })),
+    ).rejects.toThrow('Failed to create patch: Source WAV file not found');
+    expect(fs.existsSync(path.join(sd.path, 'Patch04'))).toBe(false);
+  });
+
+  it('rejects invalid directory names and base paths', async () => {
+    await expect(app.invoke('patches:create', form({ directory: '../evil' }))).rejects.toThrow(
+      'Invalid patch directory name: ../evil',
+    );
+    await expect(app.invoke('patches:create', form({ basePath: '' }))).rejects.toThrow(
+      'Invalid base path',
+    );
+  });
+
+  it('refuses to create over an existing patch and leaves it intact', async () => {
+    const before = patchXml('Patch01');
+    await expect(app.invoke('patches:create', form({ directory: 'Patch01' }))).rejects.toThrow(
+      'Failed to create patch: Patch directory Patch01 already exists',
+    );
+    expect(patchXml('Patch01')).toBe(before);
+    expect(fs.existsSync(path.join(sd.path, 'Patch01', 'PhraseA', 'phrase.wav'))).toBe(true);
+  });
+});
+
+describe('patches:update', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  const existingPhrase = (dir: string, phrase: string) =>
+    phraseForm(phrase, path.join(sd.path, dir, phrase, 'phrase.wav'));
+
+  it('rewrites the XML, bumps SettingsVersion, keeps IDs and drops removed phrases', async () => {
+    await expect(
+      app.invoke('patches:update', {
+        basePath: sd.path,
+        directory: 'Patch02',
+        patchName: 'Renamed',
+        rhythmType: 'Silence',
+        stopMode: 'StopInstantly',
+        settingsVersion: '1',
+        patchID: SD_FIXTURE_PATCHES[1].id,
+        patchOriginID: 'origin-1',
+        phrases: [existingPhrase('Patch02', 'PhraseA')],
+      }),
+    ).resolves.toBe(true);
+
+    const xml = patchXml('Patch02');
+    expect(xml).toContain('<PatchName>Renamed</PatchName>');
+    expect(xml).toContain('<SettingsVersion>2</SettingsVersion>');
+    expect(xml).toContain(`<ID>${SD_FIXTURE_PATCHES[1].id}</ID>`);
+    expect(xml).toContain('<OriginID>origin-1</OriginID>');
+    expect(fs.existsSync(path.join(sd.path, 'Patch02', 'PhraseB'))).toBe(false);
+    const phrase = fs.readFileSync(path.join(sd.path, 'Patch02', 'PhraseA', 'phrase.xml'), 'utf-8');
+    expect(phrase).toContain('<ID>000000b0-0000-4000-8000-000000000021</ID>');
+    expect(fs.readdirSync(sd.path).filter(d => d.startsWith('__backup_'))).toEqual([]);
+  });
+
+  it('restores the original patch when the update fails half-way', async () => {
+    const wav = outsideWav();
+    await app.selectFile(wav);
+    fs.rmSync(wav);
+    const before = patchXml('Patch02');
+
+    await expect(
+      app.invoke('patches:update', {
+        basePath: sd.path,
+        directory: 'Patch02',
+        patchName: 'Broken',
+        rhythmType: 'Silence',
+        stopMode: 'StopInstantly',
+        phrases: [phraseForm('PhraseA', wav)],
+      }),
+    ).rejects.toThrow('Failed to update patch: Source WAV file not found');
+
+    expect(patchXml('Patch02')).toBe(before);
+    expect(fs.existsSync(path.join(sd.path, 'Patch02', 'PhraseB', 'phrase.wav'))).toBe(true);
+    expect(fs.readdirSync(sd.path).filter(d => d.startsWith('__backup_'))).toEqual([]);
+  });
+
+  it('fails for a patch that does not exist', async () => {
+    await expect(
+      app.invoke('patches:update', {
+        basePath: sd.path,
+        directory: 'Patch09',
+        patchName: 'x',
+        rhythmType: 'Silence',
+        stopMode: 'StopInstantly',
+        phrases: [],
+      }),
+    ).rejects.toThrow('Failed to update patch: Patch directory Patch09 does not exist');
+  });
+});
+
+describe('patches:delete and patches:deleteBatch', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  const deletedDirs = () => fs.readdirSync(sd.path).filter(d => d.startsWith('__deleted_'));
+
+  it('moves the patch aside and removes it for good after 5 seconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await expect(app.invoke('patches:delete', sd.path, 'Patch02')).resolves.toBe(true);
+    expect(fs.existsSync(path.join(sd.path, 'Patch02'))).toBe(false);
+    expect(deletedDirs()).toHaveLength(1);
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(patches.map(p => p.dir).sort()).toEqual(['Patch01', 'Patch03']);
+
+    vi.advanceTimersByTime(5000);
+    expect(deletedDirs()).toEqual([]);
+  });
+
+  it('reports a missing patch', async () => {
+    await expect(app.invoke('patches:delete', sd.path, 'Patch09')).rejects.toThrow(
+      'Failed to delete patch: Patch not found: Patch09',
+    );
+    await expect(app.invoke('patches:delete', sd.path, 'Patch1')).rejects.toThrow(
+      'Invalid patch directory name: Patch1',
+    );
+    await expect(app.invoke('patches:delete', sd.path, '')).rejects.toThrow(
+      'Invalid directory name',
+    );
+  });
+
+  it('deletes what it can in a batch and counts the rest as failed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await expect(
+      app.invoke('patches:deleteBatch', sd.path, ['Patch01', 'Patch09', 'Patch03']),
+    ).resolves.toEqual({ success: true, deleted: ['Patch01', 'Patch03'], failed: 1 });
+
+    expect(fs.readdirSync(sd.path).filter(d => d.startsWith('Patch'))).toEqual(['Patch02']);
+    expect(deletedDirs()).toHaveLength(2);
+    vi.advanceTimersByTime(5000);
+    expect(deletedDirs()).toEqual([]);
+  });
+
+  it('rolls back a batch when moving one patch fails', async () => {
+    // Patch02 cannot be moved: its "__deleted_" target is an existing non-empty folder.
+    const realMove = (await import('fs-extra')).default.moveSync;
+    const fse = (await import('fs-extra')).default;
+    vi.spyOn(fse, 'moveSync').mockImplementation((src, dest, opts) => {
+      if (String(src).endsWith('Patch02')) throw new Error('disk error');
+      return realMove(src, dest, opts);
     });
 
-    it('should verify backup contains required files', () => {
-      // Mock backup structure validation
-      const requiredFiles = ['Patch01/patch.xml', 'Patch01/PhraseA/phrase.xml'];
+    await expect(
+      app.invoke('patches:deleteBatch', sd.path, ['Patch01', 'Patch02', 'Patch03']),
+    ).rejects.toThrow('Failed to delete patches: disk error');
 
-      // In a real implementation, this would extract and validate ZIP contents
-      // For now, just verify we can check for required patterns
-      requiredFiles.forEach(file => {
-        expect(file).toMatch(/Patch\d{2}\//);
-        expect(file).toContain('.xml');
-      });
+    expect(
+      fs
+        .readdirSync(sd.path)
+        .filter(d => d.startsWith('Patch'))
+        .sort(),
+    ).toEqual(['Patch01', 'Patch02', 'Patch03']);
+    expect(deletedDirs()).toEqual([]);
+  });
+
+  it('rejects invalid directory names in a batch', async () => {
+    await expect(app.invoke('patches:deleteBatch', sd.path, ['Patch01', '../x'])).rejects.toThrow(
+      'Invalid patch directory names',
+    );
+    await expect(app.invoke('patches:deleteBatch', sd.path, 'Patch01')).rejects.toThrow(
+      'Invalid patch directory names',
+    );
+  });
+});
+
+describe('patches:reorder', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  it('renames the folders to follow the new order', async () => {
+    await expect(
+      app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch01', 'Patch02']),
+    ).resolves.toBe(true);
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches)).toEqual({
+      Patch01: 'Slow Blues',
+      Patch02: 'Rock Groove',
+      Patch03: 'Waltz Pair',
     });
   });
 
-  describe('Operation Queue IPC', () => {
-    it('should track operation status', () => {
-      // Mock operation queue state
-      const operationQueue = {
-        active: [],
-        pending: [],
-        completed: [],
-        failed: [],
-      };
+  it('restores the original names when a rename fails half-way', async () => {
+    // Moving Patch02 to its temporary name fails: that name is taken by a non-empty folder.
+    fs.mkdirSync(path.join(sd.path, '__tmp_Patch02', 'x'), { recursive: true });
 
-      expect(operationQueue).toHaveProperty('active');
-      expect(operationQueue).toHaveProperty('pending');
-      expect(operationQueue).toHaveProperty('completed');
-      expect(operationQueue).toHaveProperty('failed');
+    await expect(
+      app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch01', 'Patch02']),
+    ).rejects.toThrow('Failed to reorder patches:');
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches)).toMatchObject({
+      Patch01: 'Rock Groove',
+      Patch02: 'Waltz Pair',
+      Patch03: 'Slow Blues',
     });
+    expect(fs.existsSync(path.join(sd.path, '__tmp_Patch03'))).toBe(false);
+    expect(fs.existsSync(path.join(sd.path, '__tmp_Patch01'))).toBe(false);
+  });
 
-    it('should calculate operation statistics', () => {
-      const operations = [
-        { id: '1', status: 'completed', duration: 100 },
-        { id: '2', status: 'completed', duration: 200 },
-        { id: '3', status: 'failed', duration: 50 },
-      ];
+  it('fails before touching anything when a patch is missing', async () => {
+    await expect(app.invoke('patches:reorder', sd.path, ['Patch03', 'Patch09'])).rejects.toThrow(
+      'Failed to reorder patches: Patch folder not found: Patch09',
+    );
+    expect(fs.readdirSync(sd.path).sort()).toEqual(['Patch01', 'Patch02', 'Patch03']);
+  });
+});
 
-      const stats = {
-        total: operations.length,
-        completed: operations.filter(op => op.status === 'completed').length,
-        failed: operations.filter(op => op.status === 'failed').length,
-        avgDuration: operations.reduce((sum, op) => sum + op.duration, 0) / operations.length,
-      };
+describe('export', () => {
+  beforeEach(() => app.selectFolder(sd.path));
 
-      expect(stats.total).toBe(3);
-      expect(stats.completed).toBe(2);
-      expect(stats.failed).toBe(1);
-      expect(stats.avgDuration).toBeCloseTo(116.67, 2); // (100+200+50)/3
+  it('exports the patch list as TXT', async () => {
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    const target = path.join(outside.path, 'list.txt');
+    app.nextSavePath(target);
+
+    await expect(app.invoke('patches:exportTXT', patches, sd.path)).resolves.toEqual({
+      success: true,
+      filePath: target,
+    });
+    const lines = fs.readFileSync(target, 'utf-8').split('\n');
+    expect(lines[0]).toBe('JamMan Patches Export');
+    expect(lines[1]).toMatch(/^Generated: /);
+    expect(lines[2]).toBe('='.repeat(80));
+    expect(lines.slice(4, 7)).toEqual(
+      patches.map((p, i) => `${i + 1}. ${p.data.JamManPatch.PatchName[0]}`),
+    );
+
+    const { dialog } = await import('./test-utils/electronMock.js');
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ defaultPath: path.join(sd.path, 'jamman-patches.txt') }),
+    );
+  });
+
+  it('exports the patch list as PDF', async () => {
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    const target = path.join(outside.path, 'list.pdf');
+    app.nextSavePath(target);
+
+    await expect(app.invoke('patches:exportPDF', patches, sd.path)).resolves.toEqual({
+      success: true,
+      filePath: target,
+    });
+    const pdf = fs.readFileSync(target);
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.length).toBeGreaterThan(500);
+  });
+
+  it('uses "Unknown" for patches without a name', async () => {
+    const target = path.join(outside.path, 'list.txt');
+    app.nextSavePath(target);
+    await app.invoke('patches:exportTXT', [{ dir: 'Patch01' }], sd.path);
+    expect(fs.readFileSync(target, 'utf-8')).toContain('1. Unknown');
+  });
+
+  it('reports a canceled save dialog', async () => {
+    app.nextSavePath(undefined);
+    await expect(app.invoke('patches:exportTXT', [], sd.path)).resolves.toEqual({
+      success: false,
+      canceled: true,
+    });
+    app.nextSavePath(undefined);
+    await expect(app.invoke('patches:exportPDF', [], sd.path)).resolves.toEqual({
+      success: false,
+      canceled: true,
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle missing patch directory', () => {
-      const nonExistentPath = path.join(tempDir, 'NonExistent');
+  it('wraps write errors', async () => {
+    app.nextSavePath(path.join(outside.path, 'missing-dir', 'list.txt'));
+    await expect(app.invoke('patches:exportTXT', [], sd.path)).rejects.toThrow(
+      'Failed to export patches: ',
+    );
+  });
+});
 
-      expect(fs.existsSync(nonExistentPath)).toBe(false);
-      expect(() => {
-        if (!fs.existsSync(nonExistentPath)) {
-          throw new Error('Patch directory does not exist');
-        }
-      }).toThrow('Patch directory does not exist');
+describe('backup', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  it('creates a backup stamped with the app version and validates it', async () => {
+    const target = path.join(outside.path, 'b.jamman-backup.zip');
+    app.nextSavePath(target);
+
+    await expect(
+      app.invoke('backup:create', sd.path, ['Patch01', 'Patch02'], true),
+    ).resolves.toEqual({
+      success: true,
+      filePath: target,
     });
+    const { dialog } = await import('./test-utils/electronMock.js');
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Save Backup',
+        defaultPath: expect.stringMatching(
+          new RegExp(`^${app.documents}/jamman-backup-\\d{4}-\\d{2}-\\d{2}\\.jamman-backup\\.zip$`),
+        ),
+      }),
+    );
 
-    it('should handle invalid XML files', () => {
-      const invalidXMLPath = path.join(tempDir, 'invalid.xml');
-      fs.writeFileSync(invalidXMLPath, '<invalid><unclosed>');
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [target] });
+    await app.invoke('backup:selectFile');
 
-      expect(fs.existsSync(invalidXMLPath)).toBe(true);
-
-      const content = fs.readFileSync(invalidXMLPath, 'utf-8');
-      // Check for unclosed tag
-      const openTags = content.match(/<[^/][^>]*[^/]>/g)?.length || 0;
-      const closeTags = content.match(/<\/[^>]+>/g)?.length || 0;
-
-      expect(openTags).toBeGreaterThan(closeTags);
-    });
-
-    it('should handle permission errors', () => {
-      // This test simulates permission errors
-      // In a real scenario, this would test actual file permission issues
-      const mockPermissionError = () => {
-        throw new Error('EACCES: permission denied');
-      };
-
-      expect(mockPermissionError).toThrow('EACCES: permission denied');
-    });
-
-    it('should handle disk space errors', () => {
-      // Mock disk space error
-      const mockDiskError = () => {
-        throw new Error('ENOSPC: no space left on device');
-      };
-
-      expect(mockDiskError).toThrow('ENOSPC: no space left on device');
+    const info = await app.invoke<{ valid: boolean; manifest: Record<string, unknown> }>(
+      'backup:validate',
+      target,
+    );
+    expect(info.valid).toBe(true);
+    expect(info.manifest).toMatchObject({
+      appVersion: '9.9.9-test',
+      patchCount: 2,
+      patches: ['Patch01', 'Patch02'],
     });
   });
 
-  describe('Security Validation', () => {
-    it('should reject path traversal attempts', () => {
-      const basePath = tempDir;
-      const maliciousPath = path.join(basePath, '..', '..', 'etc', 'passwd');
-      const resolvedPath = path.resolve(maliciousPath);
-      const resolvedBase = path.resolve(basePath);
+  it('reports a canceled save dialog', async () => {
+    app.nextSavePath(undefined);
+    await expect(app.invoke('backup:create', sd.path)).resolves.toEqual({
+      success: false,
+      canceled: true,
+    });
+  });
 
-      expect(resolvedPath.startsWith(resolvedBase)).toBe(false);
+  it('refuses to validate or restore a backup the user did not pick', async () => {
+    const zip = path.join(outside.path, 'x.zip');
+    fs.writeFileSync(zip, 'zip');
+    await expect(app.invoke('backup:validate', zip)).rejects.toThrow('Access denied');
+    await expect(app.invoke('backup:restore', zip, sd.path, 'merge')).rejects.toThrow(
+      'Access denied',
+    );
+  });
+
+  it('restores a picked backup into the folder and refreshes the patch list', async () => {
+    const zip = path.join(outside.path, 'b.zip');
+    app.nextSavePath(zip);
+    await app.invoke('backup:create', sd.path, ['Patch01']);
+    const { dialog } = await import('./test-utils/electronMock.js');
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [zip] });
+    await app.invoke('backup:selectFile');
+
+    await app.invoke('patches:read', sd.path); // fill the cache
+    const result = await app.invoke<{ success: boolean; patchesRestored: number }>(
+      'backup:restore',
+      zip,
+      sd.path,
+      'merge',
+    );
+    expect(result).toMatchObject({ success: true, patchesRestored: 1 });
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(patches).toHaveLength(4);
+    expect(names(patches).Patch04).toBe('Rock Groove');
+  });
+
+  it('wraps restore failures', async () => {
+    const zip = path.join(sd.path, 'bad.zip');
+    fs.writeFileSync(zip, 'not a zip');
+    await expect(app.invoke('backup:restore', zip, sd.path, 'replace')).rejects.toThrow(
+      'Failed to restore backup: ',
+    );
+    await expect(app.invoke('backup:validate', zip)).resolves.toMatchObject({ valid: false });
+  });
+});
+
+describe('undo snapshots', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  it('snapshots a patch, restores it after a delete and discards the snapshot', async () => {
+    const created = await app.invoke<{ ok: true; snapshot: { id: string; patches: string[] } }>(
+      'undo:createSnapshot',
+      sd.path,
+      { kind: 'patches', patches: ['Patch02'] },
+    );
+    expect(created).toMatchObject({ ok: true, snapshot: { patches: ['Patch02'] } });
+    expect(fs.existsSync(path.join(app.userData, 'undo-snapshots', created.snapshot.id))).toBe(
+      true,
+    );
+
+    await app.invoke('patches:read', sd.path); // fill the cache
+    fs.rmSync(path.join(sd.path, 'Patch02'), { recursive: true });
+
+    await expect(
+      app.invoke('undo:restoreSnapshot', created.snapshot.id, sd.path, 'add'),
+    ).resolves.toEqual({ ok: true, restored: ['Patch02'], removed: [] });
+    expect(names(await app.invoke<ReadPatch[]>('patches:read', sd.path)).Patch02).toBe(
+      'Waltz Pair',
+    );
+
+    await app.invoke('undo:discardSnapshot', created.snapshot.id);
+    expect(fs.existsSync(path.join(app.userData, 'undo-snapshots', created.snapshot.id))).toBe(
+      false,
+    );
+  });
+
+  it('answers expected failures with a code instead of throwing', async () => {
+    await expect(
+      app.invoke('undo:createSnapshot', outside.path, { kind: 'all' }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'FAILED',
+      message: expect.stringContaining('Access denied'),
+    });
+    await expect(
+      app.invoke('undo:restoreSnapshot', '00000000-0000-4000-8000-000000000000', sd.path, 'add'),
+    ).resolves.toMatchObject({ ok: false, code: 'NOT_FOUND' });
+  });
+});
+
+describe('playlists', () => {
+  beforeEach(() => app.selectFolder(sd.path));
+
+  type PlaylistOut = { id: string; name: string; patches: string[] };
+
+  it('creates, edits, reorders and deletes a playlist', async () => {
+    await expect(app.invoke('playlists:load', sd.path)).resolves.toEqual({
+      version: '2.0',
+      playlists: [],
+      patches: [],
     });
 
-    it('should validate file extensions', () => {
-      const allowedExtensions = ['.wav', '.xml'];
-      const testFiles = ['patch.xml', 'phrase.wav', 'malicious.exe', 'script.sh'];
+    const created = await app.invoke<PlaylistOut>('playlists:create', sd.path, 'Gig', ['Patch01']);
+    expect(created).toMatchObject({ name: 'Gig', patches: ['Patch01'] });
 
-      testFiles.forEach(file => {
-        const ext = path.extname(file);
-        const isAllowed = allowedExtensions.includes(ext);
+    const added = await app.invoke<PlaylistOut>('playlists:addPatches', sd.path, created.id, [
+      'Patch03',
+      'Patch02',
+    ]);
+    expect(added.patches).toEqual(['Patch01', 'Patch03', 'Patch02']);
 
-        if (file === 'patch.xml' || file === 'phrase.wav') {
-          expect(isAllowed).toBe(true);
-        } else {
-          expect(isAllowed).toBe(false);
-        }
-      });
+    const reordered = await app.invoke<PlaylistOut>(
+      'playlists:reorderPatches',
+      sd.path,
+      created.id,
+      ['Patch02', 'Patch01', 'Patch03'],
+    );
+    expect(reordered.patches).toEqual(['Patch02', 'Patch01', 'Patch03']);
+
+    const removed = await app.invoke<PlaylistOut>('playlists:removePatches', sd.path, created.id, [
+      'Patch01',
+    ]);
+    expect(removed.patches).toEqual(['Patch02', 'Patch03']);
+
+    const renamed = await app.invoke<PlaylistOut>('playlists:update', sd.path, created.id, {
+      name: 'Tour',
     });
+    expect(renamed).toMatchObject({ name: 'Tour', patches: ['Patch02', 'Patch03'] });
 
-    it('should sanitize filenames', () => {
-      const dangerousNames = [
-        '../../../etc/passwd',
-        'file<script>.xml',
-        'file|pipe.wav',
-        'file:colon.xml',
-      ];
+    const loaded = await app.invoke<{ playlists: PlaylistOut[] }>('playlists:load', sd.path);
+    expect(loaded.playlists).toEqual([expect.objectContaining({ id: created.id, name: 'Tour' })]);
 
-      dangerousNames.forEach(name => {
-        const sanitized = name.replace(/[<>:"|?*]/g, '_').replace(/\.\./g, '');
-        expect(sanitized).not.toMatch(/[<>:"|?*]/);
-        expect(sanitized).not.toContain('..');
-      });
+    await expect(app.invoke('playlists:delete', sd.path, created.id)).resolves.toEqual({
+      success: true,
     });
+    await expect(app.invoke('playlists:load', sd.path)).resolves.toMatchObject({ playlists: [] });
+  });
+
+  it('wraps manager errors with the handler prefix', async () => {
+    await app.invoke('playlists:create', sd.path, 'Gig');
+    await expect(app.invoke('playlists:create', sd.path, 'Gig')).rejects.toThrow(
+      'Failed to create playlist: Playlist "Gig" already exists',
+    );
+    await expect(app.invoke('playlists:update', sd.path, 'nope', {})).rejects.toThrow(
+      'Failed to update playlist: Playlist not found: nope',
+    );
+    await expect(app.invoke('playlists:addPatches', sd.path, 'nope', [])).rejects.toThrow(
+      'Failed to add patches to playlist:',
+    );
+    await expect(app.invoke('playlists:removePatches', sd.path, 'nope', [])).rejects.toThrow(
+      'Failed to remove patches from playlist:',
+    );
+    await expect(app.invoke('playlists:reorderPatches', sd.path, 'nope', [])).rejects.toThrow(
+      'Failed to reorder playlist patches:',
+    );
+    await expect(app.invoke('playlists:export', sd.path, 'nope')).rejects.toThrow(
+      'Failed to export playlist: Playlist not found: nope',
+    );
+  });
+
+  it('exports a playlist as a setlist', async () => {
+    const created = await app.invoke<PlaylistOut>('playlists:create', sd.path, 'Gig', [
+      'Patch03',
+      'Patch01',
+    ]);
+    const target = path.join(outside.path, 'setlist.txt');
+    app.nextSavePath(target);
+
+    await expect(app.invoke('playlists:export', sd.path, created.id)).resolves.toEqual({
+      success: true,
+      filePath: target,
+    });
+    const text = fs.readFileSync(target, 'utf-8');
+    expect(text.startsWith('Gig\n===\n\nCreated: ')).toBe(true);
+    expect(text).toContain(
+      'Patches: 2\n\nSetlist:\n--------\n\n01. Patch03 - Slow Blues\n02. Patch01 - Rock Groove\n',
+    );
+    expect(text.endsWith('\n\nGenerated by JamMan Manager\n')).toBe(true);
+
+    const { dialog } = await import('./test-utils/electronMock.js');
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ defaultPath: path.join(app.documents, 'Gig-setlist.txt') }),
+    );
+
+    app.nextSavePath(undefined);
+    await expect(app.invoke('playlists:export', sd.path, created.id)).resolves.toEqual({
+      success: false,
+      canceled: true,
+    });
+  });
+});
+
+describe('operation queue', () => {
+  it('reports status and statistics', async () => {
+    await expect(app.invoke('operation-queue:status')).resolves.toMatchObject({
+      queued: [],
+      running: [],
+      stats: { queuedCount: 0, runningCount: 0, maxConcurrent: 3 },
+    });
+    await expect(app.invoke('operation-queue:statistics')).resolves.toMatchObject({
+      currentlyQueued: 0,
+      currentlyRunning: 0,
+    });
+  });
+
+  it('queues each writing operation with its priority and lock', async () => {
+    await app.selectFolder(sd.path);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const enqueue = vi.spyOn(operationQueue, 'enqueue');
+    const withLock = vi.spyOn(lockManager, 'withLock');
+
+    const wav = path.join(sd.path, 'Patch01', 'PhraseA', 'phrase.wav');
+    const form = (directory: string) => ({
+      basePath: sd.path,
+      directory,
+      patchName: 'x',
+      rhythmType: 'Silence',
+      stopMode: 'StopInstantly',
+      phrases: [phraseForm('PhraseA', wav)],
+    });
+    await app.invoke('patches:create', form('Patch04'));
+    await app.invoke('patches:update', form('Patch04'));
+    await app.invoke('patches:delete', sd.path, 'Patch04');
+    await app.invoke('patches:deleteBatch', sd.path, ['Patch03']);
+    await app.invoke('patches:reorder', sd.path, ['Patch02', 'Patch01']);
+    app.nextSavePath(undefined);
+    await app.invoke('backup:create', sd.path);
+    const snap = await app.invoke<{ snapshot: { id: string } }>('undo:createSnapshot', sd.path, {
+      kind: 'all',
+    });
+    await app.invoke('undo:restoreSnapshot', snap.snapshot.id, sd.path, 'replace');
+    const zip = path.join(sd.path, 'bad.zip');
+    fs.writeFileSync(zip, 'x');
+    await app.invoke('backup:restore', zip, sd.path, 'merge').catch(() => undefined);
+
+    expect(
+      enqueue.mock.calls.map(([type, description, , priority]) => [type, description, priority]),
+    ).toEqual([
+      ['patches:create', 'Create patch: Patch04', OperationPriority.NORMAL],
+      ['patches:update', 'Update patch: Patch04', OperationPriority.NORMAL],
+      ['patches:delete', 'Delete patch: Patch04', OperationPriority.HIGH],
+      ['patches:deleteBatch', 'Delete 1 patches', OperationPriority.HIGH],
+      ['patches:reorder', 'Reorder 2 patches', OperationPriority.NORMAL],
+      ['backup:create', 'Create backup', OperationPriority.NORMAL],
+      ['undo:createSnapshot', 'Create undo snapshot', OperationPriority.HIGH],
+      ['undo:restoreSnapshot', 'Restore undo snapshot', OperationPriority.HIGH],
+      ['backup:restore', 'Restore backup (merge mode)', OperationPriority.HIGH],
+    ]);
+
+    const patch04 = path.join(sd.path, 'Patch04');
+    expect(withLock.mock.calls.map(([key]) => key)).toEqual(
+      expect.arrayContaining([patch04, path.join(sd.path, 'Patch03'), sd.path]),
+    );
+    expect(withLock.mock.calls.slice(0, 3).map(([key]) => key)).toEqual([
+      patch04,
+      patch04,
+      patch04,
+    ]);
   });
 });

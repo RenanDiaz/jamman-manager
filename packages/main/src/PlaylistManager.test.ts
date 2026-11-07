@@ -139,7 +139,7 @@ describe('PlaylistManager', () => {
 
       expect(playlist.id).toMatch(UUID_RE);
       expect(playlist.name).toBe('Gig');
-      expect((playlist as any).patches).toEqual([P2.dir, P1.dir]);
+      expect(playlist.patches).toEqual([P2.dir, P1.dir]);
       expect(playlist.createdAt).toBe(playlist.updatedAt);
 
       const onDisk = readFile();
@@ -186,11 +186,21 @@ describe('PlaylistManager', () => {
       expect(readFile().playlists[0].patchIds).toEqual([P1.id]);
     });
 
-    // BUG: the returned object echoes the requested dirs instead of what was stored,
-    // so the caller sees 'Patch77' in a playlist that does not contain it.
-    it.fails('returns only the patches that were actually stored', async () => {
+    // The returned object used to echo the requested dirs instead of what was stored,
+    // so the caller saw 'Patch77' in a playlist that does not contain it.
+    it('returns only the patches that were actually stored', async () => {
       const playlist = await PlaylistManager.createPlaylist(base, 'Gig', [P1.dir, 'Patch77']);
-      expect((playlist as any).patches).toEqual([P1.dir]);
+      expect(playlist.patches).toEqual([P1.dir]);
+    });
+
+    it('returns the patches in the stored order, skipping unknown ones in between', async () => {
+      const playlist = await PlaylistManager.createPlaylist(base, 'Gig', [
+        P2.dir,
+        'Patch77',
+        P1.dir,
+      ]);
+      expect(playlist.patches).toEqual([P2.dir, P1.dir]);
+      expect(await PlaylistManager.getPlaylistPatches(base, playlist.id)).toEqual(playlist.patches);
     });
 
     it('fails with a clear message when the SD is not writable/existing', async () => {
@@ -200,14 +210,73 @@ describe('PlaylistManager', () => {
       );
     });
 
-    // BUG: load-modify-save with no locking. Concurrent creates both read the same
-    // snapshot, and the last writer silently drops the other playlist.
-    it.fails('keeps both playlists when two are created concurrently', async () => {
+    // Load-modify-save used to run unserialized: concurrent creates both read the same
+    // snapshot, and the last writer silently dropped the other playlist.
+    it('keeps both playlists when two are created concurrently', async () => {
       await Promise.all([
         PlaylistManager.createPlaylist(base, 'One', [P1.dir]),
         PlaylistManager.createPlaylist(base, 'Two', [P2.dir]),
       ]);
       expect((await names()).sort()).toEqual(['One', 'Two']);
+    });
+  });
+
+  describe('concurrent writes', () => {
+    it('keeps every playlist when many are created at once', async () => {
+      const wanted = Array.from({ length: 12 }, (_, i) => `List ${i}`);
+      await Promise.all(wanted.map(name => PlaylistManager.createPlaylist(base, name, [P1.dir])));
+      expect((await names()).sort()).toEqual([...wanted].sort());
+    });
+
+    it('keeps changes made to different playlists at the same time', async () => {
+      const a = await PlaylistManager.createPlaylist(base, 'A', [P1.dir]);
+      const b = await PlaylistManager.createPlaylist(base, 'B', [P1.dir]);
+      await Promise.all([
+        PlaylistManager.addPatchesToPlaylist(base, a.id, [P2.dir]),
+        PlaylistManager.updatePlaylist(base, b.id, { name: 'B2' }),
+        PlaylistManager.createPlaylist(base, 'C'),
+        PlaylistManager.deletePlaylist(base, b.id).catch(() => undefined),
+      ]);
+      const stored = readFile().playlists;
+      const byName = Object.fromEntries(stored.map((p: { name: string }) => [p.name, p]));
+      expect(byName.A.patchIds).toEqual([P1.id, P2.id]);
+      expect(byName.C).toBeDefined();
+      expect(byName.B).toBeUndefined();
+    });
+
+    it('still rejects a duplicate name created concurrently', async () => {
+      const results = await Promise.allSettled([
+        PlaylistManager.createPlaylist(base, 'Same'),
+        PlaylistManager.createPlaylist(base, 'Same'),
+      ]);
+      expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(readFile().playlists).toHaveLength(1);
+    });
+
+    it('does not let a failed operation block the ones queued behind it', async () => {
+      const [failed, ok] = await Promise.allSettled([
+        PlaylistManager.deletePlaylist(base, 'missing'),
+        PlaylistManager.createPlaylist(base, 'After'),
+      ]);
+      expect(failed.status).toBe('rejected');
+      expect(ok.status).toBe('fulfilled');
+      expect(await names()).toEqual(['After']);
+    });
+
+    it('does not serialize across different SD folders', async () => {
+      const other = createTempSd();
+      try {
+        await Promise.all([
+          PlaylistManager.createPlaylist(base, 'Here'),
+          PlaylistManager.createPlaylist(other.path, 'There'),
+        ]);
+        expect(await names()).toEqual(['Here']);
+        expect(
+          (await PlaylistManager.loadPlaylists(other.path)).playlists.map(p => p.name),
+        ).toEqual(['There']);
+      } finally {
+        other.cleanup();
+      }
     });
   });
 
@@ -223,7 +292,7 @@ describe('PlaylistManager', () => {
       expect(updated.name).toBe('New');
       expect(updated.createdAt).toBe('2025-01-01T00:00:00.000Z');
       expect(updated.updatedAt).toBe('2025-01-02T00:00:00.000Z');
-      expect((updated as any).patches).toEqual([P1.dir]);
+      expect(updated.patches).toEqual([P1.dir]);
       expect(readFile().playlists[0].name).toBe('New');
     });
 
@@ -249,11 +318,11 @@ describe('PlaylistManager', () => {
       const replaced = await PlaylistManager.updatePlaylist(base, created.id, {
         patches: [P3.dir, P2.dir],
       });
-      expect((replaced as any).patches).toEqual([P3.dir, P2.dir]);
+      expect(replaced.patches).toEqual([P3.dir, P2.dir]);
       expect(readFile().playlists[0].patchIds).toEqual([P3.id, P2.id]);
 
       const cleared = await PlaylistManager.updatePlaylist(base, created.id, { patches: [] });
-      expect((cleared as any).patches).toEqual([]);
+      expect(cleared.patches).toEqual([]);
     });
 
     it('leaves the patch list alone when only the name changes', async () => {
@@ -315,7 +384,7 @@ describe('PlaylistManager', () => {
         P2.dir,
         P3.dir,
       ]);
-      expect((result as any).patches).toEqual([P2.dir, P1.dir, P3.dir]);
+      expect(result.patches).toEqual([P2.dir, P1.dir, P3.dir]);
     });
 
     it('does not add the same patch twice when it appears twice in the request', async () => {
@@ -333,13 +402,13 @@ describe('PlaylistManager', () => {
     it('removes the given patches and keeps the rest in order', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir, P3.dir]);
       const result = await PlaylistManager.removePatchesFromPlaylist(base, pl.id, [P2.dir]);
-      expect((result as any).patches).toEqual([P1.dir, P3.dir]);
+      expect(result.patches).toEqual([P1.dir, P3.dir]);
     });
 
     it('removing a patch that is not in the playlist is a no-op', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir]);
       const result = await PlaylistManager.removePatchesFromPlaylist(base, pl.id, [P3.dir]);
-      expect((result as any).patches).toEqual([P1.dir]);
+      expect(result.patches).toEqual([P1.dir]);
     });
 
     it('throw for an unknown playlist', async () => {
@@ -360,7 +429,7 @@ describe('PlaylistManager', () => {
         P1.dir,
         P2.dir,
       ]);
-      expect((result as any).patches).toEqual([P3.dir, P1.dir, P2.dir]);
+      expect(result.patches).toEqual([P3.dir, P1.dir, P2.dir]);
       expect(readFile().playlists[0].patchIds).toEqual([P3.id, P1.id, P2.id]);
       expect(await PlaylistManager.getPlaylistPatches(base, pl.id)).toEqual([
         P3.dir,
@@ -372,7 +441,7 @@ describe('PlaylistManager', () => {
     it('rejects an order with missing patches and keeps the old order', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
       await expect(PlaylistManager.reorderPlaylistPatches(base, pl.id, [P2.dir])).rejects.toThrow(
-        'Invalid patch order: some patches are missing',
+        /Invalid patch order/,
       );
       expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
     });
@@ -400,13 +469,29 @@ describe('PlaylistManager', () => {
       await expect(PlaylistManager.reorderPlaylistPatches(base, full.id, [])).rejects.toThrow();
     });
 
-    // BUG: validation only compares lengths, so a duplicated entry stands in for a
-    // missing one: [P1, P1] passes for a playlist of [P1, P2] and silently drops P2.
-    it.fails('rejects an order that repeats a patch instead of dropping another', async () => {
+    // Validation used to compare only lengths, so a duplicated entry stood in for a
+    // missing one: [P1, P1] passed for a playlist of [P1, P2] and silently dropped P2.
+    it('rejects an order that repeats a patch instead of dropping another', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
       await expect(
         PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P1.dir]),
       ).rejects.toThrow();
+      expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
+    });
+
+    it('rejects a longer order that repeats a patch', async () => {
+      const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
+      await expect(
+        PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P2.dir, P1.dir]),
+      ).rejects.toThrow(/Invalid patch order/);
+      expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
+    });
+
+    it('rejects a same-length order where one patch is swapped for a foreign one', async () => {
+      const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir]);
+      await expect(
+        PlaylistManager.reorderPlaylistPatches(base, pl.id, [P1.dir, P3.dir]),
+      ).rejects.toThrow(/Invalid patch order/);
       expect(readFile().playlists[0].patchIds).toEqual([P1.id, P2.id]);
     });
 

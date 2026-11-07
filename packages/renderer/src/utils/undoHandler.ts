@@ -5,7 +5,10 @@
  * Handles execution of undo/redo operations by calling appropriate store methods.
  *
  * How each action is reversed:
- * - REORDER_PATCHES: re-applies the stored order.
+ * - REORDER_PATCHES: puts the patches back in the stored order. `patches:reorder` renames
+ *   `order[i]` to `Patch{i+1}`, so the order to send is expressed in the folder names the
+ *   patches have *now*, not the ones they had when the action was recorded (see
+ *   `reorderBetween`).
  * - DELETE_PATCH / DELETE_PATCHES: undo restores the patches (phrases and audio included) from
  *   the snapshot taken before the delete; redo deletes them again and keeps the same snapshot.
  * - UPDATE_PATCH / RESTORE_BACKUP: undo captures the current state into a new snapshot (for
@@ -24,6 +27,7 @@ import {
   restoreSnapshot,
   snapshotQuietly,
 } from './undoSnapshots';
+import type { Patch } from '../types';
 import { toast } from 'react-toastify';
 
 /** What `executeAction` reports back */
@@ -123,6 +127,37 @@ const requireSameFolder = (folder: string): void => {
   }
 };
 
+const patchDirName = (position: number): string => `Patch${String(position).padStart(2, '0')}`;
+
+/**
+ * Works out the order to send to `patches:reorder` to turn the layout `from` into `to`.
+ *
+ * `from` and `to` hold the same patches (identified by the `dir` they had when the action
+ * was recorded). `patches:reorder` renames `order[i]` to `Patch{i+1}`, so after applying
+ * either side the patch at index `i` of that side lives in folder `Patch{i+1}`. Sending the
+ * old folder names of `to` would therefore be the identity; each patch has to be named by
+ * the folder it occupies in `from`.
+ *
+ * @throws UndoError (fatal) when the folders on disk no longer match `from`
+ */
+const reorderBetween = (from: Patch[], to: Patch[]): Patch[] => {
+  const expected = from.map((_, i) => patchDirName(i + 1));
+  const actual = usePatchStore
+    .getState()
+    .patches.map(p => p.dir)
+    .sort();
+  if (actual.length !== expected.length || actual.some((dir, i) => dir !== expected[i])) {
+    throw new UndoError('NOT_FOUND', 'The patches changed after the reorder');
+  }
+  return to.map(patch => {
+    const position = from.findIndex(candidate => candidate.dir === patch.dir);
+    if (position === -1) {
+      throw new UndoError('NOT_FOUND', 'The patches changed after the reorder');
+    }
+    return { ...patch, dir: expected[position] };
+  });
+};
+
 /**
  * Restores the state before an UPDATE_PATCH / RESTORE_BACKUP (undo) or after it (redo)
  */
@@ -168,9 +203,13 @@ const executeAction = async (
 
   switch (action.type) {
     case 'REORDER_PATCHES': {
-      // For undo, restore previous order; for redo, restore new order
-      const targetOrder = direction === 'undo' ? action.previousOrder : action.newOrder;
-      await patchStore.reorderPatches(targetOrder, true); // skipUndo = true
+      requireSameFolder(action.folder);
+      // Undo goes from the new layout back to the previous one; redo the other way round
+      const order =
+        direction === 'undo'
+          ? reorderBetween(action.newOrder, action.previousOrder)
+          : reorderBetween(action.previousOrder, action.newOrder);
+      await patchStore.reorderPatches(order, true); // skipUndo = true
       return {};
     }
 

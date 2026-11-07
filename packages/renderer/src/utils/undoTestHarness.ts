@@ -97,6 +97,27 @@ export const createFakeElectronApi = (sd: Sd) => {
       }
       return { success: true, deleted, failed: directories.length - deleted.length };
     }),
+    /**
+     * Same contract as the real `patches:reorder` handler in the main process: every
+     * `newOrder[i]` is renamed to `Patch{i+1}` (through a temporary name, as the real one does).
+     */
+    reorderPatches: vi.fn(async (basePath: string, newOrder: string[]) => {
+      for (const dir of newOrder) {
+        if (!fs.existsSync(path.join(basePath, dir))) {
+          throw new Error(`Patch folder not found: ${dir}`);
+        }
+      }
+      newOrder.forEach(dir =>
+        fs.renameSync(path.join(basePath, dir), path.join(basePath, `__tmp_${dir}`)),
+      );
+      newOrder.forEach((dir, i) =>
+        fs.renameSync(
+          path.join(basePath, `__tmp_${dir}`),
+          path.join(basePath, `Patch${String(i + 1).padStart(2, '0')}`),
+        ),
+      );
+      return true;
+    }),
     updatePatch: vi.fn(async (data: FakeUpdate) => {
       const dir = path.join(data.basePath, data.directory);
       fs.writeFileSync(path.join(dir, 'patch.xml'), `<patch>${data.newName}</patch>`);

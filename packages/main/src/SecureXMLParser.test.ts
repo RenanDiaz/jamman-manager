@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import log from 'electron-log';
 import { SecureXMLParser } from './SecureXMLParser.js';
+import { SD_FIXTURE_DIR } from '../../../tests/fixtures/index.js';
 
 // Mock electron-log
 vi.mock('electron-log', () => ({
@@ -12,6 +16,25 @@ vi.mock('electron-log', () => ({
 
 describe('SecureXMLParser', () => {
   describe('validateXML', () => {
+    beforeEach(() => vi.mocked(log.warn).mockClear());
+
+    it('does not warn about balance for valid JamMan XML (declaration and self-closing tags)', () => {
+      for (const file of ['Patch02/patch.xml', 'Patch02/PhraseB/phrase.xml']) {
+        SecureXMLParser.validateXML(fs.readFileSync(path.join(SD_FIXTURE_DIR, file), 'utf-8'));
+      }
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('warns when tags are unbalanced', () => {
+      SecureXMLParser.validateXML('<a><b></a>');
+      expect(log.warn).toHaveBeenCalledWith('XML appears to have unbalanced tags');
+    });
+
+    it('does not count sibling self-closing tags as nesting', () => {
+      const xml = `<root>${'<item/>'.repeat(500)}</root>`;
+      expect(() => SecureXMLParser.validateXML(xml)).not.toThrow();
+    });
+
     it('should accept valid XML', () => {
       const validXML = `<?xml version="1.0" encoding="UTF-8"?>
 <JamManPatch>

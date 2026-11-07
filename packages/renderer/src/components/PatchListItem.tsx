@@ -92,12 +92,12 @@ export const PatchListItem: FC<Props> = memo(
             <Col {...headersWidths}>
               <strong>Device:</strong>
             </Col>
-            <Col {...valuesWidths}>{patchData.$.device}</Col>
+            <Col {...valuesWidths}>{patchData.$?.device}</Col>
             <Col {...headersWidths}>
               <strong>ID:</strong>
             </Col>
             <Col {...valuesWidths} className="text-truncate">
-              {patchData.ID[0] || 'N/A'}
+              {patchData.ID?.[0] || 'N/A'}
             </Col>
             <Col {...headersWidths}>
               <strong>Origin ID:</strong>
@@ -142,8 +142,8 @@ export const PatchListItem: FC<Props> = memo(
                   <td>{phraseDir}</td>
                   <td className="text-truncate">{phrase.ID?.[0] || 'N/A'}</td>
                   <td>{phrase.BeatsPerMinute?.[0] || 'N/A'}</td>
-                  <td>{phrase.IsLoop[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
-                  <td>{phrase.IsReversed[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
+                  <td>{phrase.IsLoop?.[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
+                  <td>{phrase.IsReversed?.[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
                   <td>{phrase.BeatsPerMeasure?.[0] || 'N/A'}</td>
                   <td>
                     <PhrasePlayer

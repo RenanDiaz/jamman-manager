@@ -507,6 +507,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
           type: 'REORDER_PATCHES',
           timestamp: Date.now(),
           description: `Reorder ${newOrder.length} patches`,
+          folder: currentFolder,
           previousOrder,
           newOrder,
         });
