@@ -1,7 +1,7 @@
 import AdmZip from 'adm-zip';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as fse from 'fs-extra';
+import fse from 'fs-extra';
 
 /**
  * Backup manifest schema version.

@@ -31,11 +31,7 @@ import { discardSnapshots } from '../utils/undoSnapshots';
  * Undo action types
  */
 export type UndoActionType =
-  | 'DELETE_PATCH'
-  | 'DELETE_PATCHES'
-  | 'REORDER_PATCHES'
-  | 'UPDATE_PATCH'
-  | 'RESTORE_BACKUP';
+  'DELETE_PATCH' | 'DELETE_PATCHES' | 'REORDER_PATCHES' | 'UPDATE_PATCH' | 'RESTORE_BACKUP';
 
 /**
  * Base interface for undo actions

@@ -41,3 +41,6 @@ coverage
 # Misc
 *.min.js
 *.min.css
+
+# Claude Code worktrees
+.claude

@@ -28,12 +28,7 @@ const PATCH_DIR_RE = /^Patch\d{2}$/;
 const SNAPSHOT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type PatchRestoreErrorCode =
-  | 'INVALID_ARGUMENT'
-  | 'NOT_FOUND'
-  | 'TOO_LARGE'
-  | 'SLOT_OCCUPIED'
-  | 'WRONG_FOLDER'
-  | 'FAILED';
+  'INVALID_ARGUMENT' | 'NOT_FOUND' | 'TOO_LARGE' | 'SLOT_OCCUPIED' | 'WRONG_FOLDER' | 'FAILED';
 
 /** Error with a stable code so callers can tell "can't undo" apart from real failures */
 export class PatchRestoreError extends Error {
@@ -394,8 +389,7 @@ export class PatchRestore {
 
 /** Result shape returned over IPC: expected failures carry a code instead of throwing */
 export type IpcResult<T> =
-  | ({ ok: true } & T)
-  | { ok: false; code: PatchRestoreErrorCode; message: string };
+  ({ ok: true } & T) | { ok: false; code: PatchRestoreErrorCode; message: string };
 
 /** Runs `fn` and converts any failure into an `{ ok: false, code, message }` result */
 export async function toIpcResult<T extends object>(fn: () => Promise<T>): Promise<IpcResult<T>> {

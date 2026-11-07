@@ -1290,17 +1290,21 @@ export async function initApp(initConfig: AppInitConfig) {
   // The undo history lives in memory, so snapshots from a previous run are unreachable.
   patchRestore.purgeAll().catch(error => log.warn('Failed to purge undo snapshots:', error));
 
-  ipcMain.handle('undo:createSnapshot', (_event, basePath: string, scope: SnapshotScope) =>
+  handle('undo:createSnapshot', (_event, basePath: string, scope: SnapshotScope) =>
     operationQueue.enqueue(
       'undo:createSnapshot',
       'Create undo snapshot',
       () =>
-        toIpcResult(async () => ({ snapshot: await patchRestore.createSnapshot(basePath, scope) })),
+        toIpcResult(async () => {
+          // Security: approved folder only
+          folderAccess.assertRoot(basePath);
+          return { snapshot: await patchRestore.createSnapshot(basePath, scope) };
+        }),
       OperationPriority.HIGH,
     ),
   );
 
-  ipcMain.handle(
+  handle(
     'undo:restoreSnapshot',
     (_event, snapshotId: string, basePath: string, mode: RestoreMode, only?: string[]) =>
       operationQueue.enqueue(
@@ -1308,9 +1312,11 @@ export async function initApp(initConfig: AppInitConfig) {
         'Restore undo snapshot',
         async () => {
           try {
-            return await toIpcResult(() =>
-              patchRestore.restoreSnapshot(snapshotId, basePath, mode, only),
-            );
+            return await toIpcResult(async () => {
+              // Security: approved folder only
+              folderAccess.assertRoot(basePath);
+              return patchRestore.restoreSnapshot(snapshotId, basePath, mode, only);
+            });
           } finally {
             patchCache.delete(basePath);
           }
@@ -1319,7 +1325,7 @@ export async function initApp(initConfig: AppInitConfig) {
       ),
   );
 
-  ipcMain.handle('undo:discardSnapshot', (_event, snapshotId: string) =>
+  handle('undo:discardSnapshot', (_event, snapshotId: string) =>
     patchRestore.discardSnapshot(snapshotId),
   );
 

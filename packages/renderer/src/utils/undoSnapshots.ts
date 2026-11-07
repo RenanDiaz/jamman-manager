@@ -11,12 +11,7 @@
 import { toast } from 'react-toastify';
 
 export type UndoErrorCode =
-  | 'INVALID_ARGUMENT'
-  | 'NOT_FOUND'
-  | 'TOO_LARGE'
-  | 'SLOT_OCCUPIED'
-  | 'WRONG_FOLDER'
-  | 'FAILED';
+  'INVALID_ARGUMENT' | 'NOT_FOUND' | 'TOO_LARGE' | 'SLOT_OCCUPIED' | 'WRONG_FOLDER' | 'FAILED';
 
 /**
  * Failure of an undo/redo step. `fatal` means the entry can never work again (its data is gone
