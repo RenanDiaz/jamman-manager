@@ -139,7 +139,7 @@ describe('PlaylistManager', () => {
 
       expect(playlist.id).toMatch(UUID_RE);
       expect(playlist.name).toBe('Gig');
-      expect((playlist as any).patches).toEqual([P2.dir, P1.dir]);
+      expect(playlist.patches).toEqual([P2.dir, P1.dir]);
       expect(playlist.createdAt).toBe(playlist.updatedAt);
 
       const onDisk = readFile();
@@ -190,7 +190,7 @@ describe('PlaylistManager', () => {
     // so the caller saw 'Patch77' in a playlist that does not contain it.
     it('returns only the patches that were actually stored', async () => {
       const playlist = await PlaylistManager.createPlaylist(base, 'Gig', [P1.dir, 'Patch77']);
-      expect((playlist as any).patches).toEqual([P1.dir]);
+      expect(playlist.patches).toEqual([P1.dir]);
     });
 
     it('returns the patches in the stored order, skipping unknown ones in between', async () => {
@@ -199,10 +199,8 @@ describe('PlaylistManager', () => {
         'Patch77',
         P1.dir,
       ]);
-      expect((playlist as any).patches).toEqual([P2.dir, P1.dir]);
-      expect(await PlaylistManager.getPlaylistPatches(base, playlist.id)).toEqual(
-        (playlist as any).patches,
-      );
+      expect(playlist.patches).toEqual([P2.dir, P1.dir]);
+      expect(await PlaylistManager.getPlaylistPatches(base, playlist.id)).toEqual(playlist.patches);
     });
 
     it('fails with a clear message when the SD is not writable/existing', async () => {
@@ -294,7 +292,7 @@ describe('PlaylistManager', () => {
       expect(updated.name).toBe('New');
       expect(updated.createdAt).toBe('2025-01-01T00:00:00.000Z');
       expect(updated.updatedAt).toBe('2025-01-02T00:00:00.000Z');
-      expect((updated as any).patches).toEqual([P1.dir]);
+      expect(updated.patches).toEqual([P1.dir]);
       expect(readFile().playlists[0].name).toBe('New');
     });
 
@@ -320,11 +318,11 @@ describe('PlaylistManager', () => {
       const replaced = await PlaylistManager.updatePlaylist(base, created.id, {
         patches: [P3.dir, P2.dir],
       });
-      expect((replaced as any).patches).toEqual([P3.dir, P2.dir]);
+      expect(replaced.patches).toEqual([P3.dir, P2.dir]);
       expect(readFile().playlists[0].patchIds).toEqual([P3.id, P2.id]);
 
       const cleared = await PlaylistManager.updatePlaylist(base, created.id, { patches: [] });
-      expect((cleared as any).patches).toEqual([]);
+      expect(cleared.patches).toEqual([]);
     });
 
     it('leaves the patch list alone when only the name changes', async () => {
@@ -386,7 +384,7 @@ describe('PlaylistManager', () => {
         P2.dir,
         P3.dir,
       ]);
-      expect((result as any).patches).toEqual([P2.dir, P1.dir, P3.dir]);
+      expect(result.patches).toEqual([P2.dir, P1.dir, P3.dir]);
     });
 
     it('does not add the same patch twice when it appears twice in the request', async () => {
@@ -404,13 +402,13 @@ describe('PlaylistManager', () => {
     it('removes the given patches and keeps the rest in order', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir, P2.dir, P3.dir]);
       const result = await PlaylistManager.removePatchesFromPlaylist(base, pl.id, [P2.dir]);
-      expect((result as any).patches).toEqual([P1.dir, P3.dir]);
+      expect(result.patches).toEqual([P1.dir, P3.dir]);
     });
 
     it('removing a patch that is not in the playlist is a no-op', async () => {
       const pl = await PlaylistManager.createPlaylist(base, 'S', [P1.dir]);
       const result = await PlaylistManager.removePatchesFromPlaylist(base, pl.id, [P3.dir]);
-      expect((result as any).patches).toEqual([P1.dir]);
+      expect(result.patches).toEqual([P1.dir]);
     });
 
     it('throw for an unknown playlist', async () => {
@@ -431,7 +429,7 @@ describe('PlaylistManager', () => {
         P1.dir,
         P2.dir,
       ]);
-      expect((result as any).patches).toEqual([P3.dir, P1.dir, P2.dir]);
+      expect(result.patches).toEqual([P3.dir, P1.dir, P2.dir]);
       expect(readFile().playlists[0].patchIds).toEqual([P3.id, P1.id, P2.id]);
       expect(await PlaylistManager.getPlaylistPatches(base, pl.id)).toEqual([
         P3.dir,

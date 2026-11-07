@@ -22,6 +22,15 @@ export interface PlaylistData {
   playlists: Playlist[];
 }
 
+/** A playlist as the renderer sees it: `patches` are the current folder names of its patchIds. */
+export type PlaylistWithPatches = Playlist & { patches: string[] };
+
+export type PlaylistDataWithPatches = Omit<PlaylistData, 'playlists'> & {
+  playlists: PlaylistWithPatches[];
+  /** Deprecated, kept for compatibility (always empty) */
+  patches: string[];
+};
+
 export class PlaylistManager {
   private static readonly PLAYLIST_FILENAME = '.jamman-playlists.json';
   private static readonly VERSION = '2.0'; // Incremented for ID-based storage
@@ -126,7 +135,7 @@ export class PlaylistManager {
   /**
    * Load playlists from disk and resolve patch IDs to current directory names
    */
-  static async loadPlaylists(basePath: string): Promise<PlaylistData & { patches: any[] }> {
+  static async loadPlaylists(basePath: string): Promise<PlaylistDataWithPatches> {
     const playlistPath = this.getPlaylistPath(basePath);
 
     if (!fs.existsSync(playlistPath)) {
@@ -205,7 +214,7 @@ export class PlaylistManager {
     basePath: string,
     name: string,
     patchDirs: string[] = [],
-  ): Promise<Playlist> {
+  ): Promise<PlaylistWithPatches> {
     return this.serialized(basePath, async () => {
       const data = await this.loadPlaylists(basePath);
 
@@ -226,7 +235,9 @@ export class PlaylistManager {
         updatedAt: now,
       };
 
-      data.playlists.push(playlist);
+      // The new playlist has no resolved `patches` yet: it is only added to the stored list
+      const stored: Playlist[] = data.playlists;
+      stored.push(playlist);
       this.savePlaylists(basePath, data);
 
       // Return with directory names for frontend: what was stored, not what was requested
@@ -234,7 +245,7 @@ export class PlaylistManager {
       return {
         ...playlist,
         patches: storedDirs,
-      } as any;
+      };
     });
   }
 
@@ -245,7 +256,7 @@ export class PlaylistManager {
     basePath: string,
     playlistId: string,
     updates: { name?: string; patches?: string[] },
-  ): Promise<Playlist> {
+  ): Promise<PlaylistWithPatches> {
     return this.serialized(basePath, async () => {
       const data = await this.loadPlaylists(basePath);
       const playlist = data.playlists.find(p => p.id === playlistId);
@@ -275,7 +286,7 @@ export class PlaylistManager {
       return {
         ...playlist,
         patches: dirs,
-      } as any;
+      };
     });
   }
 
@@ -303,7 +314,7 @@ export class PlaylistManager {
     basePath: string,
     playlistId: string,
     patchDirs: string[],
-  ): Promise<Playlist> {
+  ): Promise<PlaylistWithPatches> {
     return this.serialized(basePath, async () => {
       const data = await this.loadPlaylists(basePath);
       const playlist = data.playlists.find(p => p.id === playlistId);
@@ -328,7 +339,7 @@ export class PlaylistManager {
       return {
         ...playlist,
         patches: dirs,
-      } as any;
+      };
     });
   }
 
@@ -339,7 +350,7 @@ export class PlaylistManager {
     basePath: string,
     playlistId: string,
     patchDirs: string[],
-  ): Promise<Playlist> {
+  ): Promise<PlaylistWithPatches> {
     return this.serialized(basePath, async () => {
       const data = await this.loadPlaylists(basePath);
       const playlist = data.playlists.find(p => p.id === playlistId);
@@ -359,7 +370,7 @@ export class PlaylistManager {
       return {
         ...playlist,
         patches: dirs,
-      } as any;
+      };
     });
   }
 
@@ -370,7 +381,7 @@ export class PlaylistManager {
     basePath: string,
     playlistId: string,
     newOrderDirs: string[],
-  ): Promise<Playlist> {
+  ): Promise<PlaylistWithPatches> {
     return this.serialized(basePath, async () => {
       const data = await this.loadPlaylists(basePath);
       const playlist = data.playlists.find(p => p.id === playlistId);
@@ -407,7 +418,7 @@ export class PlaylistManager {
       return {
         ...playlist,
         patches: dirs,
-      } as any;
+      };
     });
   }
 
