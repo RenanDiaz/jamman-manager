@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<JamManPhrase xmlns="http://schemas.digitech.com/JamMan/Phrase" version="1">
+  <BeatsPerMinute>120</BeatsPerMinute>
+  <BeatsPerMeasure>4</BeatsPerMeasure>
+  <BpmValidated>0</BpmValidated>
+  <IsLoop>1</IsLoop>
+  <IsReversed>0</IsReversed>
+  <SettingsVersion>1</SettingsVersion>
+  <AudioVersion>1</AudioVersion>
+  <ID>000000b0-0000-4000-8000-000000000011</ID>
+  <OriginID>000000b1-0000-4000-8000-000000000011</OriginID>
+  <Metadata/>
+</JamManPhrase>

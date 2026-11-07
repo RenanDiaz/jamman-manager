@@ -7,6 +7,7 @@ import log from 'electron-log';
 export class LockManager {
   private locks: Map<string, Promise<void>> = new Map();
   private lockTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private owners: Map<string, symbol> = new Map();
   private readonly DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
 
   /**
@@ -18,6 +19,14 @@ export class LockManager {
    * @returns Promise that resolves when lock is acquired
    */
   async acquire(key: string, timeoutMs: number = this.DEFAULT_TIMEOUT_MS): Promise<void> {
+    await this.acquireOwned(key, timeoutMs);
+  }
+
+  /**
+   * Same as acquire() but returns an owner token. Passing it to release() makes the
+   * release a no-op if the lock has since timed out and been taken over by someone else.
+   */
+  private async acquireOwned(key: string, timeoutMs: number): Promise<symbol> {
     log.info(`Attempting to acquire lock for: ${key}`);
 
     // Wait for any existing lock to be released
@@ -32,12 +41,14 @@ export class LockManager {
       releaseLock = resolve;
     });
 
+    const owner = Symbol(key);
     this.locks.set(key, lockPromise);
+    this.owners.set(key, owner);
 
     // Set timeout to automatically release lock if forgotten
     const timeoutId = setTimeout(() => {
       log.warn(`Lock timeout exceeded for: ${key}, force releasing`);
-      this.release(key);
+      this.release(key, owner);
     }, timeoutMs);
 
     this.lockTimeouts.set(key, timeoutId);
@@ -46,18 +57,27 @@ export class LockManager {
 
     // Store the release function for later use
     (lockPromise as any).release = releaseLock!;
+
+    return owner;
   }
 
   /**
    * Release a lock for the given resource key.
    *
    * @param key - Unique identifier for the resource
+   * @param owner - Optional owner token; if given and the lock now belongs to someone
+   *   else (e.g. it timed out and was re-acquired), nothing is released
    */
-  release(key: string): void {
+  release(key: string, owner?: symbol): void {
     const lockPromise = this.locks.get(key);
 
     if (!lockPromise) {
       log.warn(`Attempted to release non-existent lock: ${key}`);
+      return;
+    }
+
+    if (owner !== undefined && this.owners.get(key) !== owner) {
+      log.warn(`Ignoring stale release for: ${key} (lock now held by another owner)`);
       return;
     }
 
@@ -75,6 +95,7 @@ export class LockManager {
     }
 
     this.locks.delete(key);
+    this.owners.delete(key);
     log.info(`Lock released for: ${key}`);
   }
 
@@ -91,11 +112,11 @@ export class LockManager {
     fn: () => Promise<T>,
     timeoutMs: number = this.DEFAULT_TIMEOUT_MS,
   ): Promise<T> {
-    await this.acquire(key, timeoutMs);
+    const owner = await this.acquireOwned(key, timeoutMs);
     try {
       return await fn();
     } finally {
-      this.release(key);
+      this.release(key, owner);
     }
   }
 
@@ -136,6 +157,7 @@ export class LockManager {
 
     this.locks.clear();
     this.lockTimeouts.clear();
+    this.owners.clear();
   }
 }
 

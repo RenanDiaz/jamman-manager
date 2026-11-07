@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
+  <PatchName>Rock Groove</PatchName>
+  <RhythmType>Rock</RhythmType>
+  <StopMode>Immediate</StopMode>
+  <SettingsVersion>1</SettingsVersion>
+  <ID>000000a0-0000-4000-8000-000000000001</ID>
+  <OriginID>000000a1-0000-4000-8000-000000000001</OriginID>
+  <Metadata/>
+</JamManPatch>
