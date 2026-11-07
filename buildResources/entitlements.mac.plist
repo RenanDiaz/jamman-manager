@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Minimal hardened-runtime entitlements for JamMan Manager.
+  Each entry is justified in BUILD.md, section "macOS Entitlements".
+  Do not add entitlements without documenting why there.
+-->
 <plist version="1.0">
   <dict>
+    <!-- V8 needs to generate machine code at runtime (JIT). Required by Electron. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
-    <key>com.apple.security.device.usb</key>
-    <true/>
+    <!-- Read/write access to files and folders the user picks in open/save dialogs.
+         Only takes effect if the App Sandbox is enabled; kept so enabling it later does not break the SD folder workflow. -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
   </dict>

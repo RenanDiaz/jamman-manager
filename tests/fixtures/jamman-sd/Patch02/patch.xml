@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
+  <PatchName>Waltz Pair</PatchName>
+  <RhythmType>Waltz</RhythmType>
+  <StopMode>EndOfPhrase</StopMode>
+  <SettingsVersion>1</SettingsVersion>
+  <ID>000000a0-0000-4000-8000-000000000002</ID>
+  <OriginID>000000a1-0000-4000-8000-000000000002</OriginID>
+  <Metadata/>
+</JamManPatch>

@@ -15,33 +15,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=23.0.0"
-  },
-  "build": {
-    "appId": "com.renandiazreyes.jammanmanager",
-    "productName": "JamMan Manager",
-    "icon": "buildResources/icon.png",
-    "files": [
-      "packages/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.music"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ]
-    }
+    "node": ">=24"
   },
   "scripts": {
     "build": "npm run build -ws --if-present",
@@ -54,11 +28,9 @@
     "start": "node packages/dev-mode.js",
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
+    "verify": "npm run typecheck && npm run lint && npm test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "create-renderer": "cd packages && npm create vite@latest renderer",
-    "integrate-renderer": "npm start --workspace @app/integrate-renderer",
-    "init": "npm run create-renderer && npm run integrate-renderer && npm install",
     "dist": "npm run build && electron-builder --config electron-builder.mjs",
     "dist:mac": "npm run build && electron-builder --mac --config electron-builder.mjs",
     "dist:win": "npm run build && electron-builder --win --config electron-builder.mjs",
@@ -67,31 +39,25 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
+    "@eslint/js": "^9.39.5",
     "@npmcli/map-workspaces": "4.0.2",
-    "@playwright/test": "^1.56.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "22.14.0",
-    "@types/xml2js": "^0.4.14",
+    "@vitest/coverage-v8": "^3.2.7",
     "@vitest/ui": "^3.2.4",
-    "electron": "39.0.0",
-    "electron-builder": "^26.0.12",
+    "electron": "45.2.3",
+    "electron-builder": "^26.18.0",
     "glob": "11.0.3",
     "globals": "^16.4.0",
     "happy-dom": "^20.0.10",
-    "playwright": "^1.56.1",
+    "playwright": "^1.65.0",
     "prettier": "^3.6.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@app/main": "*",
-    "@types/pdfkit": "^0.17.3",
-    "electron-log": "^5.4.3",
-    "fs-extra": "^11.3.0",
-    "music-metadata": "^11.2.1",
-    "pdfkit": "^0.17.2",
-    "react-window": "^2.2.2",
-    "uuid": "^11.1.0",
-    "xml2js": "^0.6.2"
+    "@app/main": "*"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,json,md,yml,yaml,css,scss,html}": [

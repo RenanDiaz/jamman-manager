@@ -4,7 +4,7 @@ This guide explains how to build distributable installers for JamMan Manager on 
 
 ## Prerequisites
 
-- **Node.js** >= 23.0.0
+- **Node.js** >= 24 (LTS; pinned in `.nvmrc`, run `nvm use` to pick it up)
 - **npm** (comes with Node.js)
 - All project dependencies installed: `npm install`
 
@@ -70,6 +70,27 @@ The build configuration is defined in:
 - `buildResources/icon.png` - Main app icon (1024x1024 recommended)
 - `buildResources/icon.icns` - macOS app icon
 - `buildResources/entitlements.mac.plist` - macOS entitlements
+
+### macOS Entitlements
+
+The app is signed with the hardened runtime (`hardenedRuntime: true` in `electron-builder.mjs`), and `buildResources/entitlements.mac.plist` is used both for the app and for its helpers (`entitlements` and `entitlementsInherit`). It holds only what the app needs:
+
+| Entitlement                                         | Why it is there                                                                                                                                                                                                                                       |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `com.apple.security.cs.allow-jit`                   | V8 (Chromium and Node.js inside Electron) compiles JavaScript to machine code at runtime. Without it the hardened runtime kills the renderer and the main process. Electron requires it.                                                              |
+| `com.apple.security.files.user-selected.read-write` | Access to the files and folders the user picks in open/save dialogs (SD folder, WAVs, backups, exports). It only takes effect under the App Sandbox, which is not enabled; it is kept so turning the sandbox on later does not break the SD workflow. |
+
+Removed (2026-11, security review), with the reason they are not needed:
+
+| Entitlement                                              | Why it was removed                                                                                                                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `com.apple.security.cs.allow-unsigned-executable-memory` | Needed only by old Electron versions. `allow-jit` covers V8 on current Electron.                                                                                        |
+| `com.apple.security.cs.allow-dyld-environment-variables` | Lets `DYLD_*` variables inject libraries into the process. The app does not use them, and it is a common code-injection vector.                                         |
+| `com.apple.security.cs.disable-library-validation`       | Lets the app load libraries signed by other teams. The app ships no third-party native modules (`.node`), so everything it loads is signed with the app's own identity. |
+| `com.apple.security.device.usb`                          | The app talks to the JamMan only through its SD card mounted as a volume, never over USB.                                                                               |
+| `com.apple.security.device.audio-input`                  | The app plays WAV files but never records audio.                                                                                                                        |
+
+If a signed build fails to open (for example a crash on start under the hardened runtime), add back only the entitlement that fixes it and document the reason in this table. Check the entitlements of a build with `codesign -d --entitlements - "JamMan Manager.app"`.
 
 ## Code Signing
 
@@ -344,12 +365,12 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '23'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -375,7 +396,7 @@ jobs:
         run: npm run dist:mac
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installers
           path: dist/*.dmg
@@ -383,12 +404,12 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '23'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -408,7 +429,7 @@ jobs:
         run: npm run dist:win
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installers
           path: dist/*.exe
@@ -608,37 +629,33 @@ npm run dist
 
 ## CI/CD Integration
 
-Example GitHub Actions workflow for automated builds:
+The repository ships two workflows in `.github/workflows/`:
 
-```yaml
-name: Build Installers
+- **`ci.yml`** runs on every pull request to `main` and every push to `main`. It
+  type-checks, lints, checks formatting and audits production dependencies
+  (`npm audit --omit=dev --audit-level=high`) on Ubuntu, then builds and runs the
+  unit tests on Ubuntu, macOS and Windows. Every step is blocking.
+- **`release.yml`** runs when a `v*` tag is pushed. It checks that the tag matches
+  the `version` in `package.json`, creates a draft GitHub release, and each
+  platform job runs `electron-builder --publish always` to upload the installers
+  and the `latest*.yml` auto-update metadata to that draft. Review the draft and
+  publish it manually.
 
-on:
-  push:
-    tags:
-      - 'v*'
+All actions are pinned to a commit SHA (with the version in a trailing comment) and
+Node is read from `.nvmrc`. Dependabot keeps them up to date.
 
-jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+To cut a release:
 
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '23'
-
-      - run: npm install
-      - run: npm run dist
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: installers-${{ matrix.os }}
-          path: dist/*
+```bash
+npm version <major|minor|patch> --no-git-tag-version   # bump package.json
+git commit -am "Releases vX.Y.Z"
+git tag vX.Y.Z
+git push origin main vX.Y.Z
 ```
+
+Signing secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are read from GitHub Actions
+secrets by `release.yml`; see [Code Signing](#code-signing).
 
 ## File Size Optimization
 

@@ -10,6 +10,10 @@
  * - Patch updates
  * - Backup restore
  *
+ * Deletes, updates and backup restores keep their data in main-process snapshots (see
+ * `PatchRestore.ts`); actions only hold snapshot ids. The store frees a snapshot as soon as
+ * its action leaves the history (trimmed, superseded by a new action, or cleared).
+ *
  * Features:
  * - Stack-based history with configurable size
  * - Keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z)
@@ -21,16 +25,13 @@
 
 import { create } from 'zustand';
 import { Patch } from '../types';
+import { discardSnapshots } from '../utils/undoSnapshots';
 
 /**
  * Undo action types
  */
 export type UndoActionType =
-  | 'DELETE_PATCH'
-  | 'DELETE_PATCHES'
-  | 'REORDER_PATCHES'
-  | 'UPDATE_PATCH'
-  | 'RESTORE_BACKUP';
+  'DELETE_PATCH' | 'DELETE_PATCHES' | 'REORDER_PATCHES' | 'UPDATE_PATCH' | 'RESTORE_BACKUP';
 
 /**
  * Base interface for undo actions
@@ -42,21 +43,28 @@ interface BaseUndoAction {
 }
 
 /**
- * Delete single patch action
+ * Delete single patch action.
+ * `snapshotId` holds the deleted patch (phrases and audio included).
  */
 interface DeletePatchAction extends BaseUndoAction {
   type: 'DELETE_PATCH';
-  patch: Patch;
+  /** JamMan folder the patch was deleted from */
+  folder: string;
   directory: string;
+  patch?: Patch;
+  snapshotId: string;
 }
 
 /**
- * Delete multiple patches action
+ * Delete multiple patches action.
+ * `directories` lists only the patches that were really deleted.
  */
 interface DeletePatchesAction extends BaseUndoAction {
   type: 'DELETE_PATCHES';
-  patches: Patch[];
+  folder: string;
   directories: string[];
+  patches: Patch[];
+  snapshotId: string;
 }
 
 /**
@@ -69,21 +77,30 @@ interface ReorderPatchesAction extends BaseUndoAction {
 }
 
 /**
- * Update patch action
+ * Update patch action.
+ * `beforeSnapshotId` holds the patch as it was before the edit. `redoSnapshotId` is filled in
+ * when the edit is undone (it captures the edited state); it is `null` when that was not
+ * possible, in which case the edit can be undone but not redone.
  */
 interface UpdatePatchAction extends BaseUndoAction {
   type: 'UPDATE_PATCH';
-  previousPatch: Patch;
-  newPatch: Patch;
+  folder: string;
+  directory: string;
+  beforeSnapshotId: string;
+  redoSnapshotId?: string | null;
 }
 
 /**
- * Restore backup action
+ * Restore backup action.
+ * `beforeSnapshotId` holds the whole folder as it was before the restore; `redoSnapshotId`
+ * works as in {@link UpdatePatchAction}.
  */
 interface RestoreBackupAction extends BaseUndoAction {
   type: 'RESTORE_BACKUP';
-  previousPatches: Patch[];
-  newPatches: Patch[];
+  folder: string;
+  beforeSnapshotId: string;
+  redoSnapshotId?: string | null;
+  patchesRestored: number;
 }
 
 /**
@@ -95,6 +112,26 @@ export type UndoAction =
   | ReorderPatchesAction
   | UpdatePatchAction
   | RestoreBackupAction;
+
+/**
+ * Ids of the main-process snapshots an action depends on
+ */
+export const getSnapshotIds = (action: UndoAction): string[] => {
+  switch (action.type) {
+    case 'DELETE_PATCH':
+    case 'DELETE_PATCHES':
+      return [action.snapshotId];
+    case 'UPDATE_PATCH':
+    case 'RESTORE_BACKUP':
+      return [action.beforeSnapshotId, ...(action.redoSnapshotId ? [action.redoSnapshotId] : [])];
+    default:
+      return [];
+  }
+};
+
+const releaseSnapshots = (actions: UndoAction[]) => {
+  discardSnapshots(actions.flatMap(getSnapshotIds));
+};
 
 /**
  * Undo store interface
@@ -128,6 +165,22 @@ interface UndoStore {
   redo: () => UndoAction | null;
 
   /**
+   * Puts an action whose undo failed back on top of the undo stack (it stays undoable)
+   */
+  revertUndo: (action: UndoAction) => void;
+
+  /**
+   * Puts an action whose redo failed back on top of the redo stack (it stays redoable)
+   */
+  revertRedo: (action: UndoAction) => void;
+
+  /**
+   * Removes an action from both stacks and frees its snapshots. Used when an action can no
+   * longer be undone or redone.
+   */
+  dropAction: (action: UndoAction) => void;
+
+  /**
    * Checks if undo is available
    */
   canUndo: () => boolean;
@@ -159,12 +212,14 @@ export const useUndoStore = create<UndoStore>((set, get) => ({
   maxHistorySize: 50,
 
   pushUndo: (action: UndoAction) => {
+    const dropped: UndoAction[] = [...get().redoStack]; // a new action invalidates redo
+
     set(state => {
       const newStack = [...state.undoStack, action];
 
       // Trim stack if it exceeds max size
       if (newStack.length > state.maxHistorySize) {
-        newStack.shift(); // Remove oldest action
+        dropped.push(...newStack.splice(0, newStack.length - state.maxHistorySize)); // oldest
       }
 
       return {
@@ -172,6 +227,8 @@ export const useUndoStore = create<UndoStore>((set, get) => ({
         redoStack: [], // Clear redo stack when new action is added
       };
     });
+
+    releaseSnapshots(dropped);
   },
 
   undo: () => {
@@ -208,6 +265,34 @@ export const useUndoStore = create<UndoStore>((set, get) => ({
     return action;
   },
 
+  revertUndo: action => {
+    set(state => {
+      if (state.redoStack[state.redoStack.length - 1] !== action) return state;
+      return {
+        undoStack: [...state.undoStack, action],
+        redoStack: state.redoStack.slice(0, -1),
+      };
+    });
+  },
+
+  revertRedo: action => {
+    set(state => {
+      if (state.undoStack[state.undoStack.length - 1] !== action) return state;
+      return {
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, action],
+      };
+    });
+  },
+
+  dropAction: action => {
+    set(state => ({
+      undoStack: state.undoStack.filter(a => a !== action),
+      redoStack: state.redoStack.filter(a => a !== action),
+    }));
+    releaseSnapshots([action]);
+  },
+
   canUndo: () => {
     return get().undoStack.length > 0;
   },
@@ -229,6 +314,8 @@ export const useUndoStore = create<UndoStore>((set, get) => ({
   },
 
   clearHistory: () => {
+    const { undoStack, redoStack } = get();
     set({ undoStack: [], redoStack: [] });
+    releaseSnapshots([...undoStack, ...redoStack]);
   },
 }));

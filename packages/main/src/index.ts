@@ -7,10 +7,9 @@ import { hardwareAccelerationMode } from './modules/HardwareAccelerationModule.j
 import { autoUpdater } from './modules/AutoUpdater.js';
 import { allowInternalOrigins } from './modules/BlockNotAllowdOrigins.js';
 import { allowExternalUrls } from './modules/ExternalUrls.js';
-import { app, dialog, ipcMain, protocol, net } from 'electron';
+import { app, dialog, ipcMain, protocol, session } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import fse from 'fs-extra';
 import * as mm from 'music-metadata';
 import log from 'electron-log';
@@ -20,7 +19,16 @@ import PDFDocument from 'pdfkit';
 import { BackupManager } from './BackupManager.js';
 import { PlaylistManager } from './PlaylistManager.js';
 import { PathValidator } from './PathValidator.js';
+import { PatchRestore, toIpcResult, type SnapshotScope, type RestoreMode } from './PatchRestore.js';
 import { SecureXMLParser } from './SecureXMLParser.js';
+import {
+  createJammanProtocolHandler,
+  JAMMAN_SCHEME,
+  toJammanUrl,
+} from './security/jammanProtocol.js';
+import { FolderAccess } from './security/folderAccess.js';
+import { createTrustedIpcHandle } from './security/trustedIpc.js';
+import { installContentSecurityPolicy } from './security/contentSecurityPolicy.js';
 
 // Cache for parsed patches to improve performance
 type CacheEntry = {
@@ -75,18 +83,49 @@ type ExportPatch = {
 
 export async function initApp(initConfig: AppInitConfig) {
   // CRITICAL: Register custom protocol scheme BEFORE any app initialization
-  // This must be called before app.ready fires
+  // This must be called before app.ready fires.
+  // No `bypassCSP`: the CSP below allows `media-src jamman:` explicitly.
   protocol.registerSchemesAsPrivileged([
     {
-      scheme: 'jamman',
+      scheme: JAMMAN_SCHEME,
       privileges: {
-        bypassCSP: true,
         supportFetchAPI: true,
         stream: true,
       },
     },
   ]);
   log.info('Custom protocol "jamman" registered as privileged');
+
+  // Security: the only folder the renderer may work on is the one the user
+  // picked in the native dialog (persisted so auto-load survives restarts).
+  const folderAccess = new FolderAccess({
+    storeFile: path.join(app.getPath('userData'), 'folder-access.json'),
+    log,
+  });
+  folderAccess.load();
+
+  // Security: every IPC handler checks that the caller is the app's own page.
+  const handle = createTrustedIpcHandle(ipcMain, initConfig.renderer, log);
+
+  // Registered before the window module so the CSP and the protocol handler
+  // exist before the first page request.
+  app.whenReady().then(() => {
+    installContentSecurityPolicy(session.defaultSession, {
+      devServerOrigin: initConfig.renderer instanceof URL ? initConfig.renderer.origin : undefined,
+    });
+
+    // Security: the renderer needs no web permission (camera, mic, notifications…).
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
+      callback(false),
+    );
+
+    // Serves only .wav files inside the approved folder, with range support.
+    protocol.handle(
+      JAMMAN_SCHEME,
+      createJammanProtocolHandler({ getAllowedRoot: () => folderAccess.getRoot(), log }),
+    );
+    log.info('Protocol handler "jamman" registered successfully');
+  });
 
   const moduleRunner = createModuleRunner()
     .init(
@@ -103,92 +142,40 @@ export async function initApp(initConfig: AppInitConfig) {
     // Install DevTools extension if needed
     // .init(chromeDevToolsExtension({extension: 'VUEJS3_DEVTOOLS'}))
 
-    // Security
+    // Security: navigation is denied except to the dev server in development.
     .init(
       allowInternalOrigins(
         new Set(initConfig.renderer instanceof URL ? [initConfig.renderer.origin] : []),
       ),
     )
-    .init(
-      allowExternalUrls(
-        new Set(
-          initConfig.renderer instanceof URL
-            ? [
-                'https://vite.dev',
-                'https://developer.mozilla.org',
-                'https://solidjs.com',
-                'https://qwik.dev',
-                'https://lit.dev',
-                'https://react.dev',
-                'https://preactjs.com',
-                'https://www.typescriptlang.org',
-                'https://vuejs.org',
-              ]
-            : [],
-        ),
-      ),
-    );
+    // Security: window.open is always denied. The app links to no external
+    // site, so no URL is opened in the system browser either.
+    .init(allowExternalUrls(new Set<string>()));
 
-  app.whenReady().then(() => {
-    // Use net.fetch to proxy file:// URLs through our custom protocol
-    // This leverages Chromium's native file streaming which properly supports range requests
-    protocol.handle('jamman', request => {
-      try {
-        // Extract file path from URL
-        const url = request.url.replace('jamman://', '');
-        const filePath = decodeURIComponent(url);
-
-        // Validate file path is not empty
-        if (!filePath || filePath.trim() === '') {
-          log.error('Empty file path received');
-          return new Response('Empty file path', {
-            status: 400,
-            headers: { 'Content-Type': 'text/plain' },
-          });
-        }
-
-        // Validate file exists
-        if (!fs.existsSync(filePath)) {
-          log.error(`Audio file not found: ${filePath}`);
-          return new Response('File not found', {
-            status: 404,
-            headers: { 'Content-Type': 'text/plain' },
-          });
-        }
-
-        // Convert to file:// URL and let Chromium handle the streaming
-        // This properly supports range requests natively
-        const fileUrl = `file://${filePath}`;
-        return net.fetch(fileUrl);
-      } catch (error) {
-        log.error('Error serving audio file:', error);
-        return new Response('Internal server error', {
-          status: 500,
-          headers: { 'Content-Type': 'text/plain' },
-        });
-      }
-    });
-    log.info('Protocol handler "jamman" registered successfully');
-  });
-
-  ipcMain.handle('dialog:selectFolder', async () => {
+  handle('dialog:selectFolder', async () => {
     try {
       const result = await dialog.showOpenDialog({
         properties: ['openDirectory'],
       });
-      return result.filePaths[0];
+      const folder = result.canceled ? undefined : result.filePaths[0];
+      if (folder) {
+        // Security: the folder picked by the user becomes the only approved root.
+        folderAccess.approveRoot(folder);
+      }
+      return folder;
     } catch (error) {
       log.error('Error selecting folder:', error);
       throw new Error('Failed to open folder selection dialog');
     }
   });
 
-  ipcMain.handle('folder:getSize', async (_event, folderPath: string) => {
+  handle('folder:getSize', async (_event, folderPath: string) => {
     try {
       // Security: Validate folder path
       if (!folderPath || typeof folderPath !== 'string') {
         throw new Error('Invalid folder path');
       }
+      folderAccess.assertRoot(folderPath);
 
       if (!PathValidator.pathExists(folderPath, 'directory')) {
         throw new Error('Folder does not exist');
@@ -239,12 +226,14 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('patches:read', async (_event, folderPath: string) => {
+  handle('patches:read', async (_event, folderPath: string) => {
     try {
       // Security: Validate folder path
       if (!folderPath || typeof folderPath !== 'string') {
         throw new Error('Invalid folder path');
       }
+      // Security: only the folder approved through the dialog (also after a restart)
+      folderAccess.assertRoot(folderPath);
 
       // Check folder exists and is a directory
       if (!PathValidator.pathExists(folderPath, 'directory')) {
@@ -392,7 +381,7 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('phrase:getAudioURL', async (_event, filePath: string) => {
+  handle('phrase:getAudioURL', async (_event, filePath: string) => {
     try {
       log.info(`getAudioURL called with filePath: ${filePath}`);
 
@@ -408,6 +397,12 @@ export async function initApp(initConfig: AppInitConfig) {
         return null;
       }
 
+      // Security: playback is served only from the approved folder
+      if (!folderAccess.isInsideRoot(filePath)) {
+        log.warn('Audio file is outside the approved folder:', filePath);
+        return null;
+      }
+
       // Check if file exists and is a file
       if (!PathValidator.pathExists(filePath, 'file')) {
         log.warn(`Audio file not found or is not a file: ${filePath}`);
@@ -415,7 +410,7 @@ export async function initApp(initConfig: AppInitConfig) {
       }
 
       // Create the custom protocol URL
-      const url = `jamman://${encodeURIComponent(filePath)}`;
+      const url = toJammanUrl(filePath);
       log.info(`Generated audio URL: ${url}`);
 
       return url;
@@ -425,7 +420,7 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('audio:validateWav', async (_event, filePath: string) => {
+  handle('audio:validateWav', async (_event, filePath: string) => {
     // Security: Validate file path
     if (!filePath || typeof filePath !== 'string') {
       return { valid: false, error: 'Invalid file path', canAttemptPlayback: false };
@@ -434,6 +429,13 @@ export async function initApp(initConfig: AppInitConfig) {
     // Validate file extension
     if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
       return { valid: false, error: 'Invalid file extension', canAttemptPlayback: false };
+    }
+
+    // Security: approved folder or a file the user picked in the dialog
+    try {
+      folderAccess.assertReadableFile(filePath, ['.wav']);
+    } catch {
+      return { valid: false, error: 'Access denied', canAttemptPlayback: false };
     }
 
     // Check if file exists
@@ -481,7 +483,7 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('audio:readFile', async (_event, filePath: string) => {
+  handle('audio:readFile', async (_event, filePath: string) => {
     // Security: Validate file path
     if (!filePath || typeof filePath !== 'string') {
       throw new Error('Invalid file path');
@@ -491,6 +493,9 @@ export async function initApp(initConfig: AppInitConfig) {
     if (!PathValidator.hasAllowedExtension(filePath, ['.wav'])) {
       throw new Error('Invalid file extension');
     }
+
+    // Security: approved folder or a file the user picked in the dialog
+    folderAccess.assertReadableFile(filePath, ['.wav']);
 
     // Check if file exists
     if (!PathValidator.pathExists(filePath, 'file')) {
@@ -512,31 +517,42 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('dialog:selectFile', async () => {
+  handle('dialog:selectFile', async () => {
     try {
       const result = await dialog.showOpenDialog({
         properties: ['openFile'],
         filters: [{ name: 'Audio', extensions: ['wav'] }],
       });
 
-      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+      // Security: the renderer may read the file the user just picked
+      folderAccess.grantFile(result.filePaths[0]);
+      return result.filePaths[0];
     } catch (error) {
       log.error('Error selecting file:', error);
       throw new Error('Failed to open file selection dialog');
     }
   });
 
-  ipcMain.handle('patches:create', async (_event, data: PatchForm) => {
+  handle('patches:create', async (_event, data: PatchForm) => {
     const { basePath, directory, patchName, rhythmType, stopMode, phrases } = data;
 
     // Security: Validate base path
     if (!basePath || typeof basePath !== 'string') {
       throw new Error('Invalid base path');
     }
+    folderAccess.assertRoot(basePath);
 
     // Security: Validate directory name format
     if (!PathValidator.isValidPatchDir(directory)) {
       throw new Error(`Invalid patch directory name: ${directory}`);
+    }
+
+    // Security: source WAVs must come from the approved folder or the file dialog
+    for (const phrase of phrases ?? []) {
+      folderAccess.assertReadableFile(phrase.wavPath, ['.wav']);
     }
 
     // Security: Validate patch directory is within base path
@@ -558,8 +574,8 @@ export async function initApp(initConfig: AppInitConfig) {
             fse.ensureDirSync(patchDir);
 
             // Patch UUIDs
-            const patchId = uuidv4();
-            const patchOriginId = uuidv4();
+            const patchId = crypto.randomUUID();
+            const patchOriginId = crypto.randomUUID();
 
             // 1. Write patch.xml
             const patchXml = `
@@ -581,8 +597,8 @@ export async function initApp(initConfig: AppInitConfig) {
               const phraseDir = path.join(patchDir, phrase.name);
               fse.ensureDirSync(phraseDir);
 
-              const phraseId = uuidv4();
-              const originId = uuidv4();
+              const phraseId = crypto.randomUUID();
+              const originId = crypto.randomUUID();
 
               // Copy WAV file
               const wavDest = path.join(phraseDir, 'phrase.wav');
@@ -639,7 +655,7 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
-  ipcMain.handle('patches:update', async (_event, data: PatchForm) => {
+  handle('patches:update', async (_event, data: PatchForm) => {
     const {
       basePath,
       directory,
@@ -651,8 +667,18 @@ export async function initApp(initConfig: AppInitConfig) {
       patchOriginID,
       phrases,
     } = data;
-    const patchDir = path.join(basePath, directory);
-    const backupDir = path.join(basePath, `__backup_${directory}_${Date.now()}`);
+
+    // Security: approved folder, valid patch directory and readable source WAVs
+    folderAccess.assertRoot(basePath);
+    if (!PathValidator.isValidPatchDir(directory)) {
+      throw new Error(`Invalid patch directory name: ${directory}`);
+    }
+    for (const phrase of phrases ?? []) {
+      folderAccess.assertReadableFile(phrase.wavPath, ['.wav']);
+    }
+
+    const patchDir = PathValidator.safeJoin(basePath, directory);
+    const backupDir = PathValidator.safeJoin(basePath, `__backup_${directory}_${Date.now()}`);
 
     // Enqueue operation with normal priority
     return operationQueue.enqueue(
@@ -672,8 +698,8 @@ export async function initApp(initConfig: AppInitConfig) {
             log.info(`Created backup: ${backupDir}`);
 
             // Overwrite patch.xml
-            const updatedPatchID = patchID || uuidv4();
-            const updatedOriginID = patchOriginID || uuidv4();
+            const updatedPatchID = patchID || crypto.randomUUID();
+            const updatedOriginID = patchOriginID || crypto.randomUUID();
             const updatedSettingsVersion = Number(settingsVersion || '0') + 1;
 
             const patchXml = `
@@ -710,8 +736,8 @@ export async function initApp(initConfig: AppInitConfig) {
               const phraseXmlPath = path.join(phraseDir, 'phrase.xml');
 
               // Try to reuse existing ID and OriginID
-              let phraseId = uuidv4();
-              let originId = uuidv4();
+              let phraseId = crypto.randomUUID();
+              let originId = crypto.randomUUID();
 
               if (fs.existsSync(phraseXmlPath)) {
                 const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
@@ -780,11 +806,12 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
-  ipcMain.handle('patches:delete', async (_event, basePath: string, directory: string) => {
+  handle('patches:delete', async (_event, basePath: string, directory: string) => {
     // Security: Validate inputs
     if (!basePath || typeof basePath !== 'string') {
       throw new Error('Invalid base path');
     }
+    folderAccess.assertRoot(basePath);
 
     if (!directory || typeof directory !== 'string') {
       throw new Error('Invalid directory name');
@@ -850,7 +877,13 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
-  ipcMain.handle('patches:deleteBatch', async (_event, basePath: string, directories: string[]) => {
+  handle('patches:deleteBatch', async (_event, basePath: string, directories: string[]) => {
+    // Security: approved folder and valid patch directory names only
+    folderAccess.assertRoot(basePath);
+    if (!Array.isArray(directories) || !directories.every(d => PathValidator.isValidPatchDir(d))) {
+      throw new Error('Invalid patch directory names');
+    }
+
     const backups: Record<string, string> = {};
     const deleted: string[] = [];
 
@@ -919,7 +952,12 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
-  ipcMain.handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
+  handle('patches:reorder', async (_event, basePath: string, newOrder: string[]) => {
+    // Security: approved folder and valid patch directory names only
+    folderAccess.assertRoot(basePath);
+    if (!Array.isArray(newOrder) || !newOrder.every(d => PathValidator.isValidPatchDir(d))) {
+      throw new Error('Invalid patch directory names');
+    }
     const jammanPath = path.join(basePath);
     const tempMap: Record<string, string> = {};
     const originalState: Record<string, boolean> = {};
@@ -993,7 +1031,7 @@ export async function initApp(initConfig: AppInitConfig) {
     );
   });
 
-  ipcMain.handle('patches:exportTXT', async (_event, patches: ExportPatch[], basePath: string) => {
+  handle('patches:exportTXT', async (_event, patches: ExportPatch[], basePath: string) => {
     try {
       // Show save dialog
       const result = await dialog.showSaveDialog({
@@ -1031,7 +1069,7 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
-  ipcMain.handle('patches:exportPDF', async (_event, patches: ExportPatch[], basePath: string) => {
+  handle('patches:exportPDF', async (_event, patches: ExportPatch[], basePath: string) => {
     try {
       // Show save dialog
       const result = await dialog.showSaveDialog({
@@ -1092,9 +1130,11 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Create backup
-  ipcMain.handle(
+  handle(
     'backup:create',
     async (_event, basePath: string, patches?: string[], includePlaylist?: boolean) => {
+      // Security: approved folder only
+      folderAccess.assertRoot(basePath);
       return operationQueue.enqueue(
         'backup:create',
         'Create backup',
@@ -1129,6 +1169,7 @@ export async function initApp(initConfig: AppInitConfig) {
               outputPath: filePath,
               patches,
               includePlaylist,
+              appVersion: app.getVersion(),
             });
 
             log.info('Backup created successfully:', outputPath);
@@ -1146,7 +1187,9 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Validate backup
-  ipcMain.handle('backup:validate', async (_event, backupPath: string) => {
+  handle('backup:validate', async (_event, backupPath: string) => {
+    // Security: a backup the user picked in the dialog, or one inside the approved folder
+    folderAccess.assertReadableFile(backupPath, ['.zip']);
     try {
       log.info('Validating backup:', backupPath);
       const info = await BackupManager.validateBackup(backupPath);
@@ -1161,7 +1204,7 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Restore backup
-  ipcMain.handle(
+  handle(
     'backup:restore',
     async (
       _event,
@@ -1170,6 +1213,9 @@ export async function initApp(initConfig: AppInitConfig) {
       mode: 'replace' | 'merge',
       patches?: string[],
     ) => {
+      // Security: picked backup file and approved target folder only
+      folderAccess.assertReadableFile(backupPath, ['.zip']);
+      folderAccess.assertRoot(targetPath);
       return operationQueue.enqueue(
         'backup:restore',
         `Restore backup (${mode} mode)`,
@@ -1203,7 +1249,7 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Select backup file
-  ipcMain.handle('backup:selectFile', async () => {
+  handle('backup:selectFile', async () => {
     try {
       const { filePaths, canceled } = await dialog.showOpenDialog({
         title: 'Select Backup File',
@@ -1220,6 +1266,8 @@ export async function initApp(initConfig: AppInitConfig) {
         return null;
       }
 
+      // Security: the renderer may read the backup the user just picked
+      folderAccess.grantFile(filePaths[0]);
       log.info('Backup file selected:', filePaths[0]);
       return filePaths[0];
     } catch (error) {
@@ -1230,10 +1278,63 @@ export async function initApp(initConfig: AppInitConfig) {
     }
   });
 
+  // ==================== UNDO SNAPSHOTS ====================
+  // Pre-operation snapshots that let the renderer undo/redo deletes, edits and backup restores.
+  // The logic lives in PatchRestore.ts; these handlers only wire it to IPC.
+
+  const patchRestore = new PatchRestore({
+    snapshotRoot: path.join(app.getPath('userData'), 'undo-snapshots'),
+    withLock: (key, fn) => lockManager.withLock(key, fn),
+    logger: log,
+  });
+  // The undo history lives in memory, so snapshots from a previous run are unreachable.
+  patchRestore.purgeAll().catch(error => log.warn('Failed to purge undo snapshots:', error));
+
+  handle('undo:createSnapshot', (_event, basePath: string, scope: SnapshotScope) =>
+    operationQueue.enqueue(
+      'undo:createSnapshot',
+      'Create undo snapshot',
+      () =>
+        toIpcResult(async () => {
+          // Security: approved folder only
+          folderAccess.assertRoot(basePath);
+          return { snapshot: await patchRestore.createSnapshot(basePath, scope) };
+        }),
+      OperationPriority.HIGH,
+    ),
+  );
+
+  handle(
+    'undo:restoreSnapshot',
+    (_event, snapshotId: string, basePath: string, mode: RestoreMode, only?: string[]) =>
+      operationQueue.enqueue(
+        'undo:restoreSnapshot',
+        'Restore undo snapshot',
+        async () => {
+          try {
+            return await toIpcResult(async () => {
+              // Security: approved folder only
+              folderAccess.assertRoot(basePath);
+              return patchRestore.restoreSnapshot(snapshotId, basePath, mode, only);
+            });
+          } finally {
+            patchCache.delete(basePath);
+          }
+        },
+        OperationPriority.HIGH,
+      ),
+  );
+
+  handle('undo:discardSnapshot', (_event, snapshotId: string) =>
+    patchRestore.discardSnapshot(snapshotId),
+  );
+
   // ==================== PLAYLIST OPERATIONS ====================
 
   // Load playlists
-  ipcMain.handle('playlists:load', async (_event, basePath: string) => {
+  handle('playlists:load', async (_event, basePath: string) => {
+    // Security: approved folder only
+    folderAccess.assertRoot(basePath);
     try {
       log.info('Loading playlists:', basePath);
       const data = await PlaylistManager.loadPlaylists(basePath);
@@ -1248,25 +1349,24 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Create playlist
-  ipcMain.handle(
-    'playlists:create',
-    async (_event, basePath: string, name: string, patches?: string[]) => {
-      try {
-        log.info('Creating playlist:', { basePath, name, patchCount: patches?.length });
-        const playlist = await PlaylistManager.createPlaylist(basePath, name, patches);
-        log.info('Playlist created:', playlist.id);
-        return playlist;
-      } catch (error) {
-        log.error('Error creating playlist:', error);
-        throw new Error(
-          `Failed to create playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        );
-      }
-    },
-  );
+  handle('playlists:create', async (_event, basePath: string, name: string, patches?: string[]) => {
+    // Security: approved folder only
+    folderAccess.assertRoot(basePath);
+    try {
+      log.info('Creating playlist:', { basePath, name, patchCount: patches?.length });
+      const playlist = await PlaylistManager.createPlaylist(basePath, name, patches);
+      log.info('Playlist created:', playlist.id);
+      return playlist;
+    } catch (error) {
+      log.error('Error creating playlist:', error);
+      throw new Error(
+        `Failed to create playlist: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  });
 
   // Update playlist
-  ipcMain.handle(
+  handle(
     'playlists:update',
     async (
       _event,
@@ -1274,6 +1374,8 @@ export async function initApp(initConfig: AppInitConfig) {
       playlistId: string,
       updates: { name?: string; patches?: string[] },
     ) => {
+      // Security: approved folder only
+      folderAccess.assertRoot(basePath);
       try {
         log.info('Updating playlist:', { basePath, playlistId, updates });
         const playlist = await PlaylistManager.updatePlaylist(basePath, playlistId, updates);
@@ -1289,7 +1391,9 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Delete playlist
-  ipcMain.handle('playlists:delete', async (_event, basePath: string, playlistId: string) => {
+  handle('playlists:delete', async (_event, basePath: string, playlistId: string) => {
+    // Security: approved folder only
+    folderAccess.assertRoot(basePath);
     try {
       log.info('Deleting playlist:', { basePath, playlistId });
       await PlaylistManager.deletePlaylist(basePath, playlistId);
@@ -1304,9 +1408,11 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Add patches to playlist
-  ipcMain.handle(
+  handle(
     'playlists:addPatches',
     async (_event, basePath: string, playlistId: string, patchDirs: string[]) => {
+      // Security: approved folder only
+      folderAccess.assertRoot(basePath);
       try {
         log.info('Adding patches to playlist:', {
           basePath,
@@ -1330,9 +1436,11 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Remove patches from playlist
-  ipcMain.handle(
+  handle(
     'playlists:removePatches',
     async (_event, basePath: string, playlistId: string, patchDirs: string[]) => {
+      // Security: approved folder only
+      folderAccess.assertRoot(basePath);
       try {
         log.info('Removing patches from playlist:', {
           basePath,
@@ -1356,9 +1464,11 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Reorder patches in playlist
-  ipcMain.handle(
+  handle(
     'playlists:reorderPatches',
     async (_event, basePath: string, playlistId: string, newOrder: string[]) => {
+      // Security: approved folder only
+      folderAccess.assertRoot(basePath);
       try {
         log.info('Reordering patches in playlist:', {
           basePath,
@@ -1382,14 +1492,15 @@ export async function initApp(initConfig: AppInitConfig) {
   );
 
   // Export playlist as setlist
-  ipcMain.handle('playlists:export', async (_event, basePath: string, playlistId: string) => {
+  handle('playlists:export', async (_event, basePath: string, playlistId: string) => {
+    // Security: approved folder only
+    folderAccess.assertRoot(basePath);
     try {
       log.info('Exporting playlist:', { basePath, playlistId });
 
       const data = await PlaylistManager.loadPlaylists(basePath);
       const playlist = data.playlists.find((p: any) => p.id === playlistId) as
-        | ((typeof data.playlists)[0] & { patches: string[] })
-        | undefined;
+        ((typeof data.playlists)[0] & { patches: string[] }) | undefined;
 
       if (!playlist) {
         throw new Error(`Playlist not found: ${playlistId}`);
@@ -1464,7 +1575,7 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Get operation queue status
-  ipcMain.handle('operation-queue:status', async () => {
+  handle('operation-queue:status', async () => {
     try {
       return operationQueue.getStatus();
     } catch (error) {
@@ -1474,7 +1585,7 @@ export async function initApp(initConfig: AppInitConfig) {
   });
 
   // Get operation queue statistics
-  ipcMain.handle('operation-queue:statistics', async () => {
+  handle('operation-queue:statistics', async () => {
     try {
       return operationQueue.getStatistics();
     } catch (error) {
