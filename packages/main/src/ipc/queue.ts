@@ -20,7 +20,7 @@ export function createQueueHandlers({
         return operationQueue.getStatus();
       } catch (error) {
         log.error('Error getting operation queue status:', error);
-        throw new Error('Failed to get operation queue status');
+        throw new Error('Failed to get operation queue status', { cause: error });
       }
     },
 
@@ -29,7 +29,7 @@ export function createQueueHandlers({
         return operationQueue.getStatistics();
       } catch (error) {
         log.error('Error getting operation queue statistics:', error);
-        throw new Error('Failed to get operation queue statistics');
+        throw new Error('Failed to get operation queue statistics', { cause: error });
       }
     },
   };

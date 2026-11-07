@@ -544,6 +544,7 @@ export class BackupManager {
       if (error instanceof BackupValidationError) throw error;
       throw new Error(
         `Failed to validate backup: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error },
       );
     }
     const { entries, manifest, budget } = opened;

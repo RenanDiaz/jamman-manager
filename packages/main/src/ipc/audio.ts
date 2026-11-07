@@ -177,7 +177,7 @@ export function createAudioHandlers({
         return buffer;
       } catch (error) {
         log.error('Error reading audio file:', error);
-        throw new Error(`Failed to read audio file: ${errorMessage(error)}`);
+        throw new Error(`Failed to read audio file: ${errorMessage(error)}`, { cause: error });
       }
     },
   };
