@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PatchRestore, PatchRestoreError } from './PatchRestore';
+import { PatchRestore, PatchRestoreError, toIpcResult } from './PatchRestore';
 
 let tmp: string;
 let base: string;
@@ -282,5 +282,24 @@ describe('PatchRestore safety and lifecycle', () => {
     fs.rmSync(path.join(base, 'Patch01'), { recursive: true });
     await locked.restoreSnapshot(info.id, base, 'add');
     expect(keys).toEqual([base]);
+  });
+});
+
+describe('toIpcResult', () => {
+  it('wraps successes and keeps error codes', async () => {
+    await expect(toIpcResult(async () => ({ restored: ['Patch01'] }))).resolves.toEqual({
+      ok: true,
+      restored: ['Patch01'],
+    });
+    await expect(
+      toIpcResult(async () => {
+        throw new PatchRestoreError('SLOT_OCCUPIED', 'taken');
+      }),
+    ).resolves.toEqual({ ok: false, code: 'SLOT_OCCUPIED', message: 'taken' });
+    await expect(
+      toIpcResult(async () => {
+        throw new Error('boom');
+      }),
+    ).resolves.toEqual({ ok: false, code: 'FAILED', message: 'boom' });
   });
 });

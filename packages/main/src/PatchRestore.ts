@@ -369,6 +369,23 @@ export class PatchRestore {
   }
 }
 
+/** Result shape returned over IPC: expected failures carry a code instead of throwing */
+export type IpcResult<T> =
+  | ({ ok: true } & T)
+  | { ok: false; code: PatchRestoreErrorCode; message: string };
+
+/** Runs `fn` and converts any failure into an `{ ok: false, code, message }` result */
+export async function toIpcResult<T extends object>(fn: () => Promise<T>): Promise<IpcResult<T>> {
+  try {
+    return { ok: true, ...(await fn()) };
+  } catch (error) {
+    if (error instanceof PatchRestoreError) {
+      return { ok: false, code: error.code, message: error.message };
+    }
+    return { ok: false, code: 'FAILED', message: describe(error) };
+  }
+}
+
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

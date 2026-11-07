@@ -64,6 +64,36 @@ export type PatchPayload = {
 };
 
 /**
+ * Description of an undo snapshot created in the main process
+ */
+type UndoSnapshotInfo = {
+  id: string;
+  basePath: string;
+  scope: 'patches' | 'all';
+  patches: string[];
+  hasPlaylists: boolean;
+  sizeBytes: number;
+  createdAt: number;
+};
+
+/**
+ * Result of an undo-snapshot IPC call: expected failures carry a code instead of throwing
+ */
+type UndoResult<T> =
+  | ({ ok: true } & T)
+  | {
+      ok: false;
+      code:
+        | 'INVALID_ARGUMENT'
+        | 'NOT_FOUND'
+        | 'TOO_LARGE'
+        | 'SLOT_OCCUPIED'
+        | 'WRONG_FOLDER'
+        | 'FAILED';
+      message: string;
+    };
+
+/**
  * Audio validation result from the main process
  */
 type AudioValidationResult = {
@@ -261,6 +291,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @returns Promise resolving to selected backup file path, or null if canceled
    */
   selectBackupFile: (): Promise<string | null> => ipcRenderer.invoke('backup:selectFile'),
+
+  // ==================== Undo Snapshots ====================
+
+  /**
+   * Copies patch directories (phrases and audio included) into an undo snapshot
+   * @param basePath - Base path to the JamMan folder
+   * @param scope - Specific patch directories, or the whole folder
+   * @returns Promise resolving with the snapshot (its `id` is used to restore) or an error code
+   */
+  createUndoSnapshot: (
+    basePath: string,
+    scope: { kind: 'patches'; patches: string[] } | { kind: 'all' },
+  ): Promise<UndoResult<{ snapshot: UndoSnapshotInfo }>> =>
+    ipcRenderer.invoke('undo:createSnapshot', basePath, scope),
+
+  /**
+   * Restores an undo snapshot into the folder it was taken from
+   * @param snapshotId - Id returned by createUndoSnapshot
+   * @param basePath - Base path to the JamMan folder
+   * @param mode - 'add' brings back deleted patches (fails if a slot is taken);
+   *               'replace' makes the folder match the snapshot
+   */
+  restoreUndoSnapshot: (
+    snapshotId: string,
+    basePath: string,
+    mode: 'add' | 'replace',
+  ): Promise<UndoResult<{ restored: string[]; removed: string[] }>> =>
+    ipcRenderer.invoke('undo:restoreSnapshot', snapshotId, basePath, mode),
+
+  /**
+   * Discards an undo snapshot that is no longer reachable from the undo history
+   * @param snapshotId - Id returned by createUndoSnapshot
+   */
+  discardUndoSnapshot: (snapshotId: string): Promise<void> =>
+    ipcRenderer.invoke('undo:discardSnapshot', snapshotId),
 
   // ==================== Utility Operations ====================
 
