@@ -358,6 +358,24 @@ describe('patches:create', () => {
     expect(names(patches).Patch04).toBe('New One');
   });
 
+  it('escapes user text in patch.xml so it reads back unchanged', async () => {
+    const patchName = `Tom & Jerry <Live> "Q" 'x' &amp; 🎸`;
+    const rhythmType = 'Rock & <Roll>';
+    const stopMode = 'Stop > Now & Then';
+    await expect(
+      app.invoke('patches:create', form({ patchName, rhythmType, stopMode })),
+    ).resolves.toBe(true);
+
+    const [created] = (await app.invoke<ReadPatch[]>('patches:read', sd.path)).filter(
+      p => p.dir === 'Patch04',
+    );
+    expect(created, 'the new patch must stay readable').toBeDefined();
+    const read = created.data.JamManPatch as unknown as Record<string, string[]>;
+    expect(read.PatchName[0]).toBe(patchName);
+    expect(read.RhythmType[0]).toBe(rhythmType);
+    expect(read.StopMode[0]).toBe(stopMode);
+  });
+
   it('rolls back the new folder when a source WAV is missing', async () => {
     const wav = outsideWav();
     await app.selectFile(wav);
@@ -417,6 +435,32 @@ describe('patches:update', () => {
     const phrase = fs.readFileSync(path.join(sd.path, 'Patch02', 'PhraseA', 'phrase.xml'), 'utf-8');
     expect(phrase).toContain('<ID>000000b0-0000-4000-8000-000000000021</ID>');
     expect(fs.readdirSync(sd.path).filter(d => d.startsWith('__backup_'))).toEqual([]);
+  });
+
+  it('escapes user text in patch.xml so it reads back unchanged', async () => {
+    const patchName = 'Fish & Chips <2>';
+    await expect(
+      app.invoke('patches:update', {
+        basePath: sd.path,
+        directory: 'Patch02',
+        patchName,
+        rhythmType: 'A & B',
+        stopMode: '<Stop>',
+        settingsVersion: '1',
+        patchID: SD_FIXTURE_PATCHES[1].id,
+        patchOriginID: 'origin & 1',
+        phrases: [existingPhrase('Patch02', 'PhraseA')],
+      }),
+    ).resolves.toBe(true);
+
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    const updated = patches.find(p => p.dir === 'Patch02');
+    expect(updated, 'the updated patch must stay readable').toBeDefined();
+    const read = updated!.data.JamManPatch as unknown as Record<string, string[]>;
+    expect(read.PatchName[0]).toBe(patchName);
+    expect(read.RhythmType[0]).toBe('A & B');
+    expect(read.StopMode[0]).toBe('<Stop>');
+    expect(read.OriginID[0]).toBe('origin & 1');
   });
 
   it('restores the original patch when the update fails half-way', async () => {

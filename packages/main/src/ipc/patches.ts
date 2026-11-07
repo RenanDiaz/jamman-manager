@@ -69,16 +69,35 @@ type PatchXmlFields = {
   originId: string;
 };
 
+/** Characters XML 1.0 cannot contain at all, not even escaped (control codes, lone surrogates, U+FFFE/F; the `u` flag keeps emoji pairs). */
+// eslint-disable-next-line no-control-regex
+const XML_ILLEGAL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu;
+
+/**
+ * Makes user text safe inside an XML element: escapes `& < > " '` and drops the
+ * characters XML 1.0 forbids. The parser decodes the five entities on read, so
+ * write → read keeps the original text.
+ */
+export function escapeXml(text: string): string {
+  return String(text)
+    .replace(XML_ILLEGAL_CHARS, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function buildPatchXml(p: PatchXmlFields): string {
   return `
 <?xml version="1.0" encoding="UTF-8" ?>
 <JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManStereo" version="1">
-  <PatchName>${p.patchName}</PatchName>
-  <RhythmType>${p.rhythmType}</RhythmType>
-  <StopMode>${p.stopMode}</StopMode>
-  <SettingsVersion>${p.settingsVersion}</SettingsVersion>
-  <ID>${p.id}</ID>
-  <OriginID>${p.originId}</OriginID>
+  <PatchName>${escapeXml(p.patchName)}</PatchName>
+  <RhythmType>${escapeXml(p.rhythmType)}</RhythmType>
+  <StopMode>${escapeXml(p.stopMode)}</StopMode>
+  <SettingsVersion>${escapeXml(String(p.settingsVersion))}</SettingsVersion>
+  <ID>${escapeXml(p.id)}</ID>
+  <OriginID>${escapeXml(p.originId)}</OriginID>
   <Metadata/>
 </JamManPatch>`.trim();
 }
@@ -94,8 +113,8 @@ function buildPhraseXml(phrase: PhraseForm, id: string, originId: string): strin
   <IsReversed>${phrase.isReversed ? 1 : 0}</IsReversed>
   <SettingsVersion>1</SettingsVersion>
   <AudioVersion>1</AudioVersion>
-  <ID>${id}</ID>
-  <OriginID>${originId}</OriginID>
+  <ID>${escapeXml(id)}</ID>
+  <OriginID>${escapeXml(originId)}</OriginID>
   <Metadata/>
 </JamManPhrase>`.trim();
 }
