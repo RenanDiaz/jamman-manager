@@ -186,11 +186,23 @@ describe('PlaylistManager', () => {
       expect(readFile().playlists[0].patchIds).toEqual([P1.id]);
     });
 
-    // BUG: the returned object echoes the requested dirs instead of what was stored,
-    // so the caller sees 'Patch77' in a playlist that does not contain it.
-    it.fails('returns only the patches that were actually stored', async () => {
+    // The returned object used to echo the requested dirs instead of what was stored,
+    // so the caller saw 'Patch77' in a playlist that does not contain it.
+    it('returns only the patches that were actually stored', async () => {
       const playlist = await PlaylistManager.createPlaylist(base, 'Gig', [P1.dir, 'Patch77']);
       expect((playlist as any).patches).toEqual([P1.dir]);
+    });
+
+    it('returns the patches in the stored order, skipping unknown ones in between', async () => {
+      const playlist = await PlaylistManager.createPlaylist(base, 'Gig', [
+        P2.dir,
+        'Patch77',
+        P1.dir,
+      ]);
+      expect((playlist as any).patches).toEqual([P2.dir, P1.dir]);
+      expect(await PlaylistManager.getPlaylistPatches(base, playlist.id)).toEqual(
+        (playlist as any).patches,
+      );
     });
 
     it('fails with a clear message when the SD is not writable/existing', async () => {

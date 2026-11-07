@@ -204,10 +204,11 @@ export class PlaylistManager {
     data.playlists.push(playlist);
     this.savePlaylists(basePath, data);
 
-    // Return with directory names for frontend
+    // Return with directory names for frontend: what was stored, not what was requested
+    const storedDirs = await this.idsToDirs(basePath, patchIds);
     return {
       ...playlist,
-      patches: patchDirs,
+      patches: storedDirs,
     } as any;
   }
 
