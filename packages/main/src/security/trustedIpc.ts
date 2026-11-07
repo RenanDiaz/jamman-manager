@@ -10,7 +10,8 @@
 
 import { assertTrustedSender, type RendererLocation, type SenderEvent } from './trustedSender.js';
 
-type InvokeListener<E extends SenderEvent> = (event: E, ...args: any[]) => unknown; // eslint-disable-line @typescript-eslint/no-explicit-any
+/** Arguments are `unknown`: they come from the renderer and are not validated yet. */
+type InvokeListener<E extends SenderEvent> = (event: E, ...args: unknown[]) => unknown;
 
 export type IpcMainLike<E extends SenderEvent> = {
   handle(channel: string, listener: InvokeListener<E>): void;

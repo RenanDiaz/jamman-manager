@@ -39,9 +39,9 @@ export interface Operation {
  * Queued operation with execution function
  */
 interface QueuedOperation extends Operation {
-  execute: () => Promise<any>;
-  resolve: (value: any) => void;
-  reject: (error: any) => void;
+  execute: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (error: unknown) => void;
 }
 
 /**
@@ -78,7 +78,8 @@ export class OperationQueue {
         status: OperationStatus.QUEUED,
         createdAt: new Date(),
         execute: fn,
-        resolve,
+        // The queue stores operations of every result type; `fn` resolves this one with a T.
+        resolve: resolve as (value: unknown) => void,
         reject,
       };
 

@@ -8,6 +8,8 @@ export class LockManager {
   private locks: Map<string, Promise<void>> = new Map();
   private lockTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private owners: Map<string, symbol> = new Map();
+  /** Resolves the promise that waiters of each lock are blocked on. */
+  private releasers: Map<string, () => void> = new Map();
   private readonly DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
 
   /**
@@ -36,7 +38,7 @@ export class LockManager {
     }
 
     // Create a new lock
-    let releaseLock: () => void;
+    let releaseLock: () => void = () => undefined;
     const lockPromise = new Promise<void>(resolve => {
       releaseLock = resolve;
     });
@@ -56,7 +58,7 @@ export class LockManager {
     log.info(`Lock acquired for: ${key}`);
 
     // Store the release function for later use
-    (lockPromise as any).release = releaseLock!;
+    this.releasers.set(key, releaseLock);
 
     return owner;
   }
@@ -89,10 +91,8 @@ export class LockManager {
     }
 
     // Release the lock
-    const releaseFn = (lockPromise as any).release;
-    if (releaseFn) {
-      releaseFn();
-    }
+    this.releasers.get(key)?.();
+    this.releasers.delete(key);
 
     this.locks.delete(key);
     this.owners.delete(key);

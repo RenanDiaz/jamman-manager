@@ -15,15 +15,31 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
+      // Measure the code the app runs: the main process, the preload bridge and
+      // the renderer's logic (stores, utils). React components are left out:
+      // they have no unit tests and are covered by the e2e suite instead.
+      include: [
+        'packages/main/src/**/*.ts',
+        'packages/preload/src/**/*.ts',
+        'packages/renderer/src/store/**/*.ts',
+        'packages/renderer/src/utils/**/*.ts',
+      ],
       exclude: [
-        'node_modules/',
-        'packages/*/dist/',
-        '**/*.config.*',
-        '**/types/',
-        '**/*.d.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
-        'tests/**',
+        '**/*.d.ts',
+        // Test helpers and fixtures
+        'packages/main/src/test-utils/**',
+        'packages/main/src/__fixtures__/**',
+        'packages/renderer/src/utils/undoTestHarness.ts',
+        // Declarations only (no runtime code)
+        'packages/main/src/AppInitConfig.ts',
+        'packages/main/src/AppModule.ts',
+        'packages/main/src/ModuleContext.ts',
+        'packages/main/src/ipc/deps.ts',
+        'packages/preload/src/ipc-contract.ts',
+        // Not wired into the app (its .init() is commented out in index.ts)
+        'packages/main/src/modules/ChromeDevToolsExtension.ts',
       ],
       reportsDirectory: './coverage',
       thresholds: {

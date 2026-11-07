@@ -16,6 +16,10 @@
 
 import * as xml2js from 'xml2js';
 import log from 'electron-log';
+import type { PatchXmlData, PhraseXmlData } from '@app/preload/ipc-contract';
+
+/** What xml2js returns: the root element name mapped to its content. */
+export type ParsedXml = Record<string, unknown>;
 
 /**
  * SecureXMLParser class for safe XML parsing
@@ -100,26 +104,30 @@ export class SecureXMLParser {
       throw new Error('Invalid XML: must start with opening tag');
     }
 
-    // Security: Check for balanced tags (basic check)
-    const openTags = xmlString.match(/<[^/][^>]*[^/]>/g)?.length || 0;
-    const closeTags = xmlString.match(/<\/[^>]+>/g)?.length || 0;
-    if (openTags !== closeTags) {
-      // This is a basic check; actual validation happens during parsing
-      log.warn('XML appears to have unbalanced tags');
-    }
-
-    // Security: Check nesting depth
+    // Security: Check for balanced tags and nesting depth (basic check; the
+    // parser does the real validation). Declarations (`<?xml ?>`), comments,
+    // CDATA (`<!…>`) and self-closing tags (`<Metadata/>`) neither open nor
+    // close an element.
+    let openTags = 0;
+    let closeTags = 0;
     let depth = 0;
     let maxDepth = 0;
-    for (let i = 0; i < xmlString.length; i++) {
-      if (xmlString[i] === '<') {
-        if (xmlString[i + 1] !== '/') {
-          depth++;
-          maxDepth = Math.max(maxDepth, depth);
-        } else {
-          depth--;
-        }
+    for (const [tag] of xmlString.matchAll(/<[^>]*>/g)) {
+      if (tag.startsWith('<?') || tag.startsWith('<!')) {
+        continue;
+      } else if (tag.endsWith('/>')) {
+        maxDepth = Math.max(maxDepth, depth + 1);
+      } else if (tag.startsWith('</')) {
+        closeTags++;
+        depth--;
+      } else {
+        openTags++;
+        depth++;
+        maxDepth = Math.max(maxDepth, depth);
       }
+    }
+    if (openTags !== closeTags) {
+      log.warn('XML appears to have unbalanced tags');
     }
 
     if (maxDepth > this.MAX_DEPTH) {
@@ -134,7 +142,7 @@ export class SecureXMLParser {
    * @returns Promise resolving to parsed XML object
    * @throws Error if XML is invalid or parsing fails
    */
-  static async parseXML(xmlString: string): Promise<any> {
+  static async parseXML(xmlString: string): Promise<ParsedXml> {
     try {
       // Security: Validate XML before parsing
       this.validateXML(xmlString);
@@ -143,13 +151,13 @@ export class SecureXMLParser {
       const parser = this.createParser();
 
       // Parse XML
-      const result = await parser.parseStringPromise(xmlString);
+      const result: unknown = await parser.parseStringPromise(xmlString);
 
-      if (!result) {
+      if (!result || typeof result !== 'object') {
         throw new Error('XML parsing returned empty result');
       }
 
-      return result;
+      return result as ParsedXml;
     } catch (error) {
       if (error instanceof Error) {
         log.error('XML parsing error:', error.message);
@@ -166,7 +174,7 @@ export class SecureXMLParser {
    * @param expectedRoot - Expected root element name
    * @throws Error if structure doesn't match
    */
-  static validateJamManXML(parsedXML: any, expectedRoot: 'JamManPatch' | 'JamManPhrase'): void {
+  static validateJamManXML(parsedXML: unknown, expectedRoot: 'JamManPatch' | 'JamManPhrase'): void {
     if (!parsedXML || typeof parsedXML !== 'object') {
       throw new Error('Invalid parsed XML: not an object');
     }
@@ -175,7 +183,7 @@ export class SecureXMLParser {
       throw new Error(`Invalid JamMan XML: expected root element '${expectedRoot}'`);
     }
 
-    const root = parsedXML[expectedRoot];
+    const root = (parsedXML as ParsedXml)[expectedRoot];
     if (!root || typeof root !== 'object') {
       throw new Error(`Invalid JamMan XML: '${expectedRoot}' is not an object`);
     }
@@ -203,10 +211,10 @@ export class SecureXMLParser {
    * @param xmlString - XML string to parse
    * @returns Promise resolving to parsed patch object
    */
-  static async parsePatchXML(xmlString: string): Promise<any> {
+  static async parsePatchXML(xmlString: string): Promise<PatchXmlData> {
     const result = await this.parseXML(xmlString);
     this.validateJamManXML(result, 'JamManPatch');
-    return result;
+    return result as unknown as PatchXmlData;
   }
 
   /**
@@ -214,9 +222,9 @@ export class SecureXMLParser {
    * @param xmlString - XML string to parse
    * @returns Promise resolving to parsed phrase object
    */
-  static async parsePhraseXML(xmlString: string): Promise<any> {
+  static async parsePhraseXML(xmlString: string): Promise<PhraseXmlData> {
     const result = await this.parseXML(xmlString);
     this.validateJamManXML(result, 'JamManPhrase');
-    return result;
+    return result as unknown as PhraseXmlData;
   }
 }
