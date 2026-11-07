@@ -1255,14 +1255,14 @@ export async function initApp(initConfig: AppInitConfig) {
 
   ipcMain.handle(
     'undo:restoreSnapshot',
-    (_event, snapshotId: string, basePath: string, mode: RestoreMode) =>
+    (_event, snapshotId: string, basePath: string, mode: RestoreMode, only?: string[]) =>
       operationQueue.enqueue(
         'undo:restoreSnapshot',
         'Restore undo snapshot',
         async () => {
           try {
             return await toIpcResult(() =>
-              patchRestore.restoreSnapshot(snapshotId, basePath, mode),
+              patchRestore.restoreSnapshot(snapshotId, basePath, mode, only),
             );
           } finally {
             patchCache.delete(basePath);

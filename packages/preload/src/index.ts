@@ -312,13 +312,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @param basePath - Base path to the JamMan folder
    * @param mode - 'add' brings back deleted patches (fails if a slot is taken);
    *               'replace' makes the folder match the snapshot
+   * @param only - Optional subset of the snapshot's patch directories to restore
    */
   restoreUndoSnapshot: (
     snapshotId: string,
     basePath: string,
     mode: 'add' | 'replace',
+    only?: string[],
   ): Promise<UndoResult<{ restored: string[]; removed: string[] }>> =>
-    ipcRenderer.invoke('undo:restoreSnapshot', snapshotId, basePath, mode),
+    ipcRenderer.invoke('undo:restoreSnapshot', snapshotId, basePath, mode, only),
 
   /**
    * Discards an undo snapshot that is no longer reachable from the undo history

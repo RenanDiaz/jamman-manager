@@ -152,6 +152,35 @@ describe('PatchRestore.restoreSnapshot (add) - undo of delete', () => {
   });
 });
 
+describe('PatchRestore.restoreSnapshot with a subset', () => {
+  it('restores only the patches that were really deleted', async () => {
+    const info = await restore.createSnapshot(base, {
+      kind: 'patches',
+      patches: ['Patch01', 'Patch02', 'Patch03'],
+    });
+    fs.rmSync(path.join(base, 'Patch01'), { recursive: true });
+    fs.rmSync(path.join(base, 'Patch03'), { recursive: true });
+    // Patch02 was never deleted (batch partial failure): restoring everything would clash
+    await expect(restore.restoreSnapshot(info.id, base, 'add')).rejects.toMatchObject({
+      code: 'SLOT_OCCUPIED',
+    });
+    const result = await restore.restoreSnapshot(info.id, base, 'add', ['Patch01', 'Patch03']);
+    expect(result.restored).toEqual(['Patch01', 'Patch03']);
+    expect(patchDirsOnDisk()).toEqual(['Patch01', 'Patch02', 'Patch03']);
+  });
+
+  it('rejects patches outside the snapshot and subsets of an all-replace', async () => {
+    const info = await restore.createSnapshot(base, { kind: 'patches', patches: ['Patch01'] });
+    await expect(restore.restoreSnapshot(info.id, base, 'add', ['Patch02'])).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    const all = await restore.createSnapshot(base, { kind: 'all' });
+    await expect(
+      restore.restoreSnapshot(all.id, base, 'replace', ['Patch01']),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});
+
 describe('PatchRestore.restoreSnapshot (replace) - undo of edit', () => {
   it('reverts an edited patch, including overwritten audio and removed phrases', async () => {
     const before = await restore.createSnapshot(base, { kind: 'patches', patches: ['Patch02'] });

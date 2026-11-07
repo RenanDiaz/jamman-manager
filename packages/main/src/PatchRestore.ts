@@ -170,8 +170,17 @@ export class PatchRestore {
     return info;
   }
 
-  /** Restores a snapshot into the folder it was taken from */
-  async restoreSnapshot(id: string, basePath: string, mode: RestoreMode): Promise<RestoreResult> {
+  /**
+   * Restores a snapshot into the folder it was taken from.
+   * @param only - Restore just these patches of the snapshot (e.g. the ones a batch delete
+   *   really removed). Not allowed together with `replace` on an `all` snapshot.
+   */
+  async restoreSnapshot(
+    id: string,
+    basePath: string,
+    mode: RestoreMode,
+    only?: string[],
+  ): Promise<RestoreResult> {
     const base = await this.requireFolder(basePath);
     const info = await this.readInfo(id);
     if (path.resolve(info.basePath) !== base) {
@@ -184,13 +193,27 @@ export class PatchRestore {
       throw new PatchRestoreError('INVALID_ARGUMENT', `Unknown restore mode: ${String(mode)}`);
     }
 
+    let patches = info.patches;
+    if (only !== undefined) {
+      if (!Array.isArray(only) || (mode === 'replace' && info.scope === 'all')) {
+        throw new PatchRestoreError('INVALID_ARGUMENT', 'Cannot restore a subset of this snapshot');
+      }
+      for (const dir of only) {
+        this.assertPatchDir(dir);
+        if (!info.patches.includes(dir)) {
+          throw new PatchRestoreError('NOT_FOUND', `${dir} is not part of this snapshot`);
+        }
+      }
+      patches = info.patches.filter(dir => only.includes(dir));
+    }
+
     return this.withLock(base, async () => {
       const dataDir = path.join(this.snapshotDir(id), DATA_DIR);
 
       if (mode === 'add') {
         // Check every slot first so a conflict leaves the folder untouched.
         const occupied: string[] = [];
-        for (const dir of info.patches) {
+        for (const dir of patches) {
           if (await fse.pathExists(path.join(base, dir))) occupied.push(dir);
         }
         if (occupied.length > 0) {
@@ -211,7 +234,7 @@ export class PatchRestore {
       try {
         // Stage copies next to their destination first, so the swap below is just renames.
         const staged = new Map<string, string>();
-        for (const dir of info.patches) {
+        for (const dir of patches) {
           const staging = path.join(base, `__undo_new_${dir}_${stamp}`);
           await fse.copy(path.join(dataDir, dir), staging, { preserveTimestamps: true });
           staged.set(dir, staging);
@@ -219,7 +242,7 @@ export class PatchRestore {
 
         if (mode === 'replace' && info.scope === 'all') {
           for (const dir of await this.listPatchDirs(base)) {
-            if (!info.patches.includes(dir)) {
+            if (!patches.includes(dir)) {
               const old = path.join(base, `__undo_old_${dir}_${stamp}`);
               await fse.move(path.join(base, dir), old);
               trash.push(old);
@@ -228,7 +251,7 @@ export class PatchRestore {
           }
         }
 
-        for (const dir of info.patches) {
+        for (const dir of patches) {
           const target = path.join(base, dir);
           if (mode === 'replace' && (await fse.pathExists(target))) {
             const old = path.join(base, `__undo_old_${dir}_${stamp}`);
@@ -255,8 +278,8 @@ export class PatchRestore {
       await Promise.all(trash.map(p => fse.remove(p).catch(() => undefined)));
       await this.removeStaging(base, stamp);
 
-      this.log.info(`Restored snapshot ${id} (${mode}): ${info.patches.length} patches`);
-      return { restored: [...info.patches], removed };
+      this.log.info(`Restored snapshot ${id} (${mode}): ${patches.length} patches`);
+      return { restored: [...patches], removed };
     });
   }
 
