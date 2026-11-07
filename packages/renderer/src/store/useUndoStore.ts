@@ -72,7 +72,10 @@ interface DeletePatchesAction extends BaseUndoAction {
  */
 interface ReorderPatchesAction extends BaseUndoAction {
   type: 'REORDER_PATCHES';
+  folder: string;
+  /** Patches before the reorder; each `dir` is the folder it had then. */
   previousOrder: Patch[];
+  /** Patches as sent to `patches:reorder`; each `dir` is the folder the patch had before it. */
   newOrder: Patch[];
 }
 

@@ -59,6 +59,7 @@ describe('useUndoStore', () => {
         type: 'REORDER_PATCHES',
         timestamp: 1,
         description: 'r',
+        folder: '/sd',
         previousOrder: [],
         newOrder: [],
       }),
