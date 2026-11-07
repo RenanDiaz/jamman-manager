@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { SecureXMLParser } from './SecureXMLParser.js';
 
 export interface Playlist {
@@ -196,7 +195,7 @@ export class PlaylistManager {
 
     const now = new Date().toISOString();
     const playlist: Playlist = {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       name,
       patchIds,
       createdAt: now,
