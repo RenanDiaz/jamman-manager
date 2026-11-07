@@ -24,7 +24,7 @@ This will automatically detect your current platform and build installers for it
 # macOS (DMG + ZIP for Intel and Apple Silicon)
 npm run dist:mac
 
-# Windows (NSIS installer + Portable for x64 and x86)
+# Windows (NSIS installer + Portable for x64)
 npm run dist:win
 
 # Linux (AppImage, DEB, and RPM for x64)
@@ -48,7 +48,6 @@ Built installers will be placed in the `dist/` directory:
 ### Windows Installers
 
 - `JamMan Manager-{version}-win-x64.exe` - NSIS installer for 64-bit Windows
-- `JamMan Manager-{version}-win-ia32.exe` - NSIS installer for 32-bit Windows
 - `JamMan Manager-{version}-win-x64-portable.exe` - Portable version (no installation)
 
 ### Linux Installers
@@ -92,456 +91,288 @@ Removed (2026-11, security review), with the reason they are not needed:
 
 If a signed build fails to open (for example a crash on start under the hardened runtime), add back only the entitlement that fixes it and document the reason in this table. Check the entitlements of a build with `codesign -d --entitlements - "JamMan Manager.app"`.
 
-## Code Signing
+## Code signing and releases
 
-Code signing is **critical for security and user trust**. It verifies that your app comes from a known developer and hasn't been tampered with.
+Signed installers are what make the app trustworthy and what make auto-update work:
 
-### Why Code Signing Matters
+- **macOS** blocks unsigned, un-notarized apps in Gatekeeper, and Squirrel.Mac (the engine behind
+  `electron-updater` on macOS) only installs an update that is signed with the same identity as the
+  running app. Without signing there is **no auto-update on macOS**.
+- **Windows** shows a SmartScreen warning for unsigned installers. Updates still install, but a signed
+  build lets `electron-updater` check the publisher of each update (`verifyUpdateCodeSignature`).
+- **Linux** packages are not signed.
 
-- **Security**: Prevents malware from impersonating your app
-- **User Trust**: Removes scary security warnings during installation
-- **Platform Requirements**: Required for distribution on macOS App Store, Microsoft Store
-- **Automatic Updates**: Many update frameworks require signed apps
-- **Notarization**: Required for macOS Gatekeeper (macOS 10.15+)
+> **Never commit certificates, keys or passwords.** They live only in GitHub Actions secrets (and in
+> your password manager). Nothing in this repository contains a secret value.
 
-### ⚠️ Security Warning
+### How it works
 
-**Never commit certificates or private keys to version control!**
+Signing is **opt-in and conditional**. `electron-builder.mjs` looks at which environment variables exist
+and turns on only what is fully configured; `release.yml` passes each platform's secrets only to that
+platform's build step. If a platform has no secrets, its installers are built **unsigned**, the build
+does **not** fail, and the log says so (a `::warning::` annotation on the workflow run plus a
+`[signing] WARNING: ...` line from `electron-builder.mjs`).
 
-- Use environment variables for sensitive data
-- Store certificates securely (e.g., encrypted vault, CI/CD secrets)
-- Rotate certificates before expiration
-- Revoke certificates immediately if compromised
+| Platform | Signed with                                                   | Turned on when                                                       |
+| -------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| macOS    | Developer ID Application certificate, hardened runtime        | `MAC_CSC_LINK` + `MAC_CSC_KEY_PASSWORD`                              |
+| macOS    | Notarization (App Store Connect API key)                      | `APPLE_API_KEY_P8` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER`         |
+| Windows  | Azure Trusted Signing (preferred)                             | all three `AZURE_*` secrets and all four `AZURE_SIGNING_*` variables |
+| Windows  | `.pfx` certificate (alternative, used if Azure is not set up) | `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`                              |
+| Linux    | not signed                                                    | -                                                                    |
 
----
+A **half-configured** group (for example the certificate without the notarization key, or two of the
+three Azure secrets) makes the release job **fail early** with an `::error::` instead of publishing a
+build that is signed but still blocked by Gatekeeper. Either set the whole group or none of it.
 
-### macOS Code Signing
+If Azure and a `.pfx` are both configured, Azure wins.
 
-#### Prerequisites
+### Secrets and variables to create
 
-1. **Apple Developer Account** ($99/year)
-   - Sign up at [developer.apple.com](https://developer.apple.com)
+Create them in the repository under **Settings → Secrets and variables → Actions** (secrets in the
+_Secrets_ tab, variables in the _Variables_ tab). Names are exact and case-sensitive.
 
-2. **Developer ID Application Certificate**
-   - Log in to [developer.apple.com/account](https://developer.apple.com/account)
-   - Navigate to **Certificates, Identifiers & Profiles**
-   - Click **+** to create a new certificate
-   - Select **Developer ID Application**
-   - Follow instructions to generate CSR (Certificate Signing Request)
-   - Download and install certificate in Keychain Access
+#### macOS (5 secrets)
 
-#### Signing Process
+| Secret                 | What it is                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `MAC_CSC_LINK`         | The Developer ID Application certificate as a `.p12`, base64-encoded          |
+| `MAC_CSC_KEY_PASSWORD` | The password you chose when exporting the `.p12`                              |
+| `APPLE_API_KEY_P8`     | The full text of the App Store Connect API key file (`AuthKey_XXXXXXXXXX.p8`) |
+| `APPLE_API_KEY_ID`     | The key's ID (10 characters)                                                  |
+| `APPLE_API_ISSUER`     | The Issuer ID (a UUID) shown above the keys table                             |
 
-1. **Verify Certificate Installation**
+How to get them (needs the **Account Holder** of the Apple Developer Program, $99/year):
 
-   ```bash
-   security find-identity -v -p codesigning
-   ```
+1. **Certificate.** In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/certificates/list)
+   create a **Developer ID Application** certificate (not "Developer ID Installer", not "Apple
+   Development"). Download it and open it so it lands in Keychain Access → _login_ → _My Certificates_.
+2. **Export.** In Keychain Access select the certificate **together with its private key** (expand the
+   arrow), right-click → _Export 2 items…_ → format `.p12`, choose a password. That password is
+   `MAC_CSC_KEY_PASSWORD`.
+3. **Encode.** `base64 -i certificate.p12 | pbcopy` copies the value of `MAC_CSC_LINK`. Then delete the
+   `.p12` from disk (keep the original in your password manager).
+4. **API key.** In [App Store Connect → Users and Access → Integrations → Team Keys](https://appstoreconnect.apple.com/access/integrations/api)
+   generate a key with the **Developer** role. Download the `.p8` **once** (Apple does not let you download
+   it again). `cat AuthKey_XXXXXXXXXX.p8 | pbcopy` copies `APPLE_API_KEY_P8`; the key ID is in the table
+   (`APPLE_API_KEY_ID`) and the Issuer ID is above it (`APPLE_API_ISSUER`).
 
-   You should see your "Developer ID Application" certificate listed.
+**Why an API key and not an Apple ID + app-specific password.** Both work with electron-builder, but the
+API key is not tied to a person's Apple ID (it survives that person leaving the team and does not depend
+on their two-factor setup), it can be revoked on its own without touching the account password, and its
+role limits what a leak could do. electron-builder itself recommends it. If you prefer the Apple ID
+route, export `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` instead: `electron-builder.mjs`
+detects them; you would also have to map them in `release.yml`.
 
-2. **Set Environment Variables**
+#### Windows, option A: Azure Trusted Signing (3 secrets + 4 variables)
 
-   ```bash
-   export CSC_NAME="Developer ID Application: Your Name (TEAMID)"
-   # Optional: Specify keychain if not using default
-   export CSC_KEYCHAIN="/path/to/keychain"
-   ```
+| Kind     | Name                           | What it is                                                                                         |
+| -------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Secret   | `AZURE_TENANT_ID`              | Directory (tenant) ID of the Microsoft Entra ID app registration                                   |
+| Secret   | `AZURE_CLIENT_ID`              | Application (client) ID of that app registration                                                   |
+| Secret   | `AZURE_CLIENT_SECRET`          | A client secret created for that app registration                                                  |
+| Variable | `AZURE_SIGNING_ENDPOINT`       | Regional endpoint of the signing account, e.g. `https://eus.codesigning.azure.net`                 |
+| Variable | `AZURE_SIGNING_ACCOUNT`        | Name of the Trusted Signing account                                                                |
+| Variable | `AZURE_SIGNING_PROFILE`        | Name of the certificate profile                                                                    |
+| Variable | `AZURE_SIGNING_PUBLISHER_NAME` | The common name (CN) of the certificate subject, **exactly** as in the profile (e.g. `Renan Diaz`) |
 
-3. **Build Signed App**
+The four variables are not sensitive, which is why they are variables (their values stay readable in
+logs). How to get them:
 
-   ```bash
-   npm run dist:mac
-   ```
+1. In the Azure portal create a **Trusted Signing account** (resource provider `Microsoft.CodeSigning`)
+   and complete **identity validation** (individual or organization). Check which countries and entity
+   types are eligible before starting; validation can take days.
+2. Create a **certificate profile** (type _Public Trust_) from the validated identity. Its account name,
+   profile name and the region's endpoint give the first three variables; the common name of the certificate
+   subject shown on the profile gives `AZURE_SIGNING_PUBLISHER_NAME`.
+3. In Microsoft Entra ID create an **app registration** and add a **client secret**: tenant ID, client ID
+   and the secret value are the three secrets (copy the secret value immediately; it is shown once).
+4. On the Trusted Signing account, under _Access control (IAM)_, give that app the role
+   **Trusted Signing Certificate Profile Signer**.
 
-4. **Verify Signature**
-   ```bash
-   codesign -dv --verbose=4 dist/mac/JamMan\ Manager.app
-   spctl -a -vv dist/mac/JamMan\ Manager.app
-   ```
+`electron-builder` installs the `TrustedSigning` PowerShell module on the runner and signs through it;
+the Azure SDK reads the three `AZURE_*` secrets from the environment.
 
-#### Notarization (Required for macOS 10.15+)
+#### Windows, option B: `.pfx` certificate (2 secrets)
 
-Notarization proves to Apple that your app doesn't contain malicious content.
+| Secret                 | What it is                                             |
+| ---------------------- | ------------------------------------------------------ |
+| `WIN_CSC_LINK`         | The code-signing certificate as `.pfx`, base64-encoded |
+| `WIN_CSC_KEY_PASSWORD` | The `.pfx` password                                    |
 
-1. **Generate App-Specific Password**
-   - Go to [appleid.apple.com](https://appleid.apple.com)
-   - Sign in and navigate to **Security**
-   - Generate an app-specific password
+Encode with `base64 -i certificate.pfx | pbcopy` (macOS/Linux) or
+`[Convert]::ToBase64String([IO.File]::ReadAllBytes("certificate.pfx")) | Set-Clipboard` (PowerShell).
 
-2. **Set Notarization Credentials**
+> Since June 2023 the CA/Browser Forum requires the private key of a new public code-signing certificate
+> to live on a hardware token or in a cloud HSM, so most CAs no longer hand out an exportable `.pfx`.
+> This option therefore mostly works with an older certificate, or with a CA that offers an exportable
+> key. If yours only offers a token or cloud signing, use option A or that provider's own signing tool.
 
-   ```bash
-   export APPLE_ID="your-apple-id@example.com"
-   export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-   export APPLE_TEAM_ID="TEAMID123"
-   ```
+Locally, `CSC_LINK` / `CSC_KEY_PASSWORD` work as well as the `WIN_`-prefixed names (the prefixed ones keep a
+Windows certificate apart from the macOS one in CI).
 
-3. **Add to electron-builder.mjs**
+Pick **one** of the two options for Windows. Do not set half of either.
 
-   ```js
-   mac: {
-     hardenedRuntime: true,
-     gatekeeperAssess: false,
-     entitlements: "buildResources/entitlements.mac.plist",
-     entitlementsInherit: "buildResources/entitlements.mac.plist",
-     notarize: {
-       teamId: process.env.APPLE_TEAM_ID
-     }
-   }
-   ```
+#### Linux
 
-4. **Build with Notarization**
+No secrets. `GH_TOKEN` is the workflow's own `github.token`; nothing to create.
 
-   ```bash
-   npm run dist:mac
-   ```
+### Decisions behind the configuration
 
-   electron-builder will automatically:
-   - Sign the app
-   - Upload to Apple for notarization
-   - Staple the notarization ticket
-   - Create the final DMG
+- **macOS targets.** `dmg` for the first install and `zip` for auto-update, both for `x64` and `arm64`.
+  The `zip` is required: `electron-updater` on macOS downloads the zip, not the dmg. electron-builder
+  uploads both archs' files and a single `latest-mac.yml` that lists them (check it in the draft release).
+- **`entitlementsInherit`.** It points to the same plist as `entitlements`. A separate inherit plist is only
+  needed when the app is sandboxed (then helpers need `com.apple.security.inherit`) or when the helpers
+  need fewer rights than the main app. The app is not sandboxed, and the GPU/renderer helpers need
+  exactly what the main process does (`allow-jit`), so one file is simpler and cannot drift.
+- **Windows architectures.** Only `x64`. `ia32` was removed (32-bit Windows machines are rare and a 32-bit
+  build doubles the Windows build and signing time). `arm64` was left out on purpose: Windows on ARM runs the x64 build under
+  emulation, the app has no native modules that would break, and a native build doubles the Windows
+  build and signing time for a very small audience. Add `arm64` to the `win` targets in
+  `electron-builder.mjs` if users ask for it; nothing else needs to change.
+- **Linux targets.** `AppImage`, `deb` and `rpm` are kept. Only AppImage updates silently; the `deb`
+  and `rpm` updaters of `electron-updater` need `latest-linux.yml` and ask for administrator rights
+  (polkit) to install, but they do work, and native packages are what many distro users expect.
+  Dropping them would save about a minute of CI and lose that audience, so there is no clear gain.
+  Revisit if packaging problems appear.
+- **No new GitHub Actions.** Signing and notarization are done by `electron-builder` itself, so
+  `release.yml` needs no extra actions (and therefore no extra SHA pins).
 
-5. **Verify Notarization**
-   ```bash
-   spctl -a -vvv -t install dist/*.dmg
-   # Should output: "accepted"
-   ```
+### Test a signed build locally
 
-#### Troubleshooting macOS Signing
+You can do this without CI. Nothing is printed except variable names.
 
-**"No identity found" error:**
+**What would be enabled.** Loading the config prints one `[signing]` line per platform:
 
 ```bash
-# Check certificates
-security find-identity -v -p codesigning
-
-# Import certificate if missing
-security import certificate.p12 -k ~/Library/Keychains/login.keychain-db
+node -e "import('./electron-builder.mjs')"
+# [signing] WARNING: macOS notarization is OFF ...
+# [signing] WARNING: Windows signing is not configured: ...
 ```
 
-**Notarization timeout:**
-
-- Check [Notary API status](https://developer.apple.com/system-status/)
-- Notarization can take 5-60 minutes
-- Use `--trace` flag to see detailed logs
-
-**"App is damaged" warning:**
+**macOS.** Install the Developer ID certificate in your login keychain (double-click the `.cer`/`.p12`)
+and check `security find-identity -v -p codesigning`. Then:
 
 ```bash
-# Remove quarantine attribute
-xattr -dr com.apple.quarantine "/Applications/JamMan Manager.app"
+# Optional: pick a specific identity. Give the name WITHOUT the "Developer ID Application:" prefix.
+export CSC_NAME="Your Name (TEAMID)"
+# Optional, to notarize too (a build without these is signed but not notarized):
+export APPLE_API_KEY="$HOME/keys/AuthKey_XXXXXXXXXX.p8"   # a path to the .p8 file
+export APPLE_API_KEY_ID="XXXXXXXXXX"
+export APPLE_API_ISSUER="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+npm run dist:mac
 ```
 
----
-
-### Windows Code Signing
-
-#### Prerequisites
-
-1. **Code Signing Certificate**
-
-   Purchase from a Certificate Authority (CA):
-   - [DigiCert](https://www.digicert.com/signing/code-signing-certificates) ($400-800/year)
-   - [Sectigo](https://sectigo.com/ssl-certificates-tls/code-signing) ($200-500/year)
-   - [GlobalSign](https://www.globalsign.com/en/code-signing-certificate) ($250-600/year)
-
-   **Certificate Types:**
-   - **Standard**: For individual developers or small teams
-   - **EV (Extended Validation)**: Builds reputation faster, no SmartScreen warnings initially
-   - **Hardware Token**: Most secure, required for EV certificates
-
-2. **Install Certificate**
-   - Export certificate as `.pfx` (PKCS#12) format with private key
-   - Password-protect the `.pfx` file
-   - Store securely (never commit to repository!)
-
-#### Signing Process
-
-1. **Set Environment Variables**
-
-   ```bash
-   # Windows (PowerShell)
-   $env:CSC_LINK = "C:\path\to\certificate.pfx"
-   $env:CSC_KEY_PASSWORD = "your_password"
-
-   # Windows (CMD)
-   set CSC_LINK=C:\path\to\certificate.pfx
-   set CSC_KEY_PASSWORD=your_password
-
-   # macOS/Linux (cross-compiling)
-   export CSC_LINK=/path/to/certificate.pfx
-   export CSC_KEY_PASSWORD=your_password
-   ```
-
-   **🔒 Security Best Practice:**
-
-   ```bash
-   # Store password in secure credential manager instead
-   # Windows Credential Manager, macOS Keychain, or CI/CD secrets
-   ```
-
-2. **Build Signed Installer**
-
-   ```bash
-   npm run dist:win
-   ```
-
-3. **Verify Signature**
-
-   ```powershell
-   # PowerShell
-   Get-AuthenticodeSignature dist\*.exe | Format-List
-
-   # Or use signtool (part of Windows SDK)
-   signtool verify /pa dist\*.exe
-   ```
-
-#### Timestamping
-
-**Always use timestamping** to ensure signatures remain valid after certificate expiration.
-
-Add to `electron-builder.mjs`:
-
-```js
-win: {
-  sign: async (configuration) => {
-    // Custom signing with timestamp
-    await require('electron-builder-sign-windows').default(configuration);
-  },
-  signingHashAlgorithms: ['sha256'],
-  certificateSubjectName: "Your Company Name", // Optional: auto-select cert
-  rfc3161TimeStampServer: "http://timestamp.digicert.com"
-}
-```
-
-#### SmartScreen Reputation
-
-**New certificates trigger SmartScreen warnings.** To build reputation:
-
-1. **EV Certificates**: Start with higher reputation
-2. **Regular Downloads**: More downloads = better reputation
-3. **Time**: Can take weeks/months to build reputation
-4. **No Complaints**: Avoid malware/adware detection
-5. **Consistent Signing**: Use same certificate for all releases
-
-#### Troubleshooting Windows Signing
-
-**"Cannot find signing certificate" error:**
+To build **unsigned** on a machine that has a certificate, set `CSC_IDENTITY_AUTO_DISCOVERY=false`.
+Verify the result (notarization takes from a few minutes to an hour):
 
 ```bash
-# Check certificate is valid and in Windows Certificate Store
-certutil -store My
-
-# Or specify exact subject name
-export WIN_CSC_SUBJECT_NAME="Your Company Name"
+codesign --verify --deep --strict --verbose=2 "dist/mac-arm64/JamMan Manager.app"
+codesign -d --entitlements - "dist/mac-arm64/JamMan Manager.app"   # only the entitlements in the plist
+spctl -a -vvv -t exec "dist/mac-arm64/JamMan Manager.app"          # accepted, source=Notarized Developer ID
+xcrun stapler validate "dist/mac-arm64/JamMan Manager.app"
+spctl -a -vvv -t install dist/*.dmg
 ```
 
-**"Timestamp server error":**
+Gatekeeper only checks files that carry the quarantine flag, so test the downloaded DMG from the draft
+release (or add the flag with `xattr -w com.apple.quarantine "0081;00000000;Safari;" file.dmg`).
 
-```js
-// Try different timestamp servers
-rfc3161TimeStampServer: 'http://timestamp.comodoca.com';
-// or
-rfc3161TimeStampServer: 'http://timestamp.sectigo.com';
-```
-
----
-
-### CI/CD Code Signing
-
-#### GitHub Actions Example
-
-```yaml
-name: Build and Sign
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Import macOS Certificate
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security import certificate.p12 -k build.keychain -P $MACOS_CERTIFICATE_PWD -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-
-      - name: Build and Sign
-        env:
-          CSC_NAME: ${{ secrets.CSC_NAME }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run dist:mac
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-installers
-          path: dist/*.dmg
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Import Windows Certificate
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PWD: ${{ secrets.WINDOWS_CERTIFICATE_PWD }}
-        run: |
-          echo "$env:WINDOWS_CERTIFICATE" | Out-File -FilePath certificate.b64
-          certutil -decode certificate.b64 certificate.pfx
-
-      - name: Build and Sign
-        env:
-          CSC_LINK: certificate.pfx
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PWD }}
-        run: npm run dist:win
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-installers
-          path: dist/*.exe
-```
-
-#### Required GitHub Secrets
-
-**macOS:**
-
-- `MACOS_CERTIFICATE` - Base64-encoded .p12 certificate
-- `MACOS_CERTIFICATE_PWD` - Certificate password
-- `CSC_NAME` - Certificate common name
-- `APPLE_ID` - Apple ID email
-- `APPLE_APP_SPECIFIC_PASSWORD` - App-specific password
-- `APPLE_TEAM_ID` - 10-character Team ID
-
-**Windows:**
-
-- `WINDOWS_CERTIFICATE` - Base64-encoded .pfx certificate
-- `WINDOWS_CERTIFICATE_PWD` - Certificate password
-
----
-
-### Security Best Practices
-
-#### Certificate Storage
-
-✅ **DO:**
-
-- Store certificates in encrypted vaults (1Password, LastPass, etc.)
-- Use CI/CD secret management (GitHub Secrets, GitLab Variables)
-- Use hardware security modules (HSM) for EV certificates
-- Rotate certificates before expiration
-- Use separate certificates for dev/staging/production
-
-❌ **DON'T:**
-
-- Commit certificates to version control
-- Share certificates via email/Slack
-- Store passwords in plaintext
-- Reuse same certificate across projects
-- Ignore certificate expiration warnings
-
-#### Access Control
-
-- Limit who can access signing certificates
-- Use separate certificates per developer/team
-- Implement audit logging for certificate usage
-- Revoke certificates when team members leave
-
-#### Monitoring
-
-- Set calendar reminders for certificate expiration (90 days before)
-- Monitor code signing failures in CI/CD
-- Track SmartScreen reputation (Windows)
-- Verify signatures after each release
-
----
-
-### Certificate Costs Summary
-
-| Platform | Type         | Annual Cost | Reputation Time    |
-| -------- | ------------ | ----------- | ------------------ |
-| macOS    | Developer ID | $99         | Immediate          |
-| Windows  | Standard     | $200-800    | 2-6 months         |
-| Windows  | EV           | $400-1200   | Faster (2-4 weeks) |
-
-**Total Annual Cost:** $300-2000+ depending on certificate types
-
----
-
-### Testing Signed Builds
-
-#### macOS
-
-```bash
-# Verify code signature
-codesign -dv --verbose=4 "JamMan Manager.app"
-
-# Verify notarization
-spctl -a -vv "JamMan Manager.app"
-
-# Check entitlements
-codesign -d --entitlements - "JamMan Manager.app"
-
-# Test Gatekeeper
-xattr -d com.apple.quarantine "JamMan Manager.app"
-open "JamMan Manager.app"
-```
-
-#### Windows
+**Windows** (on Windows; signing needs Windows tooling).
 
 ```powershell
-# Verify signature
-Get-AuthenticodeSignature "JamMan Manager.exe" | Format-List
-
-# Check timestamp
-signtool verify /v /pa "JamMan Manager.exe"
-
-# Test SmartScreen
-# Download from internet and run - should show publisher name
+# Option B (pfx)
+$env:WIN_CSC_LINK = "C:\keys\certificate.pfx"      # a file path also works locally
+$env:WIN_CSC_KEY_PASSWORD = Read-Host "pfx password"
+# Option A (Azure): set AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and the four AZURE_SIGNING_* variables.
+npm run dist:win
+Get-AuthenticodeSignature "dist\JamMan Manager-*-win-x64.exe" | Format-List
 ```
 
----
+The signature `Status` must be `Valid` and `SignerCertificate` your certificate.
+
+If a **signed macOS build crashes on start** (hardened runtime killing a process), run it from Terminal and
+read the crash report in Console. Add back only the entitlement that fixes it and document why in the
+"macOS Entitlements" table above.
+
+### Cut a release
+
+```bash
+npm version <major|minor|patch> --no-git-tag-version   # bump package.json
+git commit -am "Releases vX.Y.Z"
+git tag vX.Y.Z
+git push origin main vX.Y.Z
+```
+
+`release.yml` then (1) checks that the tag matches `package.json`'s version, (2) creates a **draft**
+GitHub release, (3) builds each platform and uploads installers and the `latest*.yml` files to the draft.
+Look at the workflow summary for `UNSIGNED` warnings, then review the draft and **publish it**.
+
+### Test auto-update end to end
+
+`electron-updater` only sees **published** releases. A draft release is invisible to it, so publish
+`vX` before testing. Two real versions are needed, and the first one must itself be signed, because on
+macOS an unsigned (or differently signed) app cannot be updated.
+
+Checklist (the example uses `v0.1.1` and `v0.1.2`; use whatever is next):
+
+1. [ ] All secrets of the platforms you want to test exist (see above). Check the macOS and Windows jobs of
+       the first run: no `UNSIGNED` warning, `notarization successful` in the macOS log.
+2. [ ] Bump to `0.1.1`, tag `v0.1.1`, push. Wait for the workflow. In the draft, confirm the assets:
+       macOS `.dmg` and `.zip` for `x64` and `arm64` plus `latest-mac.yml`; Windows `.exe` installer, the
+       portable `.exe` and `latest.yml`; Linux `.AppImage`, `.deb`, `.rpm` and `latest-linux.yml`.
+3. [ ] **Publish** the `v0.1.1` release. Download the installer for your platform **from the release** (not
+       from the Actions run, so it carries the quarantine/Mark-of-the-Web flag) and install it. - macOS: opens without a Gatekeeper warning; `spctl -a -vvv -t exec "/Applications/JamMan Manager.app"` is accepted. - Windows: the installer shows your publisher name, not "Unknown publisher".
+4. [ ] Start the app once and confirm it is `0.1.1` (About / the window title) and that it finds no update.
+5. [ ] Close the app. Bump to `0.1.2`, tag `v0.1.2`, push, wait for the workflow, **publish** the release.
+6. [ ] Open the installed `0.1.1` app. Within a few seconds the update must download in the background
+       and a notification must appear; **quit** the app (or restart when prompted) and open it again:
+       it must now be `0.1.2`. If nothing happens, note that `index.ts` creates the updater without a logger
+       (`autoUpdater()`), so failures are silent today; pass `logger: log` there to get diagnostics.
+7. [ ] Repeat on each platform you ship (AppImage must update silently; `deb`/`rpm` ask for administrator rights).
+8. [ ] Delete the test releases and tags afterwards if they should not stay public:
+       `gh release delete vX.Y.Z --cleanup-tag`.
+
+**Distribution channels.** `AutoUpdater` sets `updater.channel` from `VITE_DISTRIBUTION_CHANNEL` **at
+build time** (Vite inlines it into the main bundle), and today nothing sets it, so the app follows the
+default `latest` channel (`latest.yml`, `latest-mac.yml`, `latest-linux.yml`). To ship a separate channel
+(for example `beta`) set `VITE_DISTRIBUTION_CHANNEL=beta` in the **Build application** step of
+`release.yml` and release with a prerelease version (`0.2.0-beta.1`), so electron-builder writes `beta*.yml`
+files next to the `latest*.yml` ones. Check the draft's assets, then test each channel as above with two
+versions of each.
+
+### Troubleshooting
+
+| Symptom                                                               | Cause and fix                                                                                                                                |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS job fails with `Incomplete ...` / Windows `Incomplete ...`      | One secret of a group is missing. Set the whole group or delete the rest.                                                                    |
+| `skipped macOS code signing` / `skipped macOS notarization`           | No certificate / no notarization credentials. Expected when the secrets do not exist.                                                        |
+| `Please remove prefix "Developer ID Application:"`                    | `CSC_NAME` must be only `Your Name (TEAMID)`.                                                                                                |
+| `The specified item could not be found in the keychain` / no identity | The `.p12` was exported without the private key, or is a certificate of another type. Export again with the key.                             |
+| Notarization takes long or times out                                  | Check the [Apple system status](https://developer.apple.com/system-status/). Usually minutes, sometimes an hour. Re-run the job.             |
+| Notarization `Invalid` with a list of issues                          | `xcrun notarytool log <submission-id> --key ... --key-id ... --issuer ...` lists the files that are not signed or lack the hardened runtime. |
+| Windows Azure error `Forbidden` / `401`                               | The app registration lacks the **Trusted Signing Certificate Profile Signer** role, or the endpoint region does not match the account.       |
+| Windows: signed but publisher shows another name                      | `AZURE_SIGNING_PUBLISHER_NAME` must be the certificate's common name exactly as in the profile.                                              |
+| Users on an unsigned version cannot update to the first signed one    | Expected on macOS: they must install the first signed version by hand once.                                                                  |
+| "App is damaged and can't be opened" (unsigned build)                 | `xattr -cr "/Applications/JamMan Manager.app"`, or right-click → Open.                                                                       |
+
+### Security practices
+
+- Secrets only in GitHub Actions secrets. The workflow passes them as environment variables to the single
+  step that needs them, never on a command line, and never echoes them. GitHub masks secret values in logs.
+- The notarization key is written to the runner's temp directory (mode `600`) only during the macOS job;
+  runners are discarded after each job.
+- Keep the originals (`.p12`, `.p8`, `.pfx`) in a password manager. Rotate secrets before they expire
+  (Developer ID certificates last 5 years, Entra client secrets at most 2) and revoke at once if one leaks:
+  revoke the API key in App Store Connect, the certificate in the developer portal, the client secret in Entra ID.
+- Restrict who can create tags and edit repository secrets; a tag push is what starts a signed release.
 
 ### Resources
 
-- [Apple Code Signing Guide](https://developer.apple.com/support/code-signing/)
-- [Apple Notarization Overview](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution)
-- [Microsoft Code Signing](https://docs.microsoft.com/en-us/windows/win32/seccrypto/signtool)
-- [electron-builder Code Signing](https://www.electron.build/code-signing)
-- [SmartScreen Reputation](https://docs.microsoft.com/en-us/windows/security/threat-protection/microsoft-defender-smartscreen/microsoft-defender-smartscreen-overview)
+- [electron-builder code signing](https://www.electron.build/code-signing)
+- [Apple: notarizing macOS software](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- [Azure Trusted Signing quickstart](https://learn.microsoft.com/azure/trusted-signing/quickstart)
+- [electron-updater](https://www.electron.build/auto-update)
 
 ## Cross-Platform Building
 
@@ -588,7 +419,7 @@ Or right-click → Open → Open anyway
 
 Unsigned Windows apps trigger SmartScreen warnings. Users can click "More info" → "Run anyway".
 
-To avoid this, obtain a code signing certificate.
+To avoid this, sign the installers: see [Code signing and releases](#code-signing-and-releases).
 
 ### Linux: AppImage won't execute
 
@@ -644,18 +475,8 @@ The repository ships two workflows in `.github/workflows/`:
 All actions are pinned to a commit SHA (with the version in a trailing comment) and
 Node is read from `.nvmrc`. Dependabot keeps them up to date.
 
-To cut a release:
-
-```bash
-npm version <major|minor|patch> --no-git-tag-version   # bump package.json
-git commit -am "Releases vX.Y.Z"
-git tag vX.Y.Z
-git push origin main vX.Y.Z
-```
-
-Signing secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
-`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are read from GitHub Actions
-secrets by `release.yml`; see [Code Signing](#code-signing).
+Releases are cut as described in [Code signing and releases](#code-signing-and-releases), which also
+lists the secrets `release.yml` reads. Without them the installers are built unsigned.
 
 ## File Size Optimization
 

@@ -13,10 +13,19 @@ so everything so far is listed under "Unreleased".
 - `.nvmrc` pinning Node 24.
 - `publish` configuration in `electron-builder.mjs` so tagged releases upload installers and
   auto-update metadata to a draft GitHub release.
+- Conditional code signing for releases. macOS: Developer ID signing with the hardened runtime and
+  notarization through an App Store Connect API key. Windows: Azure Trusted Signing, or a `.pfx`
+  certificate as an alternative. Each is enabled only when its secrets exist in GitHub Actions; without
+  them the build is unsigned, succeeds, and warns in the log. A half-configured platform fails the
+  release job early. `electron-builder.mjs` logs a `[signing]` line per platform.
+- "Code signing and releases" section in `BUILD.md`: exact secret and variable names with how to obtain
+  them, how to test a signed build locally, and an end-to-end auto-update checklist.
 - This changelog.
 
 ### Changed
 
+- `release.yml` builds each platform in its own step so signing secrets are only passed to the platform
+  that uses them, and installs `rpm` tooling on the Linux runner.
 - CI (`.github/workflows/ci.yml`) is now blocking: typecheck, lint, formatting, tests and the
   production dependency audit (`npm audit --omit=dev --audit-level=high`) fail the build.
 - `release.yml` is the only release workflow; electron-builder publishes directly instead of the
