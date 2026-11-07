@@ -1168,6 +1168,7 @@ export async function initApp(initConfig: AppInitConfig) {
               outputPath: filePath,
               patches,
               includePlaylist,
+              appVersion: app.getVersion(),
             });
 
             log.info('Backup created successfully:', outputPath);
