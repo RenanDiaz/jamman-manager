@@ -17,7 +17,13 @@
 
 import { useUndoStore, UndoAction } from '../store/useUndoStore';
 import { usePatchStore } from '../store/usePatchStore';
-import { UndoError, discardSnapshots, restoreSnapshot, snapshotQuietly } from './undoSnapshots';
+import {
+  UndoError,
+  type SnapshotScope,
+  discardSnapshots,
+  restoreSnapshot,
+  snapshotQuietly,
+} from './undoSnapshots';
 import { toast } from 'react-toastify';
 
 /** What `executeAction` reports back */
@@ -126,10 +132,10 @@ const swapSnapshot = async (
 ): Promise<ActionOutcome> => {
   const { folder } = action;
   requireSameFolder(folder);
-  const scope =
+  const scope: SnapshotScope =
     action.type === 'UPDATE_PATCH'
-      ? ({ kind: 'patches', patches: [action.directory] } as const)
-      : ({ kind: 'all' } as const);
+      ? { kind: 'patches', patches: [action.directory] }
+      : { kind: 'all' };
 
   if (direction === 'redo') {
     if (!action.redoSnapshotId) {
