@@ -12,7 +12,6 @@ import {
   Row,
 } from 'reactstrap';
 import { Patch, RhythmType, StopMode } from '../../types';
-import classNames from 'classnames';
 import { usePatchStore } from '../../store/usePatchStore';
 
 type PhraseForm = {
@@ -243,7 +242,7 @@ export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialDat
                 </>
               ) : (
                 phrases.map((phrase, index) => (
-                  <Card key={phrase.name} className={classNames({ 'mt-3': index > 0 })}>
+                  <Card key={phrase.name} className={index > 0 ? 'mt-3' : undefined}>
                     <CardHeader>{phrase.name}</CardHeader>
                     <CardBody>
                       <FormGroup>

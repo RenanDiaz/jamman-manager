@@ -10,7 +10,6 @@ import { allowExternalUrls } from './modules/ExternalUrls.js';
 import { app, dialog, ipcMain, protocol, net } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import fse from 'fs-extra';
 import * as mm from 'music-metadata';
 import log from 'electron-log';
@@ -558,8 +557,8 @@ export async function initApp(initConfig: AppInitConfig) {
             fse.ensureDirSync(patchDir);
 
             // Patch UUIDs
-            const patchId = uuidv4();
-            const patchOriginId = uuidv4();
+            const patchId = crypto.randomUUID();
+            const patchOriginId = crypto.randomUUID();
 
             // 1. Write patch.xml
             const patchXml = `
@@ -581,8 +580,8 @@ export async function initApp(initConfig: AppInitConfig) {
               const phraseDir = path.join(patchDir, phrase.name);
               fse.ensureDirSync(phraseDir);
 
-              const phraseId = uuidv4();
-              const originId = uuidv4();
+              const phraseId = crypto.randomUUID();
+              const originId = crypto.randomUUID();
 
               // Copy WAV file
               const wavDest = path.join(phraseDir, 'phrase.wav');
@@ -672,8 +671,8 @@ export async function initApp(initConfig: AppInitConfig) {
             log.info(`Created backup: ${backupDir}`);
 
             // Overwrite patch.xml
-            const updatedPatchID = patchID || uuidv4();
-            const updatedOriginID = patchOriginID || uuidv4();
+            const updatedPatchID = patchID || crypto.randomUUID();
+            const updatedOriginID = patchOriginID || crypto.randomUUID();
             const updatedSettingsVersion = Number(settingsVersion || '0') + 1;
 
             const patchXml = `
@@ -710,8 +709,8 @@ export async function initApp(initConfig: AppInitConfig) {
               const phraseXmlPath = path.join(phraseDir, 'phrase.xml');
 
               // Try to reuse existing ID and OriginID
-              let phraseId = uuidv4();
-              let originId = uuidv4();
+              let phraseId = crypto.randomUUID();
+              let originId = crypto.randomUUID();
 
               if (fs.existsSync(phraseXmlPath)) {
                 const existingPhraseXml = fs.readFileSync(phraseXmlPath, 'utf-8');
@@ -1388,8 +1387,7 @@ export async function initApp(initConfig: AppInitConfig) {
 
       const data = await PlaylistManager.loadPlaylists(basePath);
       const playlist = data.playlists.find((p: any) => p.id === playlistId) as
-        | ((typeof data.playlists)[0] & { patches: string[] })
-        | undefined;
+        ((typeof data.playlists)[0] & { patches: string[] }) | undefined;
 
       if (!playlist) {
         throw new Error(`Playlist not found: ${playlistId}`);
