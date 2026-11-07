@@ -17,7 +17,7 @@ export default /**
       entry: 'src/index.ts',
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: '[name].js',
       },
