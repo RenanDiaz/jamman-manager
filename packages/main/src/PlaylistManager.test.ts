@@ -212,14 +212,73 @@ describe('PlaylistManager', () => {
       );
     });
 
-    // BUG: load-modify-save with no locking. Concurrent creates both read the same
-    // snapshot, and the last writer silently drops the other playlist.
-    it.fails('keeps both playlists when two are created concurrently', async () => {
+    // Load-modify-save used to run unserialized: concurrent creates both read the same
+    // snapshot, and the last writer silently dropped the other playlist.
+    it('keeps both playlists when two are created concurrently', async () => {
       await Promise.all([
         PlaylistManager.createPlaylist(base, 'One', [P1.dir]),
         PlaylistManager.createPlaylist(base, 'Two', [P2.dir]),
       ]);
       expect((await names()).sort()).toEqual(['One', 'Two']);
+    });
+  });
+
+  describe('concurrent writes', () => {
+    it('keeps every playlist when many are created at once', async () => {
+      const wanted = Array.from({ length: 12 }, (_, i) => `List ${i}`);
+      await Promise.all(wanted.map(name => PlaylistManager.createPlaylist(base, name, [P1.dir])));
+      expect((await names()).sort()).toEqual([...wanted].sort());
+    });
+
+    it('keeps changes made to different playlists at the same time', async () => {
+      const a = await PlaylistManager.createPlaylist(base, 'A', [P1.dir]);
+      const b = await PlaylistManager.createPlaylist(base, 'B', [P1.dir]);
+      await Promise.all([
+        PlaylistManager.addPatchesToPlaylist(base, a.id, [P2.dir]),
+        PlaylistManager.updatePlaylist(base, b.id, { name: 'B2' }),
+        PlaylistManager.createPlaylist(base, 'C'),
+        PlaylistManager.deletePlaylist(base, b.id).catch(() => undefined),
+      ]);
+      const stored = readFile().playlists;
+      const byName = Object.fromEntries(stored.map((p: { name: string }) => [p.name, p]));
+      expect(byName.A.patchIds).toEqual([P1.id, P2.id]);
+      expect(byName.C).toBeDefined();
+      expect(byName.B).toBeUndefined();
+    });
+
+    it('still rejects a duplicate name created concurrently', async () => {
+      const results = await Promise.allSettled([
+        PlaylistManager.createPlaylist(base, 'Same'),
+        PlaylistManager.createPlaylist(base, 'Same'),
+      ]);
+      expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(readFile().playlists).toHaveLength(1);
+    });
+
+    it('does not let a failed operation block the ones queued behind it', async () => {
+      const [failed, ok] = await Promise.allSettled([
+        PlaylistManager.deletePlaylist(base, 'missing'),
+        PlaylistManager.createPlaylist(base, 'After'),
+      ]);
+      expect(failed.status).toBe('rejected');
+      expect(ok.status).toBe('fulfilled');
+      expect(await names()).toEqual(['After']);
+    });
+
+    it('does not serialize across different SD folders', async () => {
+      const other = createTempSd();
+      try {
+        await Promise.all([
+          PlaylistManager.createPlaylist(base, 'Here'),
+          PlaylistManager.createPlaylist(other.path, 'There'),
+        ]);
+        expect(await names()).toEqual(['Here']);
+        expect(
+          (await PlaylistManager.loadPlaylists(other.path)).playlists.map(p => p.name),
+        ).toEqual(['There']);
+      } finally {
+        other.cleanup();
+      }
     });
   });
 
