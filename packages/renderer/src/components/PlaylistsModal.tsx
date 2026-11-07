@@ -1,4 +1,4 @@
-import { FC, useState, useEffect } from 'react';
+import { FC, useState, useEffect, useCallback } from 'react';
 import {
   Button,
   Modal,
@@ -141,14 +141,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
     }),
   );
 
-  // Load playlists when modal opens
-  useEffect(() => {
-    if (isOpen && currentFolder) {
-      loadPlaylists();
-    }
-  }, [isOpen, currentFolder]);
-
-  const loadPlaylists = async () => {
+  const loadPlaylists = useCallback(async () => {
     if (!currentFolder) return;
 
     try {
@@ -157,17 +150,23 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
       setPlaylists(data.playlists);
 
       // If a playlist was selected, refresh it
-      if (selectedPlaylist) {
-        const updated = data.playlists.find((p: Playlist) => p.id === selectedPlaylist.id);
-        setSelectedPlaylist(updated || null);
-      }
+      setSelectedPlaylist(selected =>
+        selected ? data.playlists.find(p => p.id === selected.id) || null : null,
+      );
     } catch (error) {
       console.error('Error loading playlists:', error);
       toast.error('Failed to load playlists');
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentFolder]);
+
+  // Load playlists when modal opens
+  useEffect(() => {
+    if (isOpen && currentFolder) {
+      loadPlaylists();
+    }
+  }, [isOpen, currentFolder, loadPlaylists]);
 
   const handleCreatePlaylist = async () => {
     if (!currentFolder || !newPlaylistName.trim()) return;

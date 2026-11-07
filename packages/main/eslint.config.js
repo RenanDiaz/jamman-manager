@@ -24,6 +24,14 @@ export default tseslint.config(
       },
     },
     rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    // TODO: remove once PlaylistManager.ts types its results (owned by the
+    // playlists branch); until then its `any`s stay warnings, not errors.
+    files: ['src/PlaylistManager.ts'],
+    rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
     },
   },

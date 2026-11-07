@@ -1,13 +1,21 @@
-export interface Patch {
-  dir: string;
-  data: PatchData;
-  phrases: Phrase[];
-}
+/**
+ * Renderer-side types. The data that crosses IPC is declared once, in the IPC
+ * contract (packages/preload/src/ipc-contract.ts); these are aliases of it.
+ */
+import type {
+  PatchRecord,
+  PhraseRecord,
+  Playlist as IpcPlaylist,
+  PlaylistData as IpcPlaylistData,
+} from '@app/preload/ipc-contract';
 
-interface PatchData {
-  JamManPatch: JamManPatch;
-}
+/** A patch folder of the SD, as `readPatches` returns it. */
+export type Patch = PatchRecord;
+export type Phrase = PhraseRecord;
+export type Playlist = IpcPlaylist;
+export type PlaylistData = IpcPlaylistData;
 
+/** Values the PatchForm offers for `<RhythmType>` and `<StopMode>`. */
 export enum RhythmType {
   Silence = 'Silence',
   WoodBlocks = 'WoodBlocks',
@@ -25,77 +33,4 @@ export enum StopMode {
   StopInstantly = 'StopInstantly',
   StopAtEndOfLoop = 'StopAtEndOfLoop',
   FadeOut = 'FadeOut',
-}
-
-interface JamManPatch {
-  $: PatchHeader;
-  PatchName: string[];
-  RhythmType: RhythmType[];
-  StopMode: StopMode[];
-  SettingsVersion: string[];
-  ID: string[];
-  OriginID: string[];
-  Metadata: string[];
-}
-
-interface PatchHeader {
-  xmlns: string;
-  device: string;
-  version: string;
-}
-
-interface Phrase {
-  dir: string;
-  data: PhraseData;
-  wavPath: string;
-}
-
-interface PhraseData {
-  JamManPhrase: JamManPhrase;
-}
-
-interface JamManPhrase {
-  $: PhraseHeader;
-  BeatsPerMinute: string[];
-  BeatsPerMeasure: string[];
-  BpmValidated: string[];
-  IsLoop: string[];
-  IsReversed: string[];
-  SettingsVersion: string[];
-  AudioVersion: string[];
-  ID: string[];
-  OriginID: string[];
-  Metadata: string[];
-}
-
-interface PhraseHeader {
-  xmlns: string;
-  version: string;
-}
-
-export type PhraseForm = {
-  name: string;
-  wavPath: string;
-  tempo: number;
-  timeSignature: string;
-  loopType: string;
-};
-
-export type CreatePatchPayload = {
-  basePath: string;
-  patchName: string;
-  phrases: PhraseForm[];
-};
-
-export interface Playlist {
-  id: string;
-  name: string;
-  patches: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PlaylistData {
-  version: string;
-  playlists: Playlist[];
 }

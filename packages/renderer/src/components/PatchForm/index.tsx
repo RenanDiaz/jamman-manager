@@ -42,16 +42,16 @@ export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialDat
     if (initialData) {
       const data = initialData.data.JamManPatch;
       setPatchName(data.PatchName[0]);
-      setRhythmType(data.RhythmType[0] as RhythmType);
-      setStopMode(data.StopMode[0] as StopMode);
+      setRhythmType(data.RhythmType?.[0] as RhythmType);
+      setStopMode(data.StopMode?.[0] as StopMode);
       setPhrases(
         initialData.phrases.map(({ dir, data: { JamManPhrase: data }, wavPath }) => ({
           name: dir,
           wavPath,
           beatsPerMinute: Number(data.BeatsPerMinute[0]),
           beatsPerMeasure: Number(data.BeatsPerMeasure[0]),
-          isLoop: data.IsLoop[0] === '1',
-          isReversed: data.IsReversed[0] === '1',
+          isLoop: data.IsLoop?.[0] === '1',
+          isReversed: data.IsReversed?.[0] === '1',
         })),
       );
     }
@@ -101,7 +101,7 @@ export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialDat
       if (isEditing && !!initialData) {
         const patchID = initialData.data.JamManPatch.ID?.[0];
         const patchOriginID = initialData.data.JamManPatch.OriginID?.[0];
-        const settingsVersion = initialData.data.JamManPatch.SettingsVersion[0];
+        const settingsVersion = initialData.data.JamManPatch.SettingsVersion?.[0];
         await updatePatch({
           basePath,
           directory,
