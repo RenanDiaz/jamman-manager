@@ -280,7 +280,7 @@ describe('audio', () => {
   it('phrase:getAudioURL returns a jamman:// URL only for existing WAVs in the folder', async () => {
     const url = await app.invoke<string>('phrase:getAudioURL', wavIn());
     expect(url).toMatch(/^jamman:\/\//);
-    expect(decodeURIComponent(url)).toContain('Patch01/PhraseA/phrase.wav');
+    expect(decodeURIComponent(url)).toContain(path.join('Patch01', 'PhraseA', 'phrase.wav'));
 
     await expect(app.invoke('phrase:getAudioURL', '')).resolves.toBeNull();
     await expect(

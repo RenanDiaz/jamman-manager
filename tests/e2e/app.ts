@@ -92,7 +92,10 @@ export async function launchApp(): Promise<Launched> {
     if (msg.type() === 'error') consoleErrors.push(text);
   });
   // Listeners attach after the window may have started loading; reload so startup
-  // messages (CSP violations in particular) are captured too.
+  // messages (CSP violations in particular) are captured too. Wait for the first load of
+  // the app page to finish before reloading: on Linux `firstWindow()` resolves while the
+  // initial navigation is still in flight, and reloading then aborts it (ERR_ABORTED).
+  await page.waitForURL(/^(file|https?):/, { waitUntil: 'load' });
   await page.reload({ waitUntil: 'domcontentloaded' });
 
   await app.evaluate(({ dialog }, sdPath) => {
