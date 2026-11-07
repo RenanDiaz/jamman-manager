@@ -574,26 +574,31 @@ describe('BackupManager', () => {
       );
     });
 
-    it('does not preserve permissions or SUID/SGID bits', async () => {
-      writeZip(
-        backupWith({
-          name: 'Patch01/PhraseA/phrase.wav',
-          data: Buffer.from('RIFF....WAVE'),
-          unixMode: 0o106777, // regular file, setuid + setgid, rwxrwxrwx
-        }),
-      );
+    // Windows has no POSIX modes: Node reports 0o666 for every writable file, so the
+    // group/world-writable check can never pass there and the setuid bits do not exist.
+    it.skipIf(process.platform === 'win32')(
+      'does not preserve permissions or SUID/SGID bits',
+      async () => {
+        writeZip(
+          backupWith({
+            name: 'Patch01/PhraseA/phrase.wav',
+            data: Buffer.from('RIFF....WAVE'),
+            unixMode: 0o106777, // regular file, setuid + setgid, rwxrwxrwx
+          }),
+        );
 
-      await BackupManager.restoreBackup({
-        backupPath: zipPath,
-        targetPath: targetDir,
-        mode: 'merge',
-      });
+        await BackupManager.restoreBackup({
+          backupPath: zipPath,
+          targetPath: targetDir,
+          mode: 'merge',
+        });
 
-      const mode = fs.statSync(path.join(targetDir, 'Patch01/PhraseA/phrase.wav')).mode;
-      expect(mode & 0o7000).toBe(0); // no setuid / setgid / sticky
-      expect(mode & 0o111).toBe(0); // not executable
-      expect(mode & 0o022).toBe(0); // not group/world writable
-    });
+        const mode = fs.statSync(path.join(targetDir, 'Patch01/PhraseA/phrase.wav')).mode;
+        expect(mode & 0o7000).toBe(0); // no setuid / setgid / sticky
+        expect(mode & 0o111).toBe(0); // not executable
+        expect(mode & 0o022).toBe(0); // not group/world writable
+      },
+    );
 
     it('does not follow a symlink planted at the playlist path', async () => {
       const outside = path.join(tmp, 'outside.txt');

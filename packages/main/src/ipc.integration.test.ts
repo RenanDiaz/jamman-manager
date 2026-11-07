@@ -280,7 +280,7 @@ describe('audio', () => {
   it('phrase:getAudioURL returns a jamman:// URL only for existing WAVs in the folder', async () => {
     const url = await app.invoke<string>('phrase:getAudioURL', wavIn());
     expect(url).toMatch(/^jamman:\/\//);
-    expect(decodeURIComponent(url)).toContain('Patch01/PhraseA/phrase.wav');
+    expect(decodeURIComponent(url)).toContain(path.join('Patch01', 'PhraseA', 'phrase.wav'));
 
     await expect(app.invoke('phrase:getAudioURL', '')).resolves.toBeNull();
     await expect(
@@ -747,13 +747,14 @@ describe('backup', () => {
       filePath: target,
     });
     const { dialog } = await import('./test-utils/electronMock.js');
-    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        title: 'Save Backup',
-        defaultPath: expect.stringMatching(
-          new RegExp(`^${app.documents}/jamman-backup-\\d{4}-\\d{2}-\\d{2}\\.jamman-backup\\.zip$`),
-        ),
-      }),
+    const [saveOptions] = dialog.showSaveDialog.mock.lastCall as [
+      { title: string; defaultPath: string },
+    ];
+    expect(saveOptions.title).toBe('Save Backup');
+    // Compare directory and file name separately: on Windows the separator is `\`.
+    expect(path.resolve(path.dirname(saveOptions.defaultPath))).toBe(path.resolve(app.documents));
+    expect(path.basename(saveOptions.defaultPath)).toMatch(
+      /^jamman-backup-\d{4}-\d{2}-\d{2}\.jamman-backup\.zip$/,
     );
 
     dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [target] });

@@ -32,7 +32,7 @@ export function createDialogHandlers({
         return folder;
       } catch (error) {
         log.error('Error selecting folder:', error);
-        throw new Error('Failed to open folder selection dialog');
+        throw new Error('Failed to open folder selection dialog', { cause: error });
       }
     },
 
@@ -51,7 +51,7 @@ export function createDialogHandlers({
         return result.filePaths[0];
       } catch (error) {
         log.error('Error selecting file:', error);
-        throw new Error('Failed to open file selection dialog');
+        throw new Error('Failed to open file selection dialog', { cause: error });
       }
     },
 
@@ -78,7 +78,7 @@ export function createDialogHandlers({
         return filePaths[0];
       } catch (error) {
         log.error('Error selecting backup file:', error);
-        throw new Error(`Failed to select backup file: ${errorMessage(error)}`);
+        throw new Error(`Failed to select backup file: ${errorMessage(error)}`, { cause: error });
       }
     },
   };
