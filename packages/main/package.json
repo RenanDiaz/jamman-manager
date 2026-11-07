@@ -21,7 +21,7 @@
     "electron-updater": "^6.8.11",
     "fs-extra": "^11.4.1",
     "music-metadata": "^11.16.1",
-    "pdfkit": "^0.17.2",
+    "pdfkit": "^0.20.2",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
