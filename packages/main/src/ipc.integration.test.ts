@@ -376,6 +376,14 @@ describe('patches:create', () => {
     expect(read.StopMode[0]).toBe(stopMode);
   });
 
+  it('lists a patch whose text contains the words SYSTEM and PUBLIC', async () => {
+    await expect(
+      app.invoke('patches:create', form({ patchName: 'SYSTEM of a Down', rhythmType: 'PUBLIC' })),
+    ).resolves.toBe(true);
+    const patches = await app.invoke<ReadPatch[]>('patches:read', sd.path);
+    expect(names(patches).Patch04).toBe('SYSTEM of a Down');
+  });
+
   it('rolls back the new folder when a source WAV is missing', async () => {
     const wav = outsideWav();
     await app.selectFile(wav);
