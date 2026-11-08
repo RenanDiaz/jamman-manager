@@ -17,13 +17,35 @@
 import { sha256sum } from './sha256.js';
 import { versions } from './versions.js';
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ElectronAPI, IpcArgs, IpcChannel, IpcEvents, IpcReturn } from './ipc-contract.js';
+import type {
+  ElectronAPI,
+  IpcArgs,
+  IpcChannel,
+  IpcEventChannel,
+  IpcEvents,
+  IpcReturn,
+} from './ipc-contract.js';
 
 /**
  * Invokes an IPC channel with the arguments and result the contract declares.
  */
 function send<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcReturn<C>> {
   return ipcRenderer.invoke(channel, ...args);
+}
+
+/**
+ * Subscribes to a main → renderer event. Only the payload crosses the bridge,
+ * never the Electron event. Returns the unsubscribe function.
+ */
+function subscribe<E extends IpcEventChannel>(
+  channel: E,
+  listener: (payload: IpcEvents[E]) => void,
+): () => void {
+  const handler = (_event: unknown, payload: IpcEvents[E]) => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
 }
 
 /**
@@ -86,14 +108,8 @@ const electronAPI: ElectronAPI = {
   connectPedal: () => send('pedal:connect'),
   disconnectPedal: () => send('pedal:disconnect'),
   getPedalStatus: () => send('pedal:status'),
-  onPedalChanged: listener => {
-    // Only the payload crosses the bridge, never the Electron event.
-    const handler = (_event: unknown, info: IpcEvents['pedal:changed']) => listener(info);
-    ipcRenderer.on('pedal:changed', handler);
-    return () => {
-      ipcRenderer.removeListener('pedal:changed', handler);
-    };
-  },
+  onPedalChanged: listener => subscribe('pedal:changed', listener),
+  onPedalProgress: listener => subscribe('pedal:progress', listener),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

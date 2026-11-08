@@ -77,6 +77,17 @@ export function createPatchHandlers({
   IpcDeps,
   'fs' | 'fse' | 'log' | 'folderAccess' | 'operationQueue' | 'lockManager' | 'patchCache' | 'pedal'
 >): IpcHandlers<PatchChannel> {
+  /**
+   * Security: a WAV a pedal patch takes from the computer must be one the user
+   * may read (picked in the dialog, or inside the approved folder). The pedal's
+   * own WAVs are checked by the editor.
+   */
+  const assertLocalWavs = (form: { phrases?: { wavPath: string }[] }) => {
+    for (const phrase of form.phrases ?? []) {
+      if (!isPedalPath(phrase.wavPath)) folderAccess.assertReadableFile(phrase.wavPath, ['.wav']);
+    }
+  };
+
   /** The pedal bank a `jamman-pedal://` folder path names; throws on a malformed one. */
   const pedalBank = (folderPath: string) => {
     const bank = parseBankPath(folderPath);
@@ -294,6 +305,14 @@ export function createPatchHandlers({
     },
 
     'patches:create': async data => {
+      if (isPedalPath(data?.basePath)) {
+        if (!PathValidator.isValidPatchDir(data.directory)) {
+          throw new Error(`Invalid patch directory name: ${data.directory}`);
+        }
+        assertLocalWavs(data);
+        await pedal.createPatch(pedalBank(data.basePath), data);
+        return true as const;
+      }
       const { basePath, directory, patchName, rhythmType, stopMode, phrases } = data;
 
       // Security: Validate base path
@@ -389,6 +408,7 @@ export function createPatchHandlers({
 
     'patches:update': async data => {
       if (isPedalPath(data?.basePath)) {
+        assertLocalWavs(data);
         await pedal.updatePatch(pedalBank(data.basePath), data);
         return true as const;
       }

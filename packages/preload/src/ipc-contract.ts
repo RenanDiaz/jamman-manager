@@ -251,6 +251,14 @@ export interface PedalBankInfo {
   freeBytes: number;
 }
 
+/** Progress of a long step on the pedal, e.g. uploading a WAV. */
+export interface PedalProgress {
+  label: string;
+  /** Bytes done and in total. */
+  done: number;
+  total: number;
+}
+
 /** A JamMan connected over USB. */
 export interface PedalInfo {
   /** As the pedal reports it, e.g. "JamMan Stereo". */
@@ -411,6 +419,8 @@ export type IpcInvoker<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<
 export interface IpcEvents {
   /** The pedal connected, disconnected or changed (e.g. SD card inserted or removed). */
   'pedal:changed': PedalInfo | null;
+  /** Progress of a long change on the pedal (an upload); null when it is over. */
+  'pedal:progress': PedalProgress | null;
 }
 
 export type IpcEventChannel = keyof IpcEvents;
@@ -470,4 +480,6 @@ export interface ElectronAPI {
   getPedalStatus: IpcInvoker<'pedal:status'>;
   /** Calls `listener` whenever the pedal connects, disconnects or changes. Returns an unsubscribe function. */
   onPedalChanged: (listener: (info: IpcEvents['pedal:changed']) => void) => () => void;
+  /** Calls `listener` with the progress of uploads to the pedal. Returns an unsubscribe function. */
+  onPedalProgress: (listener: (progress: IpcEvents['pedal:progress']) => void) => () => void;
 }

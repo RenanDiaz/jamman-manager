@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 }));
 
 /** Methods that subscribe to a main → renderer event instead of invoking a channel. */
-const EVENT_METHODS = ['onPedalChanged'] as const;
+const EVENT_METHODS = ['onPedalChanged', 'onPedalProgress'] as const;
 
 let api: ElectronAPI;
 

@@ -51,9 +51,9 @@ You can also leave the card in the pedal and connect the pedal to the computer w
 1. Turn the pedal on and connect it with a USB cable.
 2. Click **Pedal** and choose **Internal memory** or **SD card**.
 3. Browse and play the patches. Audio streams from the pedal, so playback starts right away; a WAV that was played to the end is kept in a local cache and not downloaded again until it changes on the pedal.
-4. Edit a patch's name, rhythm, stop mode and phrase settings, delete patches, and sort them. Undo and redo work as with a card; a deleted patch is kept on the pedal itself until it can no longer be undone, so no audio crosses the cable.
+4. Create, edit, delete and sort patches, including adding phrases and replacing their WAV files. New WAVs are uploaded at about 1.5 MB per second, with a progress bar. Undo and redo work as with a card: audio that an undo may need is kept on the pedal itself, so it never crosses the cable twice.
 
-Creating patches, adding phrases or changing their WAV files, backups and playlists are not available over USB yet: for those, put the card in a card reader. The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
+Backups and playlists are not available over USB yet: for those, put the card in a card reader. The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
 
 ### WAV files
 

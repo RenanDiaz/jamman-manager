@@ -40,7 +40,7 @@ import {
   PropertyID,
   type PropertyValue,
 } from './greenglassCodec.js';
-import { PedalEditor } from './PedalEditor.js';
+import { PedalEditor, type PedalProgress } from './PedalEditor.js';
 import { createWriteGuard } from './PedalFiles.js';
 import { bankPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath, type PedalWavRef } from './pedalPaths.js';
 
@@ -73,7 +73,11 @@ type Connection = {
   editor: PedalEditor;
 };
 
-type ManagerEvents = { change: [PedalInfo | null] };
+type ManagerEvents = {
+  change: [PedalInfo | null];
+  /** Progress of a long change (an upload); null when the change is over. */
+  progress: [PedalProgress | null];
+};
 
 export class PedalNotConnectedError extends Error {
   constructor() {
@@ -146,6 +150,10 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
         bank => this.#bankRoot(connection, bank),
         createWriteGuard(bankRoots),
         this.#deps.log,
+        {
+          readLocalFile: path => this.#fs.readFile(path),
+          onProgress: progress => this.emit('progress', progress),
+        },
       );
       // Undo data from an earlier session can never be used: the history lived in the renderer.
       await connection.editor
@@ -295,7 +303,14 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     const run = () => fn(this.#requireConnection().editor);
     const result = this.#exclusive.then(run, run);
     this.#exclusive = result.catch(() => undefined);
-    return result.finally(() => this.#bankBytes.clear());
+    return result.finally(() => {
+      this.#bankBytes.clear();
+      this.emit('progress', null);
+    });
+  }
+
+  createPatch(bank: PedalBankId, form: PatchForm): Promise<void> {
+    return this.#change(editor => editor.createPatch(bank, form));
   }
 
   updatePatch(bank: PedalBankId, form: PatchForm): Promise<void> {

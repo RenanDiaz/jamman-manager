@@ -44,7 +44,6 @@ describe('pedal paths over IPC', () => {
   });
 
   it.each([
-    ['patches:create', [{ basePath: SD, directory: 'Patch01', phrases: [] }]],
     ['backup:create', [SD]],
     ['backup:restore', ['/tmp/x.zip', SD, 'merge']],
     ['playlists:create', [SD, 'Set']],
@@ -56,6 +55,7 @@ describe('pedal paths over IPC', () => {
   });
 
   it.each([
+    ['patches:create', [{ basePath: SD, directory: 'Patch01', phrases: [] }]],
     ['patches:update', [{ basePath: SD, directory: 'Patch01', phrases: [] }]],
     ['patches:delete', [SD, 'Patch01']],
     ['patches:deleteBatch', [SD, ['Patch01']]],
@@ -63,6 +63,27 @@ describe('pedal paths over IPC', () => {
   ])('%s goes to the pedal', async (channel, args) => {
     app = await startApp();
     await expect(app.invoke(channel, ...args)).rejects.toThrow(/No pedal is connected/);
+  });
+
+  it('refuses a WAV from the computer that the user did not pick', async () => {
+    app = await startApp();
+    const phrases = [
+      {
+        name: 'PhraseA',
+        wavPath: '/etc/secret.wav',
+        beatsPerMinute: 120,
+        beatsPerMeasure: 4,
+        isLoop: true,
+        isReversed: false,
+      },
+    ];
+    for (const channel of ['patches:create', 'patches:update']) {
+      const error = await app
+        .invoke(channel, { basePath: SD, directory: 'Patch01', phrases })
+        .catch(e => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).not.toMatch(/No pedal is connected/);
+    }
   });
 
   it('answers undo requests for a pedal bank with a result, not an error', async () => {

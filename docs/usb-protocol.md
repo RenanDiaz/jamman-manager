@@ -152,12 +152,12 @@ Ojo: JamManager calculaba el campo de longitud con `string.Length` (caracteres, 
 
 La app trabaja en vivo sobre el pedal. No hay copia local: lo único que guarda es una caché de los WAV ya descargados. El código está en `packages/main/src/usb/`.
 
-| Etapa | Alcance                                     | Estado    |
-| ----- | ------------------------------------------- | --------- |
-| 1     | Conectar, listar patches y reproducir       | Hecha     |
-| 2     | Editar metadatos, borrar y reordenar        | Hecha     |
-| 3     | Agregar o reemplazar frases                 | Pendiente |
-| 4     | Backup, restore y "Descargar todo el banco" | Pendiente |
+| Etapa | Alcance                                            | Estado    |
+| ----- | -------------------------------------------------- | --------- |
+| 1     | Conectar, listar patches y reproducir              | Hecha     |
+| 2     | Editar metadatos, borrar y reordenar               | Hecha     |
+| 3     | Agregar, reemplazar y quitar frases; crear patches | Hecha     |
+| 4     | Backup, restore y "Descargar todo el banco"        | Pendiente |
 
 Decisiones de la etapa 1:
 
@@ -175,8 +175,16 @@ Decisiones de la etapa 2:
 - **Zona de escritura acotada.** Toda escritura, borrado o movimiento pasa por un guardia (`createWriteGuard` en `PedalFiles.ts`). Solo acepta `<banco>/PatchNN/…` y la carpeta de trabajo de la app en el mismo medio, `<medio>/.jamman-manager/`. La raíz de la memoria interna también tiene `usr/`, `lib/`, `boot/` y `jamStereo.xml`, que nunca se tocan.
 - **Editar** reescribe `patch.xml` y los `phrase.xml` (temporal + mover) y conserva los IDs de cada frase. Las frases no se pueden agregar, quitar ni cambiar de WAV en esta etapa: el handler lo rechaza y el formulario oculta esos controles.
 - **Reordenar** solo mueve los patches que cambian de nombre, y cada uno va directo a su nombre nuevo en cuanto está libre. Solo pasan por `.jamman-manager/reorder/` los que forman un ciclo, uno por ciclo. Cada paso cae en un nombre libre, así que un fallo se deshace repitiendo los pasos al revés. Si encuentra patches de un reordenamiento interrumpido en esa carpeta, se niega a empezar.
-- **Deshacer sin mover audio por el cable.** La instantánea de un patch guarda localmente solo sus XML (unos KB), y eso alcanza para deshacer una edición. Si se borra un patch que tiene instantánea, su carpeta se mueve a `.jamman-manager/undo/<id>/PatchNN/` en el mismo medio. Deshacer la vuelve a mover, y un rehacer la estaciona de nuevo en la misma instantánea, así que el ciclo deshacer/rehacer funciona las veces que haga falta. Descartar la instantánea borra lo estacionado. Al conectar se borra lo que haya quedado de una sesión anterior, porque el historial vive en la memoria del renderer.
+- **Deshacer sin mover audio por el cable.** Ver la etapa 3: el mecanismo de la etapa 2 (estacionar la carpeta entera del patch borrado) se generalizó a archivos.
 - **Tiempos medidos** con el pedal real, desde la app: editar ~0.8 s, deshacer o rehacer ~0.8 s, borrar ~1 s, recuperar un borrado ~0.8 s. Cada petición de escritura tarda ~22 ms, así que reordenar depende de cuántos patches cambian de lugar.
+
+Decisiones de la etapa 3:
+
+- **Crear y editar con audio.** Una frase cuyo WAV es un archivo del computador se sube (frase nueva o reemplazo). Una frase del pedal que el formulario ya no lista se quita. Crear un patch es lo mismo sobre un puesto vacío: `patch.xml` se escribe al final, así que la carpeta no es un patch hasta que está completa, y si algo falla se borra. Los WAV del computador pasan por la misma política de acceso que en modo local (elegidos en el diálogo o dentro de la carpeta aprobada). Un WAV de otro patch del pedal se rechaza.
+- **Primero se sube, después se cambia.** Al editar, cada WAV nuevo se sube primero junto a su destino (`phrase.wav.tmp`). Si una subida falla, el patch queda como estaba y el temporal se borra.
+- **Deshacer con referencias a archivos.** Una instantánea guarda localmente los XML del patch y una referencia a cada `phrase.wav`. La referencia sigue al archivo físico: en su carpeta, renombrado por un reordenamiento, o estacionado en `.jamman-manager/undo/<id>.wav` en el mismo medio. Antes de destruir un WAV que alguna instantánea necesita (reemplazarlo, quitar su frase, borrar su patch), se estaciona en lugar de borrarlo, lo que es instantáneo. Restaurar una instantánea devuelve sus WAV y estaciona lo que reemplazan, así que deshacer y rehacer intercambian estados las veces que haga falta sin pasar audio por el cable. Un WAV estacionado que ya ninguna instantánea necesita se borra, y la carpeta `undo/` se borra cuando queda vacía.
+- **Progreso.** Las subidas avisan su avance (`pedal:progress`), que se muestra en el formulario y en el panel de trabajo.
+- **Tiempos medidos** con el pedal real: subir un WAV va a ~1.5 MB/s. Crear un patch con un WAV de 4.6 MB tardó 4.1 s desde la app; deshacer el reemplazo de un WAV, 0.3 s.
 
 ## Uso del cliente de prueba
 

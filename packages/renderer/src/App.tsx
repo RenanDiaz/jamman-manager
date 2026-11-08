@@ -72,10 +72,11 @@ function App() {
   // Pedal over USB
   const pedal = usePedalStore(state => state.pedal);
   const pedalConnecting = usePedalStore(state => state.connecting);
+  const pedalProgress = usePedalStore(state => state.progress);
   const [pedalDialogIsOpen, setPedalDialogIsOpen] = useState<boolean>(false);
   /** A pedal bank is being read, so the loading panel says where from. */
   const [readingPedal, setReadingPedal] = useState<boolean>(false);
-  /** Over USB patches can be edited, deleted and sorted, but not created yet. */
+  /** A pedal over USB: everything but backups and playlists. */
   const pedalMode = isPedalPath(currentFolder);
 
   /** Closes the pedal bank, and the player if it is playing audio from the pedal. */
@@ -412,9 +413,11 @@ function App() {
               <Led color="yellow" shape="round" on blinkSeconds={0.5} />{' '}
               {readingPedal
                 ? 'Reading the pedal over USB'
-                : pedalMode
-                  ? 'Working on the pedal over USB'
-                  : 'Reading the card'}
+                : pedalProgress
+                  ? `${pedalProgress.label}: ${Math.floor((100 * pedalProgress.done) / Math.max(pedalProgress.total, 1))}%`
+                  : pedalMode
+                    ? 'Working on the pedal over USB'
+                    : 'Reading the card'}
             </p>
           </Panel>
         </main>
@@ -425,7 +428,7 @@ function App() {
               usedDirs={usedDirs}
               focusedDir={focusedPatch.dir}
               onFocus={setFocusedDir}
-              onCreateAt={pedalMode ? undefined : openNewPatch}
+              onCreateAt={openNewPatch}
             />
             <div className={s.listbar}>
               <Legend>
@@ -467,11 +470,7 @@ function App() {
                     onToggleSelection={toggleSelection}
                   />
                 ) : (
-                  <EmptySlotItem
-                    key={dir}
-                    dir={dir}
-                    onCreate={pedalMode ? undefined : openNewPatch}
-                  />
+                  <EmptySlotItem key={dir} dir={dir} onCreate={openNewPatch} />
                 );
               })}
             </ul>
@@ -489,7 +488,15 @@ function App() {
               {pedalMode ? 'This bank has no patches yet' : 'This card has no patches yet'}
             </h2>
             {pedalMode ? (
-              <p className={s.messageText}>Record a loop on the pedal, then reload this bank.</p>
+              <>
+                <p className={s.messageText}>
+                  Store a new patch in any of its 99 slots, or record a loop on the pedal and reload
+                  this bank.
+                </p>
+                <div className={s.messageActions}>
+                  <PanelKey label="New patch" led onClick={() => openNewPatch()} />
+                </div>
+              </>
             ) : (
               <>
                 <p className={s.messageText}>
@@ -559,7 +566,6 @@ function App() {
             formId={PATCH_FORM_ID}
             basePath={currentFolder || ''}
             busyPatches={patches.map(p => p.dir)}
-            audioLocked={pedalMode}
             initialData={selectedPatch}
             defaultDirectory={createInDir}
             onSuccess={handleCreateEditPatchSuccess}

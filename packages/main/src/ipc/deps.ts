@@ -70,6 +70,7 @@ export type Pedal = Pick<
   | 'bankSize'
   | 'readWavHead'
   | 'readWav'
+  | 'createPatch'
   | 'updatePatch'
   | 'deletePatches'
   | 'reorderPatches'

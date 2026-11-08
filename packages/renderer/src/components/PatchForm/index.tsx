@@ -1,6 +1,7 @@
 import { FC, FormEvent, useState } from 'react';
 import { Patch, RhythmType, StopMode } from '../../types';
 import { usePatchStore } from '../../store/usePatchStore';
+import { usePedalStore } from '../../store/usePedalStore';
 import {
   ChoiceGroup,
   cx,
@@ -33,11 +34,6 @@ interface Props {
   initialData?: Patch;
   /** Slot preselected when creating, e.g. after clicking an empty slot. */
   defaultDirectory?: string;
-  /**
-   * Phrases cannot be added and their WAVs cannot be changed (a pedal over
-   * USB, for now): only names, rhythm, stop mode and phrase settings.
-   */
-  audioLocked?: boolean;
   onSuccess: () => void;
 }
 
@@ -47,7 +43,6 @@ export const PatchForm: FC<Props> = ({
   busyPatches,
   initialData,
   defaultDirectory,
-  audioLocked = false,
   onSuccess,
 }) => {
   // The form state is seeded from `initialData` once, at mount. The parent gives the
@@ -103,6 +98,8 @@ export const PatchForm: FC<Props> = ({
   };
 
   const { createPatch, updatePatch } = usePatchStore();
+  // Uploads to a pedal over USB take a while: show how far along they are.
+  const upload = usePedalStore(state => state.progress);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -248,15 +245,13 @@ export const PatchForm: FC<Props> = ({
           <h3 id="phrases-heading" className={s.heading}>
             Phrases
           </h3>
-          {phrases.length > 0 && !audioLocked && (
-            <PanelKey label="Add phrase" size="sm" onClick={addPhrase} />
-          )}
+          {phrases.length > 0 && <PanelKey label="Add phrase" size="sm" onClick={addPhrase} />}
         </div>
 
         {phrases.length === 0 ? (
           <div className={s.noPhrases}>
             <p>A patch needs at least one phrase with a WAV file.</p>
-            {!audioLocked && <PanelKey label="Add phrase" onClick={addPhrase} />}
+            <PanelKey label="Add phrase" onClick={addPhrase} />
           </div>
         ) : (
           <ol className={s.phraseList}>
@@ -264,14 +259,12 @@ export const PatchForm: FC<Props> = ({
               <li key={phrase.name} className={s.phrase}>
                 <span className={s.phraseName}>{phrase.name.replace(/^Phrase/, 'Phrase ')}</span>
                 <div className={s.wav}>
-                  {!audioLocked && (
-                    <PanelKey
-                      label={phrase.wavPath ? 'Change WAV' : 'Choose WAV'}
-                      size="sm"
-                      aria-label={`${phrase.wavPath ? 'Change' : 'Choose'} WAV file for ${phrase.name}`}
-                      onClick={() => handleFileSelect(index)}
-                    />
-                  )}
+                  <PanelKey
+                    label={phrase.wavPath ? 'Change WAV' : 'Choose WAV'}
+                    size="sm"
+                    aria-label={`${phrase.wavPath ? 'Change' : 'Choose'} WAV file for ${phrase.name}`}
+                    onClick={() => handleFileSelect(index)}
+                  />
                   <span
                     className={cx(s.file, !phrase.wavPath && s.fileMissing)}
                     title={phrase.wavPath || undefined}
@@ -325,11 +318,12 @@ export const PatchForm: FC<Props> = ({
         )}
       </section>
 
-      {audioLocked && (
-        <Notice title="Audio stays as it is">
+      {upload && (
+        <Notice title={upload.label} role="status">
+          <progress value={upload.done} max={Math.max(upload.total, 1)} className={s.progress} />
           <p>
-            Over USB you can change the name, rhythm, stop mode and phrase settings. Adding phrases
-            or changing their WAV files still needs the SD card in a card reader.
+            {Math.floor((100 * upload.done) / Math.max(upload.total, 1))}% of{' '}
+            {(upload.total / 1024 / 1024).toFixed(1)} MB sent to the pedal
           </p>
         </Notice>
       )}

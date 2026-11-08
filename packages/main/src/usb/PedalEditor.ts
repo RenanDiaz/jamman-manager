@@ -1,17 +1,22 @@
 /**
- * Changes to a pedal's patches over USB: edit (XML only), delete, reorder,
- * and the undo snapshots that let the renderer take those back.
+ * Changes to a pedal's patches over USB: create, edit (settings and audio),
+ * delete, reorder, and the undo snapshots that let the renderer take those
+ * back.
  *
  * Undo without moving audio over the cable:
- * - A snapshot keeps a local copy of the patch's XML files (a few KB). That is
- *   enough to undo an edit, which never touches audio here.
- * - Deleting a patch that a snapshot protects moves its folder into that
- *   snapshot's slot in the work area on the same medium
- *   (`<medium>/.jamman-manager/undo/<snapshot>/PatchNN/`) instead of deleting
- *   it. Undo moves it back; the slot then waits in case the delete is redone.
- * - Discarding a snapshot deletes its slot for good. Slots left from an
- *   earlier session are unreachable (the undo history lives in the renderer's
- *   memory) and are purged on connect.
+ * - A snapshot keeps a local copy of the patch's XML files (a few KB) and a
+ *   reference to each of its phrase WAVs.
+ * - A WAV reference follows the physical file: in its patch folder, renamed
+ *   by a reorder, or parked in the work area on the same medium
+ *   (`<medium>/.jamman-manager/undo/<id>.wav`).
+ * - Before anything destroys a WAV that a snapshot refers to (replacing it,
+ *   removing its phrase, deleting its patch), the file is parked instead:
+ *   moving a file on the pedal is instant. Restoring a snapshot moves its
+ *   WAVs back; whatever they replace is parked in turn, so undo and redo can
+ *   swap states as often as needed.
+ * - A parked WAV no snapshot refers to any more is deleted. Undo data left
+ *   from an earlier session can never be used (the history lives in the
+ *   renderer's memory) and is purged on connect.
  *
  * @module usb/PedalEditor
  */
@@ -33,25 +38,36 @@ import {
   type GreenglassClient,
 } from './GreenglassClient.js';
 import { PedalFiles, workRootFor } from './PedalFiles.js';
-import { bankPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath } from './pedalPaths.js';
+import { bankPath, isPedalPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath } from './pedalPaths.js';
 
 export type PedalEditorLogger = {
   info(...args: unknown[]): void;
   warn(...args: unknown[]): void;
 };
 
-type SlotState =
-  /** The patch was never deleted under this snapshot. */
-  | 'none'
-  /** Its folder is parked in the snapshot's slot on the pedal. */
-  | 'trashed'
-  /** It was parked and undo moved it back: a redone delete parks it here again. */
-  | 'restored';
+/** Progress of a long step (an upload), for the user. */
+export type PedalProgress = { label: string; done: number; total: number };
+
+export type PedalEditorOptions = {
+  /** Reads a WAV picked on the computer. The caller has checked the path is allowed. */
+  readLocalFile: (path: string) => Promise<Buffer>;
+  onProgress?: (progress: PedalProgress) => void;
+};
+
+/** A phrase.wav on the pedal that a snapshot may need again. */
+type WavRef = {
+  id: string;
+  bank: PedalBankId;
+  /** Absolute path on the pedal: in a patch folder, or in the undo pool when parked. */
+  at: string;
+  parked: boolean;
+};
 
 type SnapshotPatch = {
-  /** XML files of the patch, by path relative to the patch folder. */
+  /** `patch.xml` and `PhraseX/phrase.xml`, by path relative to the patch folder. */
   xml: Map<string, Buffer>;
-  state: SlotState;
+  /** The WAV of each phrase folder that had one. */
+  wavs: Map<string, WavRef>;
 };
 
 type PedalSnapshot = {
@@ -65,9 +81,18 @@ export const PEDAL_SNAPSHOT_PREFIX = 'pedal-';
 
 const patchFolderName = (position: number) => `Patch${String(position).padStart(2, '0')}`;
 
+/** Phrase folders a snapshot knows about: those with a WAV or a phrase.xml. */
+function snapshotPhrases(patch: SnapshotPatch): string[] {
+  const fromXml = [...patch.xml.keys()]
+    .filter(path => path.endsWith('/phrase.xml'))
+    .map(path => path.slice(0, path.indexOf('/')));
+  return [...new Set([...patch.wavs.keys(), ...fromXml])].sort();
+}
+
 export class PedalEditor {
   readonly #files: PedalFiles;
   readonly #snapshots = new Map<string, PedalSnapshot>();
+  readonly #refs = new Set<WavRef>();
 
   constructor(
     private readonly client: GreenglassClient,
@@ -75,6 +100,9 @@ export class PedalEditor {
     private readonly bankRoot: (bank: PedalBankId) => string,
     guard: (path: string) => void,
     private readonly log: PedalEditorLogger,
+    private readonly options: PedalEditorOptions = {
+      readLocalFile: () => Promise.reject(new Error('Reading local files is not available')),
+    },
   ) {
     this.#files = new PedalFiles(client, guard);
   }
@@ -84,19 +112,162 @@ export class PedalEditor {
     return `${this.bankRoot(bank)}${dir}/`;
   }
 
-  #undoRoot(bank: PedalBankId): string {
+  #poolRoot(bank: PedalBankId): string {
     return `${workRootFor(this.bankRoot(bank))}undo/`;
   }
 
-  #slotFolder(snapshot: PedalSnapshot, dir: string): string {
-    return `${this.#undoRoot(snapshot.bank)}${snapshot.id}/${dir}/`;
+  // ==================== Parked WAVs ====================
+
+  #liveRef(path: string): WavRef | undefined {
+    for (const ref of this.#refs) if (!ref.parked && ref.at === path) return ref;
+    return undefined;
   }
 
-  // ==================== Edit ====================
+  async #park(ref: WavRef): Promise<void> {
+    await this.#files.ensureFolder(workRootFor(this.bankRoot(ref.bank)));
+    await this.#files.ensureFolder(this.#poolRoot(ref.bank));
+    const target = `${this.#poolRoot(ref.bank)}${ref.id}.wav`;
+    await this.#files.moveFile(ref.at, target);
+    ref.at = target;
+    ref.parked = true;
+  }
+
+  async #unpark(ref: WavRef, path: string): Promise<void> {
+    await this.#files.moveFile(ref.at, path);
+    ref.at = path;
+    ref.parked = false;
+  }
 
   /**
-   * Rewrites patch.xml and the phrase.xml files. Audio is not touched: the
-   * form must list exactly the phrases on the pedal, each with its own WAV.
+   * Gets a WAV out of the way before its path is reused or removed: parked
+   * when a snapshot refers to it, deleted otherwise. No-op when there is no file.
+   */
+  async #clearWav(path: string, exists?: boolean): Promise<void> {
+    const ref = this.#liveRef(path);
+    if (ref) {
+      await this.#park(ref);
+      return;
+    }
+    if (exists ?? (await this.client.entryInfo(path, false)).exists) {
+      await this.#files.deleteFile(path);
+    }
+  }
+
+  /** Moves a patch folder and keeps the references to its WAVs pointing at them. */
+  async #moveTree(from: string, to: string): Promise<void> {
+    await this.#files.moveTree(from, to);
+    for (const ref of this.#refs) {
+      if (!ref.parked && ref.at.startsWith(from)) ref.at = to + ref.at.slice(from.length);
+    }
+  }
+
+  /** Deletes the bank's undo pool once nothing is parked in it. Never throws. */
+  async #tidyPool(bank: PedalBankId): Promise<void> {
+    if ([...this.#refs].some(ref => ref.bank === bank && ref.parked)) return;
+    try {
+      if (await this.#files.exists(this.#poolRoot(bank), true)) {
+        await this.#files.deleteEmptyFolder(this.#poolRoot(bank));
+      }
+    } catch (error) {
+      this.log.warn('Could not tidy the undo folder on the pedal:', errorText(error));
+    }
+  }
+
+  // ==================== Create and edit ====================
+
+  /** Uploads a WAV picked on the computer next to its destination (`phrase.wav.tmp`). */
+  async #uploadNextTo(target: string, source: string, label: string): Promise<string> {
+    const data = await this.options.readLocalFile(source);
+    const temp = `${target}.tmp`;
+    const report = (done: number) => this.options.onProgress?.({ label, done, total: data.length });
+    report(0);
+    try {
+      await this.#files.writeFile(temp, data, report);
+    } catch (error) {
+      await this.#files.deleteFile(temp).catch(() => undefined);
+      throw error;
+    }
+    return temp;
+  }
+
+  /** The IDs a phrase keeps across edits, read from its current phrase.xml. */
+  async #phraseIds(folder: string, phrase: string): Promise<{ id: string; originId: string }> {
+    let id: string = randomUUID();
+    let originId: string = randomUUID();
+    try {
+      const current = await this.client.readFile(`${folder}${phrase}/phrase.xml`);
+      const parsed = await SecureXMLParser.parsePhraseXML(current.toString('utf8'));
+      id = parsed.JamManPhrase?.ID?.[0] ?? id;
+      originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
+    } catch (error) {
+      // A missing or malformed phrase.xml gets new IDs; a lost connection stops the edit.
+      if (error instanceof GreenglassConnectionError) throw error;
+    }
+    return { id, originId };
+  }
+
+  #checkPhrases(form: PatchForm, ownWav: (phrase: string) => string): void {
+    if (!Array.isArray(form.phrases) || form.phrases.length === 0) {
+      throw new Error('A patch needs at least one phrase');
+    }
+    for (const phrase of form.phrases) {
+      if (!PHRASE_DIR_RE.test(phrase.name)) throw new Error(`Invalid phrase name: ${phrase.name}`);
+      if (isPedalPath(phrase.wavPath) && phrase.wavPath !== ownWav(phrase.name)) {
+        throw new Error('A phrase can only take a WAV from the computer');
+      }
+      if (!phrase.wavPath) throw new Error(`${phrase.name} has no WAV file`);
+    }
+  }
+
+  /** Creates a patch in an empty slot, uploading each phrase's WAV. */
+  async createPatch(bank: PedalBankId, form: PatchForm): Promise<void> {
+    const folder = this.#patchFolder(bank, form.directory);
+    this.#checkPhrases(form, () => '');
+    if (await this.#files.exists(folder, true)) {
+      throw new Error(`Failed to create patch: Patch directory ${form.directory} already exists`);
+    }
+
+    await this.client.createFolder(folder);
+    try {
+      for (const phrase of form.phrases) {
+        const phraseFolder = `${folder}${phrase.name}/`;
+        await this.#files.ensureFolder(phraseFolder);
+        const temp = await this.#uploadNextTo(
+          `${phraseFolder}phrase.wav`,
+          phrase.wavPath,
+          `Uploading ${phrase.name}`,
+        );
+        await this.#files.moveFile(temp, `${phraseFolder}phrase.wav`);
+        const xml = buildPhraseXml(phrase, randomUUID(), randomUUID());
+        await this.#files.writeFileAtomic(`${phraseFolder}phrase.xml`, Buffer.from(xml));
+      }
+      // patch.xml last: until it exists the folder is not a patch.
+      const patchXml = buildPatchXml({
+        patchName: form.patchName,
+        rhythmType: form.rhythmType,
+        stopMode: form.stopMode,
+        settingsVersion: 1,
+        id: randomUUID(),
+        originId: randomUUID(),
+      });
+      await this.#files.writeFileAtomic(`${folder}patch.xml`, Buffer.from(patchXml));
+    } catch (error) {
+      await this.#files
+        .removeTree(folder)
+        .catch(rollbackError =>
+          this.log.warn('Could not remove the half-created patch:', rollbackError),
+        );
+      throw new Error(`Failed to create patch: ${errorText(error)}`, { cause: error });
+    }
+    this.log.info(`Created ${form.directory} on the pedal's ${bank} bank`);
+  }
+
+  /**
+   * Rewrites a patch from the form: settings, phrase settings, and audio. A
+   * phrase whose WAV is a file on the computer gets it uploaded (new phrase or
+   * replacement); a phrase on the pedal that the form no longer lists is
+   * removed. New WAVs are uploaded before anything is changed, so a failed
+   * upload leaves the patch as it was.
    */
   async updatePatch(bank: PedalBankId, form: PatchForm): Promise<void> {
     const folder = this.#patchFolder(bank, form.directory);
@@ -109,18 +280,52 @@ export class PedalEditor {
       }
       throw error;
     }
+    const ownWav = (phrase: string) => wavPath(bank, form.directory, phrase);
+    this.#checkPhrases(form, ownWav);
 
-    const onPedal = contents.folders.filter(d => PHRASE_DIR_RE.test(d)).sort();
-    const inForm = (form.phrases ?? []).map(p => p.name).sort();
-    const sameAudio = (form.phrases ?? []).every(
-      p => p.wavPath === wavPath(bank, form.directory, p.name),
-    );
-    if (onPedal.join() !== inForm.join() || !sameAudio) {
-      throw new Error(
-        'Adding, replacing or removing phrases is not available for a pedal connected over USB yet',
-      );
+    const onPedal = contents.folders.filter(d => PHRASE_DIR_RE.test(d));
+    const listed = new Set(form.phrases.map(p => p.name));
+
+    // 1. Upload every new WAV next to its destination. Nothing else changes yet.
+    const uploads = new Map<string, string>();
+    try {
+      for (const phrase of form.phrases) {
+        if (phrase.wavPath === ownWav(phrase.name)) continue;
+        await this.#files.ensureFolder(`${folder}${phrase.name}/`);
+        uploads.set(
+          phrase.name,
+          await this.#uploadNextTo(
+            `${folder}${phrase.name}/phrase.wav`,
+            phrase.wavPath,
+            `Uploading ${phrase.name}`,
+          ),
+        );
+      }
+    } catch (error) {
+      for (const temp of uploads.values())
+        await this.#files.deleteFile(temp).catch(() => undefined);
+      throw error;
     }
 
+    // 2. Read the IDs to keep before any phrase.xml is touched.
+    const ids = new Map<string, { id: string; originId: string }>();
+    for (const phrase of form.phrases)
+      ids.set(phrase.name, await this.#phraseIds(folder, phrase.name));
+
+    // 3. Remove the phrases the form no longer lists.
+    for (const phrase of onPedal.filter(p => !listed.has(p))) {
+      await this.#clearWav(`${folder}${phrase}/phrase.wav`);
+      await this.#files.removeTree(`${folder}${phrase}/`);
+    }
+
+    // 4. Put the uploaded WAVs in place, parking what they replace.
+    for (const [phrase, temp] of uploads) {
+      const target = `${folder}${phrase}/phrase.wav`;
+      await this.#clearWav(target);
+      await this.#files.moveFile(temp, target);
+    }
+
+    // 5. The XML files.
     const patchXml = buildPatchXml({
       patchName: form.patchName,
       rhythmType: form.rhythmType,
@@ -129,27 +334,13 @@ export class PedalEditor {
       id: form.patchID || randomUUID(),
       originId: form.patchOriginID || randomUUID(),
     });
-
-    // Keep each phrase's IDs, read from its current phrase.xml.
-    const phraseXmls = new Map<string, string>();
-    for (const phrase of form.phrases) {
-      let id: string = randomUUID();
-      let originId: string = randomUUID();
-      try {
-        const current = await this.client.readFile(`${folder}${phrase.name}/phrase.xml`);
-        const parsed = await SecureXMLParser.parsePhraseXML(current.toString('utf8'));
-        id = parsed.JamManPhrase?.ID?.[0] ?? id;
-        originId = parsed.JamManPhrase?.OriginID?.[0] ?? originId;
-      } catch (error) {
-        // A missing or malformed phrase.xml gets new IDs; a lost connection stops the edit.
-        if (error instanceof GreenglassConnectionError) throw error;
-      }
-      phraseXmls.set(phrase.name, buildPhraseXml(phrase, id, originId));
-    }
-
     await this.#files.writeFileAtomic(`${folder}patch.xml`, Buffer.from(patchXml, 'utf8'));
-    for (const [name, xml] of phraseXmls) {
-      await this.#files.writeFileAtomic(`${folder}${name}/phrase.xml`, Buffer.from(xml, 'utf8'));
+    for (const phrase of form.phrases) {
+      const { id, originId } = ids.get(phrase.name)!;
+      await this.#files.writeFileAtomic(
+        `${folder}${phrase.name}/phrase.xml`,
+        Buffer.from(buildPhraseXml(phrase, id, originId), 'utf8'),
+      );
     }
     this.log.info(`Updated ${form.directory} on the pedal's ${bank} bank`);
   }
@@ -157,8 +348,8 @@ export class PedalEditor {
   // ==================== Delete ====================
 
   /**
-   * Deletes patches. A patch protected by a snapshot is parked in the
-   * snapshot's slot (so undo can bring it back); any other is deleted for good.
+   * Deletes patches. WAVs a snapshot refers to are parked first, so undo can
+   * bring the patch back; everything else is deleted for good.
    */
   async deletePatches(
     bank: PedalBankId,
@@ -168,40 +359,24 @@ export class PedalEditor {
     let failed = 0;
     for (const dir of dirs) {
       const folder = this.#patchFolder(bank, dir);
-      if (!(await this.#files.exists(folder, true))) {
+      let contents;
+      try {
+        contents = await this.client.folderContents(folder);
+      } catch (error) {
+        if (!(error instanceof GreenglassRequestError)) throw error;
         this.log.warn(`Patch not found on the pedal, skipping: ${dir}`);
         failed++;
         continue;
       }
-      const snapshot = this.#protectingSnapshot(bank, dir);
-      if (snapshot) {
-        await this.#files.ensureFolder(workRootFor(this.bankRoot(bank)));
-        await this.#files.ensureFolder(this.#undoRoot(bank));
-        await this.#files.ensureFolder(`${this.#undoRoot(bank)}${snapshot.id}/`);
-        await this.#files.moveTree(folder, this.#slotFolder(snapshot, dir));
-        snapshot.patches.get(dir)!.state = 'trashed';
-      } else {
-        await this.#files.removeTree(folder);
+      for (const phrase of contents.folders) {
+        const path = `${folder}${phrase}/phrase.wav`;
+        if (this.#liveRef(path)) await this.#park(this.#liveRef(path)!);
       }
+      await this.#files.removeTree(folder);
       deleted.push(dir);
     }
     this.log.info(`Deleted ${deleted.length} patches from the pedal's ${bank} bank`);
     return { deleted, failed };
-  }
-
-  /**
-   * The snapshot a delete of `dir` should park the folder in: first one that
-   * restored it (a redo), else the newest one taken of it that has no copy yet.
-   */
-  #protectingSnapshot(bank: PedalBankId, dir: string): PedalSnapshot | null {
-    const candidates = [...this.#snapshots.values()]
-      .filter(s => s.bank === bank && s.patches.has(dir))
-      .sort((a, b) => b.createdAt - a.createdAt);
-    return (
-      candidates.find(s => s.patches.get(dir)!.state === 'restored') ??
-      candidates.find(s => s.patches.get(dir)!.state === 'none') ??
-      null
-    );
   }
 
   // ==================== Reorder ====================
@@ -243,7 +418,7 @@ export class PedalEditor {
 
     const steps: Array<{ from: string; to: string }> = [];
     const step = async (from: string, to: string) => {
-      await this.#files.moveTree(from, to);
+      await this.#moveTree(from, to);
       steps.push({ from, to });
     };
     /** A target name is busy while some pending folder still sits there. */
@@ -274,15 +449,12 @@ export class PedalEditor {
     } catch (error) {
       for (const { from, to } of steps.reverse()) {
         try {
-          await this.#files.moveTree(to, from);
+          await this.#moveTree(to, from);
         } catch (rollbackError) {
           this.log.warn(`Failed to move ${to} back to ${from}:`, rollbackError);
         }
       }
-      throw new Error(
-        `Failed to reorder patches: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
+      throw new Error(`Failed to reorder patches: ${errorText(error)}`, { cause: error });
     }
   }
 
@@ -317,22 +489,31 @@ export class PedalEditor {
         }
         throw error;
       }
-      const xml = new Map<string, Buffer>();
+      const patch: SnapshotPatch = { xml: new Map(), wavs: new Map() };
       if (contents.files.includes('patch.xml')) {
-        xml.set('patch.xml', await this.client.readFile(`${folder}patch.xml`));
+        patch.xml.set('patch.xml', await this.client.readFile(`${folder}patch.xml`));
       }
       for (const phrase of contents.folders.filter(d => PHRASE_DIR_RE.test(d))) {
         try {
-          xml.set(
+          patch.xml.set(
             `${phrase}/phrase.xml`,
             await this.client.readFile(`${folder}${phrase}/phrase.xml`),
           );
         } catch (error) {
           if (!(error instanceof GreenglassRequestError)) throw error;
         }
+        const path = `${folder}${phrase}/phrase.wav`;
+        if ((await this.client.entryInfo(path, false)).exists) {
+          let ref = this.#liveRef(path);
+          if (!ref) {
+            ref = { id: randomUUID(), bank, at: path, parked: false };
+            this.#refs.add(ref);
+          }
+          patch.wavs.set(phrase, ref);
+        }
       }
-      for (const data of xml.values()) sizeBytes += data.length;
-      snapshot.patches.set(dir, { xml, state: 'none' });
+      for (const data of patch.xml.values()) sizeBytes += data.length;
+      snapshot.patches.set(dir, patch);
     }
 
     this.#snapshots.set(snapshot.id, snapshot);
@@ -348,8 +529,8 @@ export class PedalEditor {
   }
 
   /**
-   * `add` brings back deleted patches (their folders come out of the slot);
-   * `replace` writes the saved XML over the patch as it is now.
+   * `add` brings back deleted patches; `replace` makes an existing patch look
+   * like the snapshot again (settings, phrases and audio).
    */
   async restoreSnapshot(
     id: string,
@@ -371,8 +552,9 @@ export class PedalEditor {
 
     let dirs = [...snapshot.patches.keys()];
     if (only !== undefined) {
-      if (!Array.isArray(only))
+      if (!Array.isArray(only)) {
         throw new PatchRestoreError('INVALID_ARGUMENT', 'Invalid patch list');
+      }
       for (const dir of only) {
         if (!snapshot.patches.has(dir)) {
           throw new PatchRestoreError('NOT_FOUND', `${dir} is not part of this snapshot`);
@@ -381,87 +563,125 @@ export class PedalEditor {
       dirs = dirs.filter(d => only.includes(d));
     }
 
-    if (mode === 'add') {
-      const occupied: string[] = [];
-      for (const dir of dirs) {
-        if (snapshot.patches.get(dir)!.state !== 'trashed') {
+    // Check everything first so a refusal changes nothing.
+    for (const dir of dirs) {
+      const patch = snapshot.patches.get(dir)!;
+      const exists = await this.#files.exists(this.#patchFolder(bank, dir), true);
+      if (mode === 'add') {
+        if ([...patch.wavs.values()].some(ref => !ref.parked)) {
           throw new PatchRestoreError('NOT_FOUND', 'Undo data no longer exists');
         }
-        if (await this.#files.exists(this.#patchFolder(bank, dir), true)) occupied.push(dir);
-      }
-      if (occupied.length > 0) {
-        throw new PatchRestoreError(
-          'SLOT_OCCUPIED',
-          `Cannot restore: ${occupied.join(', ')} ${occupied.length === 1 ? 'is' : 'are'} now in use`,
-        );
-      }
-      for (const dir of dirs) {
-        try {
-          await this.#files.moveTree(this.#slotFolder(snapshot, dir), this.#patchFolder(bank, dir));
-        } catch (error) {
-          throw new PatchRestoreError('FAILED', `Could not restore ${dir}: ${errorText(error)}`);
+        if (exists) {
+          throw new PatchRestoreError('SLOT_OCCUPIED', `Cannot restore: ${dir} is now in use`);
         }
-        snapshot.patches.get(dir)!.state = 'restored';
+      } else {
+        if (!exists) throw new PatchRestoreError('NOT_FOUND', `Patch not found: ${dir}`);
+        const folder = this.#patchFolder(bank, dir);
+        for (const [phrase, ref] of patch.wavs) {
+          if (!ref.parked && ref.at !== `${folder}${phrase}/phrase.wav`) {
+            throw new PatchRestoreError('NOT_FOUND', 'Undo data no longer exists');
+          }
+        }
       }
-      await this.#tidyUndoFolders(snapshot);
-      return { restored: dirs, removed: [] };
     }
 
-    for (const dir of dirs) {
-      const folder = this.#patchFolder(bank, dir);
-      if (!(await this.#files.exists(folder, true))) {
-        throw new PatchRestoreError('NOT_FOUND', `Patch not found: ${dir}`);
+    try {
+      for (const dir of dirs) {
+        if (mode === 'add') await this.#restoreDeleted(bank, dir, snapshot.patches.get(dir)!);
+        else await this.#restoreInPlace(bank, dir, snapshot.patches.get(dir)!);
       }
-      try {
-        for (const [relative, data] of snapshot.patches.get(dir)!.xml) {
-          await this.#files.writeFileAtomic(`${folder}${relative}`, data);
-        }
-      } catch (error) {
-        throw new PatchRestoreError('FAILED', `Could not restore ${dir}: ${errorText(error)}`);
-      }
+    } catch (error) {
+      if (error instanceof PatchRestoreError) throw error;
+      throw new PatchRestoreError('FAILED', `Could not restore: ${errorText(error)}`);
+    } finally {
+      await this.#tidyPool(bank);
     }
     return { restored: dirs, removed: [] };
   }
 
-  /**
-   * Removes the snapshot's folder once nothing is parked in it, and the bank's
-   * undo folder once no snapshot parks anything (a redo recreates them).
-   * Only ever deletes empty folders. Never throws.
-   */
-  async #tidyUndoFolders(snapshot: PedalSnapshot): Promise<void> {
-    const parks = (s: PedalSnapshot) => [...s.patches.values()].some(p => p.state === 'trashed');
-    if (parks(snapshot)) return;
-    const client = this.client;
+  async #restoreDeleted(bank: PedalBankId, dir: string, patch: SnapshotPatch): Promise<void> {
+    const folder = this.#patchFolder(bank, dir);
+    const unparked: WavRef[] = [];
+    await this.client.createFolder(folder);
     try {
-      const folder = `${this.#undoRoot(snapshot.bank)}${snapshot.id}/`;
-      if (await this.#files.exists(folder, true)) await client.delete(folder, true, false);
-      const others = [...this.#snapshots.values()].some(s => s.bank === snapshot.bank && parks(s));
-      if (!others && (await this.#files.exists(this.#undoRoot(snapshot.bank), true))) {
-        await client.delete(this.#undoRoot(snapshot.bank), true, false);
+      for (const phrase of snapshotPhrases(patch)) {
+        await this.client.createFolder(`${folder}${phrase}/`);
+        const ref = patch.wavs.get(phrase);
+        if (ref) {
+          await this.#unpark(ref, `${folder}${phrase}/phrase.wav`);
+          unparked.push(ref);
+        }
       }
+      await this.#writeXml(folder, patch);
     } catch (error) {
-      this.log.warn('Could not tidy the undo folders on the pedal:', error);
+      for (const ref of unparked) await this.#park(ref).catch(() => undefined);
+      await this.#files.removeTree(folder).catch(() => undefined);
+      throw error;
     }
   }
 
-  /** Forgets a snapshot and deletes its parked folders. Never throws. */
+  async #restoreInPlace(bank: PedalBankId, dir: string, patch: SnapshotPatch): Promise<void> {
+    const folder = this.#patchFolder(bank, dir);
+    const wanted = snapshotPhrases(patch);
+    const current = (await this.client.folderContents(folder)).folders.filter(d =>
+      PHRASE_DIR_RE.test(d),
+    );
+
+    // Phrases added since the snapshot go away (their WAVs parked if another snapshot needs them).
+    for (const phrase of current.filter(p => !wanted.includes(p))) {
+      await this.#clearWav(`${folder}${phrase}/phrase.wav`);
+      await this.#files.removeTree(`${folder}${phrase}/`);
+    }
+
+    for (const phrase of wanted) {
+      const target = `${folder}${phrase}/phrase.wav`;
+      await this.#files.ensureFolder(`${folder}${phrase}/`);
+      const ref = patch.wavs.get(phrase);
+      if (ref && !ref.parked) continue; // already the one in place
+      await this.#clearWav(target);
+      if (ref) await this.#unpark(ref, target);
+    }
+
+    await this.#writeXml(folder, patch);
+  }
+
+  async #writeXml(folder: string, patch: SnapshotPatch): Promise<void> {
+    for (const [relative, data] of patch.xml) {
+      await this.#files.writeFileAtomic(`${folder}${relative}`, data);
+    }
+  }
+
+  /** Forgets a snapshot and deletes the parked WAVs no other snapshot needs. Never throws. */
   async discardSnapshot(id: string): Promise<void> {
     const snapshot = this.#snapshots.get(id);
     if (!snapshot) return;
     this.#snapshots.delete(id);
-    if (![...snapshot.patches.values()].some(p => p.state === 'trashed')) return;
-    try {
-      await this.#files.removeTree(`${this.#undoRoot(snapshot.bank)}${snapshot.id}/`);
-    } catch (error) {
-      // Not connected any more, or already gone: the purge on connect cleans it.
-      this.log.warn(`Could not delete undo data ${id} on the pedal:`, errorText(error));
+
+    const stillNeeded = new Set<WavRef>();
+    for (const other of this.#snapshots.values()) {
+      for (const patch of other.patches.values())
+        for (const ref of patch.wavs.values()) stillNeeded.add(ref);
     }
+    for (const patch of snapshot.patches.values()) {
+      for (const ref of patch.wavs.values()) {
+        if (stillNeeded.has(ref) || !this.#refs.has(ref)) continue;
+        this.#refs.delete(ref);
+        if (!ref.parked) continue;
+        try {
+          await this.#files.deleteFile(ref.at);
+        } catch (error) {
+          // Not connected any more, or already gone: the purge on connect cleans it.
+          this.log.warn(`Could not delete undo data ${ref.at} on the pedal:`, errorText(error));
+        }
+      }
+    }
+    await this.#tidyPool(snapshot.bank);
   }
 
   /** Deletes undo data left on the pedal by an earlier session. */
   async purgeUndoData(banks: PedalBankId[]): Promise<void> {
     for (const bank of banks) {
-      const root = this.#undoRoot(bank);
+      const root = this.#poolRoot(bank);
       if (await this.#files.exists(root, true)) {
         await this.#files.removeTree(root);
         this.log.info(`Purged old undo data on the pedal's ${bank} bank`);

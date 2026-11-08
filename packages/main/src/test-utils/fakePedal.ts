@@ -86,6 +86,8 @@ export class FakePedal {
   readonly properties = new Map<number, PropertyValue>();
   /** Every request message ID received, in order. */
   readonly requests: number[] = [];
+  /** Every file opened for reading, in order. */
+  readonly reads: string[] = [];
   /** When true the pedal stops answering (simulates a desynced or hung pedal). */
   silent = false;
   /** Request IDs that get a FailureResponse with this message. */
@@ -289,6 +291,7 @@ export class FakePedal {
         }
         const file = this.files.get(path);
         if (!file) return fail('No such file or directory');
+        if (access !== 2) this.reads.push(path);
         const handle = this.#nextHandle++;
         this.openFiles.set(handle, { path, position: 0, write: access === 2 });
         return encodeFrame(

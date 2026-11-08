@@ -105,6 +105,34 @@ export class PedalFiles {
     if (!(await this.exists(path, true))) await this.client.createFolder(path);
   }
 
+  /** Writes a file (created or truncated). */
+  async writeFile(
+    path: string,
+    data: Uint8Array,
+    onProgress?: (written: number) => void,
+  ): Promise<void> {
+    this.guard(path);
+    await this.client.writeFile(path, data, onProgress);
+  }
+
+  /** Moves a file (instant, also across folders of the same medium). */
+  async moveFile(source: string, target: string, overwriteExisting = false): Promise<void> {
+    this.guard(source);
+    this.guard(target);
+    await this.client.moveFile(source, target, overwriteExisting);
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    this.guard(path);
+    await this.client.delete(path, false);
+  }
+
+  /** Deletes a folder only if it is empty (never recursive). */
+  async deleteEmptyFolder(path: string): Promise<void> {
+    this.guard(path);
+    await this.client.delete(path, true, false);
+  }
+
   /** Writes next to the target and then moves over it, so a cut cable never leaves half a file. */
   async writeFileAtomic(path: string, data: Uint8Array): Promise<void> {
     const temp = `${path}.tmp`;

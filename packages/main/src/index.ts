@@ -45,11 +45,13 @@ export async function initApp(initConfig: AppInitConfig) {
     cacheRoot: path.join(app.getPath('userData'), 'pedal-cache'),
     log,
   });
-  pedal.on('change', info => {
+  const sendToWindows = (channel: 'pedal:changed' | 'pedal:progress', payload: unknown) => {
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send('pedal:changed', info);
+      if (!window.isDestroyed()) window.webContents.send(channel, payload);
     }
-  });
+  };
+  pedal.on('change', info => sendToWindows('pedal:changed', info));
+  pedal.on('progress', progress => sendToWindows('pedal:progress', progress));
   app.on('will-quit', () => {
     pedal.disconnect().catch(error => log.warn('Failed to disconnect the pedal:', error));
   });

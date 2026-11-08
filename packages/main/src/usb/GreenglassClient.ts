@@ -257,8 +257,15 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
     await this.#request(MessageID.FileSystemEntryMoveRequest, MessageID.SuccessResponse, body);
   }
 
-  /** Creates or truncates a file and writes `data` to it. Closes the handle even when a write fails. */
-  async writeFile(path: string, data: Uint8Array): Promise<void> {
+  /**
+   * Creates or truncates a file and writes `data` to it. Closes the handle even
+   * when a write fails. `onProgress` gets the bytes written after each block.
+   */
+  async writeFile(
+    path: string,
+    data: Uint8Array,
+    onProgress?: (written: number) => void,
+  ): Promise<void> {
     const open = new PayloadWriter()
       .str(path)
       .u8(FileAccess.Write)
@@ -271,6 +278,7 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
         const chunk = data.subarray(offset, offset + MAX_WRITE_CHUNK);
         const body = new PayloadWriter().i64(handle).i32(chunk.length).bytes(chunk).build();
         await this.#request(MessageID.FileWriteRequest, MessageID.SuccessResponse, body);
+        onProgress?.(offset + chunk.length);
       }
     } catch (error) {
       await this.#closeQuietly(handle);

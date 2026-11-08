@@ -68,8 +68,8 @@ export default function PedalDialog({
           </ul>
           <Notice title="What works over USB">
             <p>
-              Browse, play, edit, sort and delete patches, with undo. New patches, new or changed
-              WAV files, backups and playlists still need the SD card in a card reader.
+              Everything except backups and playlists, which still need the SD card in a card
+              reader. Uploading a WAV takes about a second per 1.4 MB.
             </p>
           </Notice>
         </>

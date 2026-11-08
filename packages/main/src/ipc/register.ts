@@ -33,6 +33,7 @@ import { createUndoHandlers } from './undo.js';
  */
 export const PEDAL_AWARE_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
   'patches:read',
+  'patches:create',
   'patches:update',
   'patches:delete',
   'patches:deleteBatch',

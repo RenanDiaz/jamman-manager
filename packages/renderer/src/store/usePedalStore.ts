@@ -5,11 +5,13 @@
  * inserted or removed); `subscribe` wires them once at startup.
  */
 import { create } from 'zustand';
-import type { PedalInfo } from '@app/preload/ipc-contract';
+import type { PedalInfo, PedalProgress } from '@app/preload/ipc-contract';
 
 interface PedalStore {
   pedal: PedalInfo | null;
   connecting: boolean;
+  /** Progress of the upload running on the pedal, or null. */
+  progress: PedalProgress | null;
   /** Finds the pedal on USB and connects. Throws with a message for the user when it fails. */
   connect: () => Promise<PedalInfo>;
   disconnect: () => Promise<void>;
@@ -20,6 +22,7 @@ interface PedalStore {
 export const usePedalStore = create<PedalStore>(set => ({
   pedal: null,
   connecting: false,
+  progress: null,
 
   connect: async () => {
     set({ connecting: true });
@@ -38,12 +41,18 @@ export const usePedalStore = create<PedalStore>(set => ({
   },
 
   subscribe: () => {
-    const unsubscribe = window.electronAPI.onPedalChanged(pedal => set({ pedal }));
+    const unsubscribeChanges = window.electronAPI.onPedalChanged(pedal =>
+      set(pedal ? { pedal } : { pedal, progress: null }),
+    );
+    const unsubscribeProgress = window.electronAPI.onPedalProgress(progress => set({ progress }));
     // Pick up a connection made before this window loaded (e.g. after a reload).
     window.electronAPI
       .getPedalStatus()
       .then(pedal => set({ pedal }))
       .catch(() => undefined);
-    return unsubscribe;
+    return () => {
+      unsubscribeChanges();
+      unsubscribeProgress();
+    };
   },
 }));

@@ -121,3 +121,11 @@
     grid-column: 1 / -1;
   }
 }
+
+.progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-bottom: var(--jm-space-3);
+  accent-color: var(--jm-led-green);
+}
