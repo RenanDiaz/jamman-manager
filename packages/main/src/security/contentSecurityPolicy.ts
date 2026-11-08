@@ -10,13 +10,14 @@
  * - `script-src 'self'` – the bundled scripts. In development the React
  *   plugin injects an inline "react-refresh" preamble, so development alone
  *   adds `'unsafe-inline'`.
- * - `style-src 'self' 'unsafe-inline'` – Bootstrap's stylesheet comes from
- *   'self', but styled-components and Vite's dev CSS inject `<style>` tags,
- *   and reactstrap/Popper set inline `style` attributes.
- * - `img-src 'self' data:` – the app icon and Bootstrap's inline SVG data URIs
- *   (form controls, dropdown carets).
- * - `font-src 'self' data:` – Bootstrap uses system fonts; kept for bundled
- *   assets.
+ * - `style-src 'self' 'unsafe-inline'` – the bundled stylesheets come from
+ *   'self', but Vite's dev CSS injects `<style>` tags, and the components and
+ *   dnd-kit set inline `style` attributes (CSS custom properties, drag
+ *   transforms).
+ * - `img-src 'self' data:` – the app icon, plus small images Vite inlines as
+ *   data URIs.
+ * - `font-src 'self' data:` – the bundled Barlow fonts (@fontsource), plus any
+ *   font file small enough for Vite to inline as a data URI.
  * - `media-src 'self' jamman:` – WAV playback through the custom protocol.
  * - `connect-src 'self'` – plus the dev server's WebSocket for HMR in
  *   development.

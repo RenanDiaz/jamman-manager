@@ -1,0 +1,112 @@
+/*
+ * Design tokens for the "Pedal" design system (see design/DESIGN.md).
+ * Prefixed with --jm- so they never collide with Bootstrap's --bs- variables
+ * while both coexist.
+ */
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/500.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow-condensed/500.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+
+:root {
+  /* ---- Chassis ---- */
+  --jm-blue: #1f3d93;
+  --jm-blue-sheen: #2546a3;
+  --jm-blue-deep: #1a3584;
+  --jm-blue-plate: #23449f;
+  --jm-blue-plate-hi: #2a4fb0;
+  --jm-blue-plate-hover: #3157bb;
+  --jm-blue-hi: #3058bd;
+  --jm-blue-lo: #142a6c;
+
+  /* ---- Control panel ---- */
+  --jm-panel: #18191c;
+  --jm-panel-raised: linear-gradient(#2e3036, #1c1d21);
+  --jm-panel-raised-hover: linear-gradient(#383b42, #232529);
+  --jm-panel-line: #33363d;
+  --jm-panel-edge: #050506;
+  /* Strip printed on the panel: a phrase row, a chosen option, a hovered item */
+  --jm-panel-strip: #1f2024;
+  /* Slightly sunk area for messages */
+  --jm-panel-sunk: #111214;
+
+  /* ---- Print ---- */
+  --jm-legend: #f1f3f6;
+  --jm-legend-on-blue: #b4c3ea;
+  --jm-legend-on-panel: #8e939c;
+  --jm-pill: #e8ebf0;
+
+  /* ---- Display + LEDs ---- */
+  --jm-seg: #b6f03c;
+  --jm-seg-off: #1d2713;
+  --jm-seg-window: #0b0d0a;
+  --jm-led-red: #ff3434;
+  --jm-led-green: #8fe43c;
+  --jm-led-yellow: #f3e12b;
+  --jm-led-off: #2b2d31;
+
+  /* ---- Type ---- */
+  --jm-font-legend: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --jm-font-body: 'Barlow', system-ui, sans-serif;
+  --jm-text-display: 700 30px/1.05 var(--jm-font-legend);
+  --jm-text-title: 700 22px/1 var(--jm-font-legend);
+  --jm-text-name: 700 19px/1.1 var(--jm-font-legend);
+  --jm-text-body: 400 14px/1.45 var(--jm-font-body);
+  --jm-text-meta: 500 12.5px/1.4 var(--jm-font-body);
+  --jm-text-legend: 700 12px/1 var(--jm-font-legend);
+  --jm-text-pill: 600 11px/1.2 var(--jm-font-legend);
+
+  /* ---- Space (4px base) ---- */
+  --jm-space-1: 2px;
+  --jm-space-2: 4px;
+  --jm-space-3: 6px;
+  --jm-space-4: 8px;
+  --jm-space-5: 12px;
+  --jm-space-6: 16px;
+  --jm-space-7: 20px;
+  --jm-space-8: 24px;
+  --jm-space-9: 32px;
+
+  /* ---- Radii ---- */
+  --jm-radius-window: 3px;
+  --jm-radius-led: 2px;
+  --jm-radius-key: 7px;
+  --jm-radius-plate: 8px;
+  --jm-radius-panel: 10px;
+  --jm-radius-pill: 999px;
+
+  /* ---- Shadows / materials ---- */
+  --jm-shadow-panel:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 0 var(--jm-blue-lo),
+    0 6px 14px rgba(5, 12, 40, 0.45);
+  --jm-shadow-plate:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+    0 0 0 1px var(--jm-blue-lo), 0 3px 0 var(--jm-blue-lo);
+  --jm-shadow-key:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 0 var(--jm-panel-edge),
+    0 0 0 1px var(--jm-panel-edge);
+  --jm-shadow-key-pressed:
+    inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 0 var(--jm-panel-edge), 0 0 0 1px var(--jm-panel-edge);
+  --jm-shadow-window: inset 0 2px 5px rgba(0, 0, 0, 0.9), 0 0 0 1px #2c2f35;
+  --jm-shadow-stomp:
+    0 0 0 3px #10204f, 0 0 0 4px var(--jm-blue-hi), 0 3px 4px rgba(0, 0, 0, 0.45),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+  --jm-chrome: radial-gradient(circle at 40% 35%, #fbfbf8 0%, #cfccc3 45%, #8d8a83 100%);
+  --jm-chrome-hover: radial-gradient(circle at 40% 35%, #fff 0%, #dcd9d1 45%, #99968e 100%);
+  --jm-glow-red: 0 0 7px var(--jm-led-red);
+  --jm-glow-green: 0 0 7px var(--jm-led-green);
+  --jm-glow-yellow: 0 0 8px var(--jm-led-yellow);
+  --jm-glow-seg: drop-shadow(0 0 2px rgba(182, 240, 60, 0.7));
+
+  /* Metallic flake: fine light specks over a vertical sheen */
+  --jm-chassis-bg:
+    radial-gradient(rgba(255, 255, 255, 0.07) 0.6px, transparent 0.8px) 0 0 / 4px 4px,
+    radial-gradient(rgba(10, 20, 60, 0.25) 0.7px, transparent 0.9px) 2px 1px / 5px 5px,
+    linear-gradient(180deg, var(--jm-blue-sheen) 0%, var(--jm-blue) 45%, var(--jm-blue-deep) 100%);
+
+  /* ---- Motion ---- */
+  --jm-press: 60ms;
+  --jm-focus-ring: 2px solid var(--jm-led-yellow);
+}

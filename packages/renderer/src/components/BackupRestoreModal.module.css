@@ -1,0 +1,42 @@
+.panel {
+  display: grid;
+  gap: var(--jm-space-7);
+}
+.muted {
+  color: var(--jm-legend-on-panel);
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-6);
+  min-width: 0;
+}
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--jm-space-4);
+  font: var(--jm-text-meta);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--jm-space-2) var(--jm-space-6);
+  margin: 0;
+  font: var(--jm-text-meta);
+}
+.facts dt {
+  color: var(--jm-legend-on-panel);
+}
+.facts dd {
+  margin: 0;
+}

@@ -1,0 +1,85 @@
+/*
+ * Element defaults. Replaces the parts of Bootstrap's reboot the app relied on;
+ * everything visual lives in the components and src/styles/tokens.css.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--jm-blue-deep);
+  color: var(--jm-legend);
+  font: var(--jm-text-body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin-top: 0;
+  margin-bottom: var(--jm-space-4);
+}
+p,
+ol,
+ul,
+dl {
+  margin-top: 0;
+  margin-bottom: var(--jm-space-6);
+}
+dd {
+  margin-left: 0;
+}
+strong,
+b {
+  font-weight: 700;
+}
+small {
+  font-size: 0.875em;
+}
+label {
+  display: inline-block;
+}
+
+button,
+input,
+select,
+textarea {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- react-toastify: toasts as small panels ----------
+ * ReactToastify.css loads after this file, so these selectors are one step more specific. */
+:root:root {
+  --toastify-color-dark: var(--jm-panel);
+  --toastify-text-color-dark: var(--jm-legend);
+  --toastify-font-family: var(--jm-font-body);
+  --toastify-color-info: var(--jm-legend-on-blue);
+  --toastify-color-success: var(--jm-led-green);
+  --toastify-color-warning: var(--jm-led-yellow);
+  --toastify-color-error: var(--jm-led-red);
+  --toastify-color-progress-dark: var(--jm-seg);
+}
+.Toastify .Toastify__toast {
+  border-radius: var(--jm-radius-key);
+  box-shadow:
+    0 0 0 1px var(--jm-panel-line),
+    0 8px 18px rgba(3, 8, 30, 0.5);
+  font: var(--jm-text-body);
+}

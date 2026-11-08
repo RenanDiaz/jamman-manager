@@ -1,180 +1,123 @@
 import { FC, memo } from 'react';
-import {
-  AccordionBody,
-  AccordionHeader,
-  AccordionItem,
-  Button,
-  ButtonGroup,
-  Col,
-  Input,
-  Row,
-  Table,
-} from 'reactstrap';
-import { Patch } from '../types';
-import { CheckmarkIcon, CrossIcon } from '../utils/Images';
-import PhrasePlayer from './PhrasePlayer';
+import { usePlayPhrase } from '../hooks/usePlayPhrase';
+import { useAudioPlayerStore } from '../store/useAudioPlayerStore';
+import type { Patch } from '../types';
+import { slotNumber } from '../utils/format';
+import { toPatchView } from '../utils/patchView';
+import { cx, DisplayWindow, Led, Plate, SevenSegment, StompButton, VisuallyHidden } from '../ui';
+import s from './PatchListItem.module.css';
 
 interface Props {
   patch: Patch;
   isSelected?: boolean;
-  onEdit: (directory: string) => void;
-  onDelete: (directory: string) => void;
+  isFocused?: boolean;
+  onFocus: (directory: string) => void;
   onToggleSelection?: (directory: string) => void;
 }
 
-const headersWidths = {
-  xs: 5,
-  sm: 3,
-  md: 3,
-  lg: 2,
-  xl: 2,
-  xxl: 1,
-};
-
-const valuesWidths = {
-  xs: 7,
-  sm: 9,
-  md: 3,
-  lg: 4,
-  xl: 4,
-  xxl: 3,
-};
-
+/** One patch as a footswitch plate: slot display, name, tempo, loop/reverse LEDs, play. */
 export const PatchListItem: FC<Props> = memo(
-  ({ patch, isSelected = false, onEdit, onDelete, onToggleSelection }) => {
-    const { data, dir, phrases } = patch;
-    const patchData = data.JamManPatch;
-    const patchName = patchData.PatchName?.[0] || '';
-
-    const handleCheckboxClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (onToggleSelection) {
-        onToggleSelection(dir);
-      }
-    };
+  ({ patch, isSelected = false, isFocused = false, onFocus, onToggleSelection }) => {
+    const view = toPatchView(patch);
+    const first = view.phrases[0];
+    const playPhrase = usePlayPhrase();
+    const isPlaying = useAudioPlayerStore(
+      state => !!state.audioInfo && view.phrases.some(p => p.wavPath === state.audioInfo?.wavPath),
+    );
+    const loops = view.phrases.some(p => p.isLoop);
+    const reversed = view.phrases.some(p => p.isReversed);
+    const phraseCount = `${view.phrases.length} phrase${view.phrases.length === 1 ? '' : 's'}`;
 
     return (
-      <AccordionItem
-        key={dir}
-        style={{
-          backgroundColor: isSelected ? 'rgba(13, 110, 253, 0.1)' : undefined,
-          borderLeft: isSelected ? '3px solid #0d6efd' : undefined,
-        }}
-      >
-        <AccordionHeader targetId={dir}>
-          <div className="d-flex align-items-center gap-2 w-100">
-            {onToggleSelection && (
-              <Input
-                type="checkbox"
-                checked={isSelected}
-                onClick={handleCheckboxClick}
-                onChange={() => {}}
-                style={{ cursor: 'pointer', marginTop: 0 }}
-              />
-            )}
-            <div className="flex-grow-1">
-              <strong>{dir}</strong>
-              {!!patchName && <small className="ms-2">{patchName}</small>}
-            </div>
-            {isSelected && (
-              <span className="badge bg-primary" style={{ fontSize: '0.7rem' }}>
-                Selected
-              </span>
-            )}
-          </div>
-        </AccordionHeader>
-        <AccordionBody accordionId={dir}>
-          <Row className="mb-3 gy-2">
-            <Col {...headersWidths}>
-              <strong>Patch name:</strong>
-            </Col>
-            <Col {...valuesWidths}>{patchName}</Col>
-            <Col {...headersWidths}>
-              <strong>Device:</strong>
-            </Col>
-            <Col {...valuesWidths}>{patchData.$?.device}</Col>
-            <Col {...headersWidths}>
-              <strong>ID:</strong>
-            </Col>
-            <Col {...valuesWidths} className="text-truncate">
-              {patchData.ID?.[0] || 'N/A'}
-            </Col>
-            <Col {...headersWidths}>
-              <strong>Origin ID:</strong>
-            </Col>
-            <Col {...valuesWidths} className="text-truncate">
-              {patchData.OriginID?.[0] || 'N/A'}
-            </Col>
-            <Col {...headersWidths}>
-              <strong>Rhythm Type:</strong>
-            </Col>
-            <Col {...valuesWidths}>{patchData.RhythmType?.[0] || 'N/A'}</Col>
-            <Col {...headersWidths}>
-              <strong>Stop Mode:</strong>
-            </Col>
-            <Col {...valuesWidths}>{patchData.StopMode?.[0] || 'N/A'}</Col>
-            <Col {...headersWidths}>
-              <strong>Settings Ver.:</strong>
-            </Col>
-            <Col {...valuesWidths}>{patchData.SettingsVersion?.[0] || 'N/A'}</Col>
-          </Row>
+      <Plate className={s.row} focused={isFocused}>
+        {onToggleSelection ? (
+          <button
+            type="button"
+            className={s.select}
+            aria-pressed={isSelected}
+            aria-label={`Select ${view.dir}`}
+            title={isSelected ? 'Selected' : 'Select'}
+            onClick={() => onToggleSelection(view.dir)}
+          >
+            <Led color="red" shape="round" size={12} on={isSelected} />
+          </button>
+        ) : (
+          <span />
+        )}
 
-          <Table responsive className="border">
-            <thead>
-              <tr>
-                <th colSpan={7} className="text-center">
-                  Phrases
-                </th>
-              </tr>
-              <tr>
-                <th>Directory</th>
-                <th>ID</th>
-                <th>BPM</th>
-                <th>Loop</th>
-                <th>Reversed</th>
-                <th>Time Signature</th>
-                <th>Audio</th>
-              </tr>
-            </thead>
-            <tbody>
-              {phrases.map(({ dir: phraseDir, data: { JamManPhrase: phrase }, wavPath }) => (
-                <tr key={phraseDir}>
-                  <td>{phraseDir}</td>
-                  <td className="text-truncate">{phrase.ID?.[0] || 'N/A'}</td>
-                  <td>{phrase.BeatsPerMinute?.[0] || 'N/A'}</td>
-                  <td>{phrase.IsLoop?.[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
-                  <td>{phrase.IsReversed?.[0] === '1' ? <CheckmarkIcon /> : <CrossIcon />}</td>
-                  <td>{phrase.BeatsPerMeasure?.[0] || 'N/A'}</td>
-                  <td>
-                    <PhrasePlayer
-                      wavPath={wavPath}
-                      patchDir={dir}
-                      patchName={patchName}
-                      phraseName={phraseDir}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          <Row className="justify-content-end">
-            <Col xs="auto">
-              <ButtonGroup>
-                <Button color="primary" onClick={() => onEdit(dir)}>
-                  Edit
-                </Button>
-                <Button color="danger" onClick={() => onDelete(dir)}>
-                  Delete
-                </Button>
-              </ButtonGroup>
-            </Col>
-          </Row>
-        </AccordionBody>
-      </AccordionItem>
+        <button
+          type="button"
+          className={s.main}
+          data-patch-dir={view.dir}
+          aria-current={isFocused || undefined}
+          onClick={() => onFocus(view.dir)}
+        >
+          <DisplayWindow>
+            <SevenSegment value={view.slot} height={20} />
+          </DisplayWindow>
+          <span className={s.text}>
+            <VisuallyHidden>{view.dir} </VisuallyHidden>
+            <span className={cx(s.name, !view.name && s.untitled)}>{view.name || 'Untitled'}</span>
+            <span className={s.meta}>
+              {view.rhythmLabel}, {view.stopLabel.toLowerCase()}, {phraseCount}
+            </span>
+          </span>
+          <span className={s.bpm}>
+            {first?.bpm ?? '--'} <small>bpm</small>
+          </span>
+          <span className={s.flags}>
+            <span className={s.flag}>
+              <Led color="green" on={loops} size={7} />
+              Loop
+            </span>
+            <span className={s.flag}>
+              <Led color="red" on={reversed} size={7} />
+              Reverse
+            </span>
+          </span>
+        </button>
+
+        <StompButton
+          label={`Play ${view.dir}`}
+          active={isPlaying}
+          disabled={!first}
+          onClick={() =>
+            first &&
+            playPhrase({
+              wavPath: first.wavPath,
+              patchDir: view.dir,
+              patchName: view.name,
+              phraseName: first.dir,
+            })
+          }
+        />
+      </Plate>
     );
   },
 );
 
 PatchListItem.displayName = 'PatchListItem';
+
+interface EmptySlotProps {
+  dir: string;
+  onCreate: (directory: string) => void;
+}
+
+/** A free slot on the card. Clicking it starts a new patch there. */
+export const EmptySlotItem: FC<EmptySlotProps> = memo(({ dir, onCreate }) => (
+  <li className={s.empty}>
+    <button type="button" className={s.emptyMain} onClick={() => onCreate(dir)}>
+      <span />
+      <DisplayWindow className={s.emptyWindow}>
+        <SevenSegment value={slotNumber(dir)} height={18} />
+      </DisplayWindow>
+      <span>
+        <VisuallyHidden>{dir}: </VisuallyHidden>Empty. Click to store a new patch here.
+      </span>
+    </button>
+  </li>
+));
+
+EmptySlotItem.displayName = 'EmptySlotItem';
 
 export default PatchListItem;

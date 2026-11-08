@@ -1,0 +1,123 @@
+.form {
+  display: grid;
+  gap: var(--jm-space-8);
+}
+
+.identity {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: var(--jm-space-6);
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--jm-space-8);
+  align-items: start;
+}
+.rhythm {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-6);
+}
+.knob {
+  flex: none;
+  width: 64px;
+  height: 64px;
+}
+.grow {
+  flex: 1;
+}
+
+.phrases {
+  display: grid;
+  gap: var(--jm-space-5);
+}
+.phrasesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--jm-space-6);
+}
+.heading {
+  margin: 0;
+  font: var(--jm-text-legend);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jm-legend-on-panel);
+}
+.noPhrases {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--jm-space-6);
+  padding: var(--jm-space-6);
+  border-radius: var(--jm-radius-key);
+  box-shadow: inset 0 0 0 1px var(--jm-panel-line);
+}
+.noPhrases p {
+  margin: 0;
+  color: var(--jm-legend-on-panel);
+}
+
+.phraseList {
+  display: grid;
+  gap: var(--jm-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* One phrase per strip, read left to right like a track on the pedal. */
+.phrase {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 84px 84px auto;
+  align-items: end;
+  gap: var(--jm-space-6);
+  padding: var(--jm-space-5) var(--jm-space-6);
+  border-radius: var(--jm-radius-key);
+  background: var(--jm-panel-strip);
+  box-shadow: inset 0 0 0 1px var(--jm-panel-line);
+}
+.phraseName {
+  align-self: center;
+  font: var(--jm-text-name);
+}
+.wav {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-5);
+  min-width: 0;
+  padding-bottom: 6px;
+}
+.file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--jm-text-meta);
+}
+.fileMissing {
+  color: var(--jm-legend-on-panel);
+}
+.number {
+  min-width: 0;
+}
+.flags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-4);
+  padding-bottom: var(--jm-space-2);
+}
+
+@media (max-width: 760px) {
+  .settings {
+    grid-template-columns: 1fr;
+  }
+  .phrase {
+    grid-template-columns: 1fr 1fr;
+  }
+  .phraseName,
+  .wav {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,0 +1,206 @@
+/* Sort mode: same chassis as the main screen, one job: set the new slot order. */
+.view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--jm-chassis-bg);
+  color: var(--jm-legend);
+  font: var(--jm-text-body);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-7);
+  margin: 0 var(--jm-space-6);
+  padding: var(--jm-space-6) var(--jm-space-8) var(--jm-space-5);
+  border-radius: 0 0 var(--jm-radius-panel) var(--jm-radius-panel);
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.brand {
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  font: var(--jm-text-title);
+  letter-spacing: 0.01em;
+}
+.lede {
+  margin: 5px 0 0;
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+}
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--jm-space-4);
+  margin-left: auto;
+  flex: none;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: var(--jm-space-7);
+  min-height: 0;
+  padding: var(--jm-space-7) var(--jm-space-6) var(--jm-space-6);
+}
+.heading {
+  margin: 0;
+  font: var(--jm-text-legend);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jm-legend-on-panel);
+}
+
+/* ---------- Side panel ---------- */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-8);
+  min-height: 0;
+  padding: var(--jm-space-8) var(--jm-space-7) var(--jm-space-7);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--jm-space-5);
+}
+.quick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--jm-space-4);
+  align-self: stretch;
+}
+.quickKey {
+  align-items: stretch;
+}
+.quickKey > span:first-child {
+  justify-items: start;
+}
+.reference {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.refList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: var(--jm-space-4) var(--jm-space-5);
+  list-style: none;
+  border-radius: var(--jm-radius-window);
+  background: var(--jm-seg-window);
+  box-shadow: var(--jm-shadow-window);
+}
+.refList li {
+  display: flex;
+  gap: var(--jm-space-5);
+  padding: var(--jm-space-2) 0;
+  font: var(--jm-text-meta);
+}
+.refSlot {
+  flex: none;
+  color: var(--jm-seg);
+  font: 700 14px/1.4 var(--jm-font-legend);
+  font-variant-numeric: tabular-nums;
+}
+.refName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jm-legend-on-panel);
+}
+
+/* ---------- Working order ---------- */
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-6);
+  min-height: 0;
+}
+.searchBar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--jm-space-7);
+  padding: var(--jm-space-5) var(--jm-space-7);
+}
+.searchBar .heading {
+  align-self: center;
+}
+.search {
+  flex: 1;
+  max-width: 420px;
+}
+.count {
+  margin-left: auto;
+  padding-bottom: 9px;
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+  white-space: nowrap;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-4);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: var(--jm-space-1) var(--jm-space-2) var(--jm-space-6);
+}
+.plate {
+  display: grid;
+  grid-template-columns: 8px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--jm-space-5);
+  padding: var(--jm-space-3) var(--jm-space-6) var(--jm-space-3) var(--jm-space-5);
+  color: var(--jm-legend-on-blue);
+  cursor: grab;
+  touch-action: none;
+}
+.plate:focus-visible {
+  outline: var(--jm-focus-ring);
+  outline-offset: 2px;
+}
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jm-legend);
+  font: var(--jm-text-name);
+}
+.meta {
+  font: var(--jm-text-meta);
+}
+
+@media (max-width: 900px) {
+  .header {
+    flex-wrap: wrap;
+  }
+  .toolbar {
+    margin-left: 0;
+  }
+  .main {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .reference {
+    display: none;
+  }
+}

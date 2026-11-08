@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option 1 · Chassis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&family=Michroma&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Direction 1 — Chassis: the pedal's own anodized enclosure, screen-printed legends and red 7-segment LEDs. */
+      :root {
+        --chassis: #b7bcc1; /* anodized aluminium, the page */
+        --plate: #d3d6d9; /* raised plates (panels, rows) */
+        --plate-hi: #e4e6e8; /* hover / focused plate */
+        --ink: #1d2024; /* screen-print ink */
+        --ink-soft: #545a61; /* secondary legends */
+        --window: #24100e; /* smoked LED window */
+        --led: #ff3b2f; /* red LED segment, lit */
+        --led-off: #3d1916; /* unlit segment ghost */
+        --led-green: #43d36f; /* loop / play status LED */
+        --groove: #9aa0a6; /* machined grooves, hairlines */
+        --font-legend: 'Michroma', sans-serif;
+        --font-body: 'Barlow', sans-serif;
+        --font-data: 'Barlow Semi Condensed', sans-serif;
+        --r-plate: 4px;
+        --r-switch: 3px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--chassis);
+        /* faint brushed-metal grain */
+        background-image: repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.05) 0 1px,
+          transparent 1px 3px
+        );
+        color: var(--ink);
+        font: 400 14px/1.45 var(--font-body);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid var(--led);
+        outline-offset: 2px;
+      }
+
+      /* ---------- Footswitch button ---------- */
+      .fs {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 14px;
+        background: linear-gradient(#e9ebed, #c9cdd1);
+        border: 1px solid #7d838a;
+        border-radius: var(--r-switch);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 2px 0 #868c92;
+        font: 500 13px var(--font-body);
+        cursor: pointer;
+        transition:
+          transform 0.06s,
+          box-shadow 0.06s;
+      }
+      .fs:hover {
+        background: linear-gradient(#f1f2f3, #d3d6d9);
+      }
+      .fs:active,
+      .fs[aria-pressed='true'] {
+        transform: translateY(2px);
+        box-shadow:
+          inset 0 1px 2px rgba(0, 0, 0, 0.25),
+          0 0 0 #868c92;
+      }
+      .fs:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.6),
+          0 2px 0 #9aa0a6;
+      }
+      .fs.primary {
+        background: linear-gradient(#34383d, #1d2024);
+        color: #eef0f2;
+        border-color: #0f1113;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          0 2px 0 #0f1113;
+      }
+      .fs.primary:hover {
+        background: linear-gradient(#3e4349, #24282c);
+      }
+      .fs.danger {
+        color: #a3170f;
+      }
+      .fs .lamp {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--led-off);
+        box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5);
+      }
+      .fs .lamp.on {
+        background: var(--led);
+        box-shadow: 0 0 6px var(--led);
+      }
+      .fs.icon {
+        width: 34px;
+        padding: 0;
+        justify-content: center;
+        font-size: 16px;
+      }
+      .gap {
+        width: 10px;
+      }
+
+      /* ---------- 7-segment ---------- */
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .seg svg {
+        display: block;
+        overflow: visible;
+      }
+      .seg rect {
+        fill: var(--led-off);
+      }
+      .seg rect.on {
+        fill: var(--led);
+        filter: drop-shadow(0 0 2px rgba(255, 59, 47, 0.85));
+      }
+      .dim .seg rect.on {
+        fill: #b52a22;
+        filter: none;
+      }
+
+      /* ---------- Header plate ---------- */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--groove);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+      }
+      .window {
+        background: var(--window);
+        border-radius: 3px;
+        box-shadow:
+          inset 0 2px 6px rgba(0, 0, 0, 0.7),
+          0 1px 0 rgba(255, 255, 255, 0.6);
+        padding: 8px 10px;
+      }
+      .brand {
+        min-width: 0;
+      }
+      .brand .path {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .brand h1 {
+        margin: 0;
+        font: 400 15px/1.2 var(--font-legend);
+        letter-spacing: 0.06em;
+      }
+      .brand p {
+        margin: 3px 0 0;
+        color: var(--ink-soft);
+        font: 500 12px var(--font-data);
+      }
+      .toolbar {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+      }
+
+      /* ---------- Main ---------- */
+      main {
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) 420px;
+        gap: 0;
+        min-height: 0;
+      }
+      .col {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .col + .col {
+        border-left: 1px solid var(--groove);
+        box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.45);
+      }
+      .legend {
+        font: 400 10.5px var(--font-legend);
+        letter-spacing: 0.08em;
+        color: var(--ink-soft);
+      }
+
+      /* Memory map: the SD's 99 slots */
+      .memmap {
+        padding: 16px 20px 14px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        border-bottom: 1px solid var(--groove);
+      }
+      .grid99 {
+        display: grid;
+        grid-template-columns: repeat(20, 12px);
+        gap: 3px;
+      }
+      .cell {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        background: #a6acb2;
+        box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.25);
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+      }
+      .cell.used {
+        background: var(--window);
+      }
+      .cell.used::after {
+        content: '';
+        display: block;
+        width: 4px;
+        height: 4px;
+        margin: 4px;
+        border-radius: 50%;
+        background: #9c2a22;
+      }
+      .cell.focus::after {
+        background: var(--led);
+        box-shadow: 0 0 5px var(--led);
+      }
+      .memmap .stat {
+        font: 600 13px var(--font-data);
+      }
+      .memmap .stat span {
+        display: block;
+        font: 500 12px var(--font-data);
+        color: var(--ink-soft);
+      }
+
+      .listbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 20px;
+      }
+      .linkbtn {
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font: 500 13px var(--font-body);
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--groove);
+        text-underline-offset: 3px;
+      }
+      .list {
+        overflow-y: auto;
+        padding: 0 14px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 22px 54px 1fr 70px 52px 34px;
+        align-items: center;
+        gap: 12px;
+        background: var(--plate);
+        border-radius: var(--r-plate);
+        padding: 8px 10px;
+        border: 1px solid transparent;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.7),
+          0 1px 0 rgba(0, 0, 0, 0.12);
+        cursor: pointer;
+      }
+      .row:hover {
+        background: var(--plate-hi);
+      }
+      .row.focus {
+        border-color: var(--ink);
+        background: var(--plate-hi);
+      }
+      .row.empty {
+        background: transparent;
+        box-shadow: none;
+        border: 1px dashed var(--groove);
+        color: var(--ink-soft);
+        grid-template-columns: 22px 54px 1fr;
+        padding: 4px 10px;
+      }
+      .row.empty .window {
+        opacity: 0.55;
+      }
+      .row .window {
+        padding: 5px 7px;
+        display: flex;
+        justify-content: center;
+      }
+      .name {
+        font: 600 15px var(--font-body);
+        line-height: 1.2;
+      }
+      .meta {
+        font: 500 12px var(--font-data);
+        color: var(--ink-soft);
+      }
+      .bpm {
+        font: 600 15px var(--font-data);
+        text-align: right;
+      }
+      .bpm small {
+        font-weight: 500;
+        color: var(--ink-soft);
+        font-size: 11px;
+      }
+      .leds {
+        display: flex;
+        gap: 5px;
+        justify-content: center;
+      }
+      .led {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #7f868c;
+        box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.4);
+      }
+      .led.on {
+        background: var(--led-green);
+        box-shadow: 0 0 6px var(--led-green);
+      }
+      .led.red.on {
+        background: var(--led);
+        box-shadow: 0 0 6px var(--led);
+      }
+      .check {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border: 1px solid #6c737a;
+        border-radius: 2px;
+        background: #c7cbcf;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+        cursor: pointer;
+        display: grid;
+        place-content: center;
+      }
+      .check:checked {
+        background: var(--window);
+        border-color: var(--window);
+      }
+      .check:checked::after {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--led);
+        box-shadow: 0 0 5px var(--led);
+      }
+      .play {
+        width: 30px;
+        height: 30px;
+      }
+
+      /* ---------- Detail column ---------- */
+      .detail {
+        padding: 18px 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .display {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+      }
+      .display .tempo {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        color: #e6a09a;
+        font: 500 12px var(--font-data);
+      }
+      .display .tempo b {
+        font: 600 22px var(--font-data);
+        color: #ffd6d2;
+      }
+      .blink {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--led);
+        box-shadow: 0 0 8px var(--led);
+        animation: beat var(--beat, 0.625s) steps(1) infinite;
+      }
+      @keyframes beat {
+        50% {
+          background: var(--led-off);
+          box-shadow: none;
+        }
+      }
+      .detail h2 {
+        margin: 0;
+        font: 600 24px/1.15 var(--font-body);
+      }
+      .detail .dir {
+        font: 500 13px var(--font-data);
+        color: var(--ink-soft);
+        margin-top: 2px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .ctl {
+        background: var(--plate);
+        border-radius: var(--r-plate);
+        padding: 12px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.7),
+          0 1px 0 rgba(0, 0, 0, 0.12);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .ctl .val {
+        font: 600 14px var(--font-body);
+      }
+      .knob {
+        width: 56px;
+        height: 56px;
+        flex: none;
+      }
+      .three {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .three div {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font: 500 12px var(--font-data);
+        color: var(--ink-soft);
+      }
+      .three div.on {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .phrases {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .phrase {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px 12px;
+        align-items: center;
+        background: var(--plate);
+        border-radius: var(--r-plate);
+        padding: 10px 12px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.7),
+          0 1px 0 rgba(0, 0, 0, 0.12);
+      }
+      .phrase .wave {
+        grid-column: 1 / -1;
+        height: 38px;
+        padding: 4px 6px;
+      }
+      .phrase .wave svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .phrase .info {
+        display: flex;
+        gap: 14px;
+        font: 500 12.5px var(--font-data);
+        color: var(--ink-soft);
+        align-items: center;
+      }
+      .phrase .info b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .phrase .info .ledlabel {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      /* ---------- Transport ---------- */
+      footer {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 20px;
+        padding: 10px 20px;
+        border-top: 1px solid var(--groove);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+        background: rgba(0, 0, 0, 0.04);
+      }
+      footer .now {
+        font: 600 14px var(--font-body);
+      }
+      footer .now span {
+        display: block;
+        font: 500 12px var(--font-data);
+        color: var(--ink-soft);
+      }
+      .transport {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .transport .window {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 10px;
+      }
+      .colon {
+        color: var(--led);
+        font: 600 18px var(--font-data);
+        line-height: 1;
+        text-shadow: 0 0 4px var(--led);
+      }
+      .level {
+        justify-self: end;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .fader {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 140px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--window);
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+      }
+      .fader::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 14px;
+        height: 24px;
+        border-radius: 2px;
+        background: linear-gradient(#f0f1f2, #b7bcc1);
+        border: 1px solid #6c737a;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      }
+
+      @media (max-width: 900px) {
+        header {
+          flex-wrap: wrap;
+        }
+        .toolbar {
+          flex: 1 1 100%;
+          flex-wrap: wrap;
+          margin-left: 0;
+        }
+        body {
+          overflow: auto;
+          height: auto;
+        }
+        main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .row {
+          grid-template-columns: 22px 46px minmax(0, 1fr) 56px 34px;
+          gap: 8px;
+        }
+        .row .leds {
+          display: none;
+        }
+        .detail .display {
+          flex-wrap: wrap;
+        }
+        .controls {
+          grid-template-columns: 1fr;
+        }
+        .col + .col {
+          border-left: 0;
+          border-top: 1px solid var(--groove);
+        }
+        .grid99 {
+          grid-template-columns: repeat(10, 12px);
+        }
+        .toolbar .fs.text {
+          padding: 0 10px;
+        }
+        footer {
+          grid-template-columns: 1fr;
+        }
+        .level {
+          justify-self: start;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .blink {
+          animation: none;
+        }
+        .fs {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="window" aria-hidden="true"><span class="seg" id="hdr-seg"></span></div>
+      <div class="brand">
+        <h1>JamMan Manager</h1>
+        <p><span class="path">/Volumes/JAMMAN/JamManStereo</span>412.6 MB on card</p>
+      </div>
+      <nav class="toolbar" aria-label="Actions">
+        <button class="fs text"><span class="lamp on"></span>Load SD card</button>
+        <span class="gap"></span>
+        <button class="fs icon" title="Undo (Cmd+Z)" aria-label="Undo">↶</button>
+        <button class="fs icon" title="Redo (Cmd+Shift+Z)" aria-label="Redo" disabled>↷</button>
+        <span class="gap"></span>
+        <button class="fs text">Sort</button>
+        <button class="fs text">Export</button>
+        <button class="fs text">Backup</button>
+        <button class="fs text">Setlists</button>
+        <span class="gap"></span>
+        <button class="fs primary">New patch</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="col" aria-label="Patches">
+        <div class="memmap">
+          <div class="grid99" id="grid99" role="group" aria-label="SD card slots"></div>
+          <div class="stat">
+            <span class="legend">memory</span><b id="used"></b><span>slots in use</span>
+          </div>
+        </div>
+        <div class="listbar">
+          <span class="legend" id="selcount">patches</span>
+          <span style="display: flex; gap: 16px; align-items: center">
+            <label class="meta" style="display: flex; gap: 6px; align-items: center"
+              ><input type="checkbox" class="check" id="showEmpty" /> Show empty slots</label
+            >
+            <button class="linkbtn" id="selall">Select all</button>
+          </span>
+        </div>
+        <div class="list" id="list"></div>
+      </section>
+
+      <aside class="col" aria-label="Patch detail">
+        <div class="detail" id="detail"></div>
+      </aside>
+    </main>
+
+    <footer>
+      <div class="now">Verse groove<span>Patch02 / Phrase01</span></div>
+      <div class="transport">
+        <button class="fs icon" aria-label="Stop">■</button>
+        <button class="fs icon" aria-label="Pause" aria-pressed="true">❚❚</button>
+        <div class="window" aria-label="Elapsed 0:07 of 0:20">
+          <span class="seg" id="t1"></span><span class="colon">:</span
+          ><span class="seg" id="t2"></span>
+        </div>
+      </div>
+      <div class="level">
+        <span class="legend">level</span
+        ><input class="fader" type="range" value="70" aria-label="Volume" />
+      </div>
+    </footer>
+
+    <script>
+      const RHYTHMS = [
+        'Silence',
+        'WoodBlocks',
+        'Sticks',
+        'Click',
+        'AlternativeKickAndHighHat',
+        'StudioKickAndHighHat',
+        'TechnoKickAndHighHat',
+        'Cowbell',
+        'Conga',
+        'Tambourine',
+      ];
+      const RHYTHM_LABEL = {
+        Silence: 'Silence',
+        WoodBlocks: 'Wood blocks',
+        Sticks: 'Sticks',
+        Click: 'Click',
+        AlternativeKickAndHighHat: 'Alt. kick + hat',
+        StudioKickAndHighHat: 'Studio kick + hat',
+        TechnoKickAndHighHat: 'Techno kick + hat',
+        Cowbell: 'Cowbell',
+        Conga: 'Conga',
+        Tambourine: 'Tambourine',
+      };
+      const STOPS = {
+        StopInstantly: 'Instantly',
+        StopAtEndOfLoop: 'At end of loop',
+        FadeOut: 'Fade out',
+      };
+      const P = (slot, name, rhythm, stop, phrases) => ({ slot, name, rhythm, stop, phrases });
+      const ph = (bpm, ts, loop, rev, dur) => ({ bpm, ts, loop, rev, dur });
+      const patches = [
+        P(1, 'Intro drone', 'Silence', 'FadeOut', [ph(72, 4, 1, 0, '0:42')]),
+        P(2, 'Verse groove', 'StudioKickAndHighHat', 'StopAtEndOfLoop', [
+          ph(96, 4, 1, 0, '0:20'),
+          ph(96, 4, 1, 0, '0:10'),
+        ]),
+        P(3, 'Chorus wall', 'Click', 'StopAtEndOfLoop', [ph(96, 4, 1, 0, '0:20')]),
+        P(5, 'Funk 16ths', 'Conga', 'StopInstantly', [ph(104, 4, 1, 0, '0:09')]),
+        P(6, 'Backwards swell', 'Silence', 'FadeOut', [ph(80, 4, 1, 1, '0:24')]),
+        P(7, 'Bridge in 6/8', 'Tambourine', 'StopAtEndOfLoop', [
+          ph(66, 6, 1, 0, '0:16'),
+          ph(66, 6, 0, 0, '0:05'),
+        ]),
+        P(9, '', 'Click', 'StopInstantly', [ph(120, 4, 1, 0, '0:08')]),
+        P(12, 'Outro ambient', 'WoodBlocks', 'FadeOut', [ph(60, 4, 1, 0, '1:04')]),
+        P(14, 'Bass loop Dm', 'Sticks', 'StopAtEndOfLoop', [ph(88, 4, 1, 0, '0:11')]),
+        P(21, 'Jam in A', 'TechnoKickAndHighHat', 'StopAtEndOfLoop', [ph(124, 4, 1, 0, '0:15')]),
+        P(22, 'Cowbell fever', 'Cowbell', 'StopInstantly', [ph(110, 4, 1, 0, '0:13')]),
+        P(40, 'Practice 70', 'Click', 'StopInstantly', [ph(70, 4, 1, 0, '0:27')]),
+      ];
+      const pad = n => String(n).padStart(2, '0');
+
+      const SEGS = {
+        a: [2.5, 0.5, 7, 1.6],
+        b: [9.6, 2.2, 1.6, 7],
+        c: [9.6, 10.8, 1.6, 7],
+        d: [2.5, 17.9, 7, 1.6],
+        e: [0.8, 10.8, 1.6, 7],
+        f: [0.8, 2.2, 1.6, 7],
+        g: [2.5, 9.2, 7, 1.6],
+      };
+      const MAP = {
+        0: 'abcdef',
+        1: 'bc',
+        2: 'abged',
+        3: 'abgcd',
+        4: 'fgbc',
+        5: 'afgcd',
+        6: 'afgedc',
+        7: 'abc',
+        8: 'abcdefg',
+        9: 'abcdfg',
+        '-': 'g',
+        ' ': '',
+      };
+      function seg(str, h = 26) {
+        const w = h * 0.6;
+        return (
+          '<span class="seg">' +
+          [...str]
+            .map(
+              ch =>
+                `<svg width="${w}" height="${h}" viewBox="0 0 12 20"><g transform="skewX(-6) translate(1 0)">${Object.entries(
+                  SEGS,
+                )
+                  .map(
+                    ([k, [x, y, ww, hh]]) =>
+                      `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" rx=".8" class="${MAP[ch].includes(k) ? 'on' : ''}"/>`,
+                  )
+                  .join('')}</g></svg>`,
+            )
+            .join('') +
+          '</span>'
+        );
+      }
+      function rand(seed) {
+        let s = seed * 9301 + 49297;
+        return () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      }
+      function wave(seed, color = '#ff3b2f') {
+        const r = rand(seed);
+        let bars = '';
+        for (let i = 0; i < 90; i++) {
+          const env = Math.sin((Math.PI * i) / 90) * 0.6 + 0.4;
+          const h = Math.max(1, r() * 26 * env);
+          bars += `<rect x="${i * 2.2}" y="${15 - h / 2}" width="1.3" height="${h}" fill="${color}" opacity="${i < 32 ? 1 : 0.4}"/>`;
+        }
+        return `<svg viewBox="0 0 198 30" preserveAspectRatio="none">${bars}</svg>`;
+      }
+      function knob(index, count) {
+        const a0 = -135,
+          a1 = 135,
+          ang = a0 + ((a1 - a0) * index) / (count - 1);
+        let ticks = '';
+        for (let i = 0; i < count; i++) {
+          const t = ((a0 + ((a1 - a0) * i) / (count - 1)) * Math.PI) / 180;
+          ticks += `<line x1="${28 + Math.sin(t) * 23}" y1="${28 - Math.cos(t) * 23}" x2="${28 + Math.sin(t) * 26}" y2="${28 - Math.cos(t) * 26}" stroke="#1d2024" stroke-width="${i === index ? 2 : 1}"/>`;
+        }
+        return `<svg class="knob" viewBox="0 0 56 56" aria-hidden="true">${ticks}
+    <circle cx="28" cy="28" r="18" fill="#2a2e33"/><circle cx="28" cy="28" r="15" fill="#3a3f45" stroke="#1d2024"/>
+    <line x1="28" y1="28" x2="28" y2="15" stroke="#f2f3f4" stroke-width="2.4" stroke-linecap="round" transform="rotate(${ang} 28 28)"/></svg>`;
+      }
+
+      let focus = 2,
+        selected = new Set([5, 6]),
+        showEmpty = false;
+      function render() {
+        document.getElementById('hdr-seg').innerHTML = seg(pad(focus), 34);
+        document.getElementById('used').textContent = `${patches.length} / 99`;
+        const used = new Set(patches.map(p => p.slot));
+        document.getElementById('grid99').innerHTML = Array.from({ length: 99 }, (_, i) => {
+          const s = i + 1,
+            u = used.has(s);
+          return `<button class="cell ${u ? 'used' : ''} ${s === focus ? 'focus' : ''}" data-slot="${s}" aria-label="Slot ${pad(s)}${u ? '' : ' (empty)'}" title="Patch${pad(s)}"></button>`;
+        }).join('');
+        document.getElementById('selcount').textContent = selected.size
+          ? `${selected.size} selected`
+          : `${patches.length} patches`;
+        document.getElementById('selall').textContent = selected.size
+          ? 'Clear selection'
+          : 'Select all';
+
+        const rows = [];
+        const slots = showEmpty
+          ? Array.from({ length: 99 }, (_, i) => i + 1)
+          : patches.map(p => p.slot);
+        for (const s of slots) {
+          const p = patches.find(x => x.slot === s);
+          if (!p) {
+            rows.push(
+              `<div class="row empty dim"><span></span><div class="window">${seg(pad(s), 18)}</div><span class="meta">Empty slot. Click to create a patch here.</span></div>`,
+            );
+            continue;
+          }
+          const f = p.phrases[0];
+          rows.push(`<div class="row ${s === focus ? 'focus' : ''}" data-slot="${s}">
+      <input type="checkbox" class="check" data-sel="${s}" ${selected.has(s) ? 'checked' : ''} aria-label="Select Patch${pad(s)}" />
+      <div class="window">${seg(pad(s), 20)}</div>
+      <div><div class="name">${p.name || `<span style="color:var(--ink-soft)">Untitled</span>`}</div><div class="meta">${RHYTHM_LABEL[p.rhythm]}  /  stops ${STOPS[p.stop].toLowerCase()}  /  ${p.phrases.length} phrase${p.phrases.length > 1 ? 's' : ''}</div></div>
+      <div class="bpm">${f.bpm} <small>bpm</small></div>
+      <div class="leds" title="Loop / Reverse"><span class="led ${f.loop ? 'on' : ''}"></span><span class="led red ${f.rev ? 'on' : ''}"></span></div>
+      <button class="fs icon play" aria-label="Play Patch${pad(s)}">▶</button>
+    </div>`);
+        }
+        document.getElementById('list').innerHTML = rows.join('');
+
+        const p = patches.find(x => x.slot === focus);
+        const f = p.phrases[0];
+        document.getElementById('detail').innerHTML = `
+    <div class="window display">${seg(pad(p.slot), 54)}
+      <div class="tempo"><span>tempo</span><b>${f.bpm}</b><span style="display:flex;gap:6px;align-items:center"><span class="blink" style="--beat:${(60 / f.bpm).toFixed(3)}s"></span>${f.ts}/4</span></div>
+    </div>
+    <div><h2>${p.name || 'Untitled'}</h2><div class="dir">Patch${pad(p.slot)}</div></div>
+    <div class="controls">
+      <div class="ctl">${knob(RHYTHMS.indexOf(p.rhythm), 10)}<div><div class="legend">rhythm</div><div class="val">${RHYTHM_LABEL[p.rhythm]}</div></div></div>
+      <div class="ctl"><div><div class="legend" style="margin-bottom:6px">stop mode</div><div class="three">${Object.entries(
+        STOPS,
+      )
+        .map(
+          ([k, v]) =>
+            `<div class="${k === p.stop ? 'on' : ''}"><span class="led red ${k === p.stop ? 'on' : ''}"></span>${v}</div>`,
+        )
+        .join('')}</div></div></div>
+    </div>
+    <div>
+      <div class="legend" style="margin-bottom:8px">phrases</div>
+      <div class="phrases">${p.phrases
+        .map(
+          (q, i) => `
+        <div class="phrase">
+          <div class="info"><b>Phrase${pad(i + 1)}</b><span>${q.bpm} bpm</span><span>${q.ts}/4</span><span>${q.dur}</span>
+            <span class="ledlabel"><span class="led ${q.loop ? 'on' : ''}"></span>Loop</span><span class="ledlabel"><span class="led red ${q.rev ? 'on' : ''}"></span>Reverse</span></div>
+          <button class="fs icon play" aria-label="Play phrase">▶</button>
+          <div class="window wave">${wave(p.slot * 7 + i)}</div>
+        </div>`,
+        )
+        .join('')}</div>
+    </div>
+    <div class="actions"><button class="fs danger">Delete</button><button class="fs primary">Edit patch</button></div>`;
+      }
+      document.addEventListener('click', e => {
+        const sel = e.target.closest('[data-sel]');
+        if (sel) {
+          const s = +sel.dataset.sel;
+          selected.has(s) ? selected.delete(s) : selected.add(s);
+          render();
+          return;
+        }
+        if (e.target.closest('.play')) return;
+        const row = e.target.closest('[data-slot]');
+        if (row && patches.some(p => p.slot === +row.dataset.slot)) {
+          focus = +row.dataset.slot;
+          render();
+        }
+        if (e.target.id === 'selall') {
+          selected = selected.size ? new Set() : new Set(patches.map(p => p.slot));
+          render();
+        }
+      });
+      document.getElementById('showEmpty').addEventListener('change', e => {
+        showEmpty = e.target.checked;
+        render();
+      });
+      document.getElementById('t1').innerHTML = seg('0', 22);
+      document.getElementById('t2').innerHTML = seg('07', 22);
+      render();
+    </script>
+  </body>
+</html>

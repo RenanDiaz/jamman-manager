@@ -1,15 +1,4 @@
-import { FC, useState, useMemo } from 'react';
-import {
-  Button,
-  ButtonGroup,
-  Col,
-  Container,
-  Input,
-  InputGroup,
-  InputGroupText,
-  ListGroup,
-  Row,
-} from 'reactstrap';
+import { FC, useMemo, useState } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -28,6 +17,22 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Patch } from '../../types';
+import {
+  DisplayWindow,
+  Field,
+  Grip,
+  Input,
+  Led,
+  Legend,
+  Panel,
+  PanelKey,
+  Pill,
+  Plate,
+  SevenSegment,
+  cx,
+} from '../../ui';
+import { slotNumber } from '../../utils/format';
+import s from './SortView.module.css';
 
 interface SortViewProps {
   patches: Patch[];
@@ -38,68 +43,48 @@ interface SortViewProps {
 interface SortablePatchItemProps {
   patch: Patch;
   isModified: boolean;
-  originalIndex: number;
+  /** 1-based position in the working order: the slot the patch gets on apply. */
+  position: number;
 }
 
-const SortablePatchItem: FC<SortablePatchItemProps> = ({ patch, isModified, originalIndex }) => {
+const SortablePatchItem: FC<SortablePatchItemProps> = ({ patch, isModified, position }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: patch.dir,
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: isDragging ? transition : `${transition}, background-color 0.2s ease`,
-    opacity: isDragging ? 0.8 : 1,
-    cursor: isDragging ? 'grabbing' : 'grab',
-    backgroundColor: isDragging ? '#0d6efd' : undefined,
-    border: isDragging ? '2px solid #6ea8fe' : '1px solid #495057',
-    boxShadow: isDragging ? '0 8px 16px rgba(13, 110, 253, 0.4)' : undefined,
-    zIndex: isDragging ? 1000 : 'auto',
-    borderRadius: '0.375rem',
-    marginBottom: '0.5rem',
-  };
-
-  const patchName = patch.data.JamManPatch.PatchName?.[0] || 'Unnamed';
+  const patchName = patch.data.JamManPatch.PatchName?.[0] || '';
+  const targetSlot = String(position).padStart(2, '0');
 
   return (
-    <div
+    <Plate
       ref={setNodeRef}
-      className="list-group-item d-flex align-items-center justify-content-between"
-      style={style}
+      className={s.plate}
+      lifted={isDragging}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
+      aria-label={`${patchName || 'Untitled'}, ${patch.dir}, goes to slot ${targetSlot}`}
     >
-      <div className="d-flex align-items-center gap-2">
-        {/* Enhanced drag handle */}
-        <span
-          className="text-muted"
-          style={{
-            fontSize: '1.2rem',
-            lineHeight: 1,
-            opacity: isDragging ? 1 : 0.6,
-            transition: 'opacity 0.2s ease',
-          }}
-        >
-          ⋮⋮
-        </span>
-        <div>
-          <strong>{patch.dir}</strong>
-          <small className="ms-2 text-muted">{patchName}</small>
-        </div>
-      </div>
-      {isModified && (
-        <span className="badge bg-warning text-dark" style={{ fontSize: '0.7rem' }}>
-          Moved from #{originalIndex + 1}
-        </span>
-      )}
-      {isDragging && (
-        <span className="badge bg-light text-dark" style={{ fontSize: '0.7rem' }}>
-          Dragging...
-        </span>
-      )}
-    </div>
+      <Grip />
+      <DisplayWindow>
+        <SevenSegment value={targetSlot} height={24} />
+      </DisplayWindow>
+      <span className={s.text}>
+        <span className={s.name}>{patchName || 'Untitled'}</span>
+        <span className={s.meta}>{patch.dir}</span>
+      </span>
+      {isModified && <Pill>was {slotNumber(patch.dir)}</Pill>}
+    </Plate>
   );
 };
+
+const QUICK_SORTS: Array<{ value: string; label: string }> = [
+  { value: 'az', label: 'Name A–Z' },
+  { value: 'za', label: 'Name Z–A' },
+  { value: 'number', label: 'Slot number' },
+  { value: 'bpm', label: 'Tempo (first phrase)' },
+  { value: 'reverse', label: 'Reverse' },
+];
 
 export const SortView: FC<SortViewProps> = ({ patches, onApply, onCancel }) => {
   const [workingOrder, setWorkingOrder] = useState<Patch[]>(patches);
@@ -200,180 +185,120 @@ export const SortView: FC<SortViewProps> = ({ patches, onApply, onCancel }) => {
     return workingOrder.some((patch, index) => patches[index].dir !== patch.dir);
   }, [workingOrder, patches]);
 
+  const moving = modifiedPatches.size;
+
   return (
-    <Container fluid style={{ height: '100vh', overflow: 'hidden' }}>
-      <Row className="h-100">
-        {/* Header */}
-        <Col xs={12} className="py-3 border-bottom bg-dark">
-          <div className="d-flex align-items-center justify-content-between">
-            <div>
-              <h3 className="mb-1">Sort Patches</h3>
-              <small className="text-muted">
-                Drag patches to reorder or use quick sort options
-              </small>
+    <div className={s.view}>
+      <Panel as="header" screws="all" className={s.header}>
+        <DisplayWindow>
+          <SevenSegment value={String(Math.min(moving, 99)).padStart(2, '0')} height={34} />
+        </DisplayWindow>
+        <div className={s.status}>
+          <Led color="yellow" on={hasChanges} />
+          <Legend tone={hasChanges ? 'default' : 'muted'}>Moving</Legend>
+        </div>
+        <div className={s.brand}>
+          <h1 className={s.title}>Reorder patches</h1>
+          <p className={s.lede}>
+            Drag patches into the order you want. Applying renumbers them from Patch01.
+          </p>
+        </div>
+        <div className={s.toolbar}>
+          <PanelKey label="Cancel" onClick={onCancel} />
+          <PanelKey
+            label="Apply order"
+            led={hasChanges}
+            onClick={() => onApply(workingOrder)}
+            disabled={!hasChanges}
+          />
+        </div>
+      </Panel>
+
+      <main className={s.main}>
+        <Panel as="aside" screws="top" className={s.side}>
+          <section className={s.group} aria-labelledby="quick-sort-heading">
+            <h2 id="quick-sort-heading" className={s.heading}>
+              Quick sort
+            </h2>
+            <div className={s.quick}>
+              {QUICK_SORTS.map(sort => (
+                <PanelKey
+                  key={sort.value}
+                  label={sort.label}
+                  led={selectedSort === sort.value}
+                  aria-pressed={selectedSort === sort.value}
+                  className={s.quickKey}
+                  onClick={() => handleQuickSort(sort.value)}
+                />
+              ))}
             </div>
-            <div className="d-flex gap-2">
-              <Button color="secondary" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button color="primary" onClick={() => onApply(workingOrder)} disabled={!hasChanges}>
-                Apply Changes
-              </Button>
-            </div>
-          </div>
-        </Col>
+            <PanelKey label="Back to current order" size="sm" onClick={handleReset} />
+          </section>
 
-        {/* Main Content */}
-        <Col xs={12} style={{ height: 'calc(100vh - 100px)', overflow: 'auto' }}>
-          <Row className="h-100 g-3 p-3">
-            {/* Left Panel: Quick Sort Options & Original Order */}
-            <Col md={4} className="d-flex flex-column gap-3">
-              {/* Quick Sort Options */}
-              <div className="bg-dark p-3 rounded">
-                <h5 className="mb-3">Quick Sort</h5>
-                <div className="d-flex flex-column gap-2">
-                  <ButtonGroup vertical>
-                    <Button
-                      color={selectedSort === 'az' ? 'primary' : 'outline-primary'}
-                      onClick={() => handleQuickSort('az')}
-                      className="text-start"
-                    >
-                      A → Z (by name)
-                    </Button>
-                    <Button
-                      color={selectedSort === 'za' ? 'primary' : 'outline-primary'}
-                      onClick={() => handleQuickSort('za')}
-                      className="text-start"
-                    >
-                      Z → A (by name)
-                    </Button>
-                    <Button
-                      color={selectedSort === 'number' ? 'primary' : 'outline-primary'}
-                      onClick={() => handleQuickSort('number')}
-                      className="text-start"
-                    >
-                      By Patch Number
-                    </Button>
-                    <Button
-                      color={selectedSort === 'bpm' ? 'primary' : 'outline-primary'}
-                      onClick={() => handleQuickSort('bpm')}
-                      className="text-start"
-                    >
-                      By BPM (first phrase)
-                    </Button>
-                    <Button
-                      color={selectedSort === 'reverse' ? 'primary' : 'outline-primary'}
-                      onClick={() => handleQuickSort('reverse')}
-                      className="text-start"
-                    >
-                      Reverse Order
-                    </Button>
-                  </ButtonGroup>
-                  <Button color="warning" outline onClick={handleReset} size="sm">
-                    Reset to Original
-                  </Button>
-                </div>
-              </div>
-
-              {/* Original Order Reference */}
-              <div className="bg-dark p-3 rounded flex-grow-1" style={{ overflow: 'auto' }}>
-                <h5 className="mb-3">Original Order (Reference)</h5>
-                <ListGroup>
-                  {patches.map((patch, index) => {
-                    const patchName = patch.data.JamManPatch.PatchName?.[0] || 'Unnamed';
-                    return (
-                      <div key={patch.dir} className="list-group-item">
-                        <div className="d-flex align-items-center justify-content-between">
-                          <div>
-                            <strong>{patch.dir}</strong>
-                            <small className="ms-2 text-muted">{patchName}</small>
-                          </div>
-                          <span className="badge bg-secondary">#{index + 1}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </ListGroup>
-              </div>
-            </Col>
-
-            {/* Right Panel: Working Order */}
-            <Col md={8} className="d-flex flex-column gap-3">
-              {/* Search/Filter */}
-              <div>
-                <InputGroup>
-                  <InputGroupText>🔍</InputGroupText>
-                  <Input
-                    type="text"
-                    placeholder="Search patches by name or number..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                  />
-                  {searchQuery && (
-                    <Button color="secondary" onClick={() => setSearchQuery('')}>
-                      Clear
-                    </Button>
-                  )}
-                </InputGroup>
-                {searchQuery && (
-                  <small className="text-muted">
-                    Showing {filteredPatches.length} of {workingOrder.length} patches
-                  </small>
-                )}
-              </div>
-
-              {/* Status */}
-              <div className="d-flex align-items-center justify-content-between p-2 bg-dark rounded">
-                <div>
-                  {hasChanges ? (
-                    <span className="text-warning">
-                      ⚠️ {modifiedPatches.size} patches will be reordered
-                    </span>
-                  ) : (
-                    <span className="text-muted">No changes made</span>
-                  )}
-                </div>
-                {selectedSort && (
-                  <span className="badge bg-info">
-                    Sort: {selectedSort === 'custom' ? 'Custom' : selectedSort.toUpperCase()}
+          <section className={cx(s.group, s.reference)} aria-labelledby="current-order-heading">
+            <h2 id="current-order-heading" className={s.heading}>
+              Current order
+            </h2>
+            <ol className={s.refList}>
+              {patches.map(patch => (
+                <li key={patch.dir}>
+                  <span className={s.refSlot}>{slotNumber(patch.dir)}</span>
+                  <span className={s.refName}>
+                    {patch.data.JamManPatch.PatchName?.[0] || 'Untitled'}
                   </span>
-                )}
-              </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </Panel>
 
-              {/* Working Order List */}
-              <div className="bg-dark p-3 rounded flex-grow-1" style={{ overflow: 'auto' }}>
-                <h5 className="mb-3">Working Order</h5>
-                <ListGroup>
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={filteredPatches.map(p => p.dir)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {filteredPatches.map(patch => {
-                        const originalIndex = patches.findIndex(p => p.dir === patch.dir);
-                        const isModified = modifiedPatches.has(patch.dir);
+        <section className={s.work} aria-labelledby="new-order-heading">
+          <Panel className={s.searchBar}>
+            <h2 id="new-order-heading" className={s.heading}>
+              New order
+            </h2>
+            <Field label="Search" htmlFor="sort-search" className={s.search}>
+              <Input
+                id="sort-search"
+                type="search"
+                placeholder="Name or patch number"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                autoComplete="off"
+              />
+            </Field>
+            <span className={s.count} role="status">
+              {searchQuery
+                ? `${filteredPatches.length} of ${workingOrder.length} shown`
+                : hasChanges
+                  ? `${moving} ${moving === 1 ? 'patch moves' : 'patches move'}`
+                  : 'No changes yet'}
+            </span>
+          </Panel>
 
-                        return (
-                          <SortablePatchItem
-                            key={patch.dir}
-                            patch={patch}
-                            isModified={isModified}
-                            originalIndex={originalIndex}
-                          />
-                        );
-                      })}
-                    </SortableContext>
-                  </DndContext>
-                </ListGroup>
-              </div>
-            </Col>
-          </Row>
-        </Col>
-      </Row>
-    </Container>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={filteredPatches.map(p => p.dir)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ol className={s.list}>
+                {filteredPatches.map(patch => (
+                  <SortablePatchItem
+                    key={patch.dir}
+                    patch={patch}
+                    isModified={modifiedPatches.has(patch.dir)}
+                    position={workingOrder.indexOf(patch) + 1}
+                  />
+                ))}
+              </ol>
+            </SortableContext>
+          </DndContext>
+        </section>
+      </main>
+    </div>
   );
 };

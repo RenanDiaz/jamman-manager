@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option 1b · Pedal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Direction 1b — Chassis, in the JamMan Stereo's own colours:
+   metallic-flake blue enclosure, black control panel, white condensed legends,
+   white pills for the secondary function, green 7-segment display, red/green/yellow LEDs,
+   raised footswitch plates and chrome stomp switches. */
+      :root {
+        /* enclosure */
+        --blue: #1f3d93; /* metallic blue body */
+        --blue-hi: #3058bd; /* lit edge of a raised plate */
+        --blue-lo: #142a6c; /* plate shadow / recesses */
+        --blue-plate: #23449f; /* footswitch plate face */
+        --blue-plate-hi: #2a4fb0; /* hover / focused plate */
+        /* control panel */
+        --panel: #18191c; /* black panel */
+        --panel-2: #24262b; /* rubber buttons, raised parts on the panel */
+        --panel-line: #33363d;
+        /* print */
+        --legend: #f1f3f6; /* white screen print */
+        --legend-blue: #b4c3ea; /* secondary text on blue */
+        --legend-panel: #8e939c; /* secondary text on black */
+        --pill: #e8ebf0; /* pill behind secondary functions */
+        /* display + LEDs */
+        --seg: #b6f03c; /* green-yellow 7-segment */
+        --seg-off: #1d2713;
+        --seg-window: #0b0d0a;
+        --led-red: #ff3434;
+        --led-green: #8fe43c;
+        --led-yellow: #f3e12b;
+        --led-off: #2b2d31;
+
+        --font-legend: 'Barlow Condensed', sans-serif;
+        --font-body: 'Barlow', sans-serif;
+        --r-panel: 10px;
+        --r-plate: 8px;
+        --r-rubber: 7px;
+        --r-pill: 999px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        /* metallic flake: fine light specks over a vertical sheen */
+        background:
+          radial-gradient(rgba(255, 255, 255, 0.07) 0.6px, transparent 0.8px) 0 0 / 4px 4px,
+          radial-gradient(rgba(10, 20, 60, 0.25) 0.7px, transparent 0.9px) 2px 1px / 5px 5px,
+          linear-gradient(180deg, #2546a3 0%, var(--blue) 45%, #1a3584 100%);
+        color: var(--legend);
+        font: 400 14px/1.45 var(--font-body);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid var(--led-yellow);
+        outline-offset: 2px;
+      }
+
+      /* ---------- Legends and pills ---------- */
+      .legend {
+        font: 700 12px/1 var(--font-legend);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--legend);
+      }
+      .pill {
+        display: inline-block;
+        background: var(--pill);
+        color: var(--panel);
+        border-radius: var(--r-pill);
+        padding: 2px 8px 1px;
+        font: 600 11px/1.2 var(--font-legend);
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+
+      /* ---------- Black control panel (header, detail, transport) ---------- */
+      .panel {
+        background: var(--panel);
+        position: relative;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          0 2px 0 var(--blue-lo),
+          0 6px 14px rgba(5, 12, 40, 0.45);
+      }
+      .screw {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #4a4d54, #0d0e10 70%);
+        box-shadow: 0 0 0 1px #000;
+      }
+      .screw::after {
+        content: '';
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        top: 4.5px;
+        height: 1px;
+        background: #000;
+        transform: rotate(35deg);
+      }
+      .screw.tl {
+        top: 8px;
+        left: 8px;
+      }
+      .screw.tr {
+        top: 8px;
+        right: 8px;
+      }
+      .screw.bl {
+        bottom: 8px;
+        left: 8px;
+      }
+      .screw.br {
+        bottom: 8px;
+        right: 8px;
+      }
+
+      /* Rubber panel button: legend on the key, function pill under it */
+      .key {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+      }
+      .key .cap {
+        min-width: 46px;
+        height: 30px;
+        padding: 0 12px;
+        display: grid;
+        place-items: center;
+        position: relative;
+        background: linear-gradient(#2e3036, #1c1d21);
+        border-radius: var(--r-rubber);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.12),
+          0 2px 0 #050506,
+          0 0 0 1px #050506;
+        font: 700 13px var(--font-legend);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--legend);
+        transition:
+          transform 0.06s,
+          box-shadow 0.06s;
+      }
+      .key:hover .cap {
+        background: linear-gradient(#383b42, #232529);
+      }
+      .key:active .cap,
+      .key[aria-pressed='true'] .cap {
+        transform: translateY(2px);
+        box-shadow:
+          inset 0 1px 3px rgba(0, 0, 0, 0.6),
+          0 0 0 #050506,
+          0 0 0 1px #050506;
+      }
+      .key:disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+      }
+      .key:disabled .cap {
+        transform: none;
+      }
+      .key .cap .dot {
+        position: absolute;
+        top: 5px;
+        left: 6px;
+        width: 6px;
+        height: 4px;
+        border-radius: 1px;
+        background: var(--led-off);
+      }
+      .key .cap .dot.on {
+        background: var(--led-red);
+        box-shadow: 0 0 6px var(--led-red);
+      }
+      .key.wide .cap {
+        padding-left: 18px;
+      }
+
+      /* ---------- 7-segment ---------- */
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .seg svg {
+        display: block;
+        overflow: visible;
+      }
+      .seg rect {
+        fill: var(--seg-off);
+      }
+      .seg rect.on {
+        fill: var(--seg);
+        filter: drop-shadow(0 0 2px rgba(182, 240, 60, 0.7));
+      }
+      .window {
+        background: var(--seg-window);
+        border-radius: 3px;
+        box-shadow:
+          inset 0 2px 5px rgba(0, 0, 0, 0.9),
+          0 0 0 1px #2c2f35;
+        padding: 6px 9px;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      /* ---------- LEDs ---------- */
+      .led {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        background: var(--led-off);
+        box-shadow:
+          inset 0 1px 1px rgba(0, 0, 0, 0.6),
+          0 0 0 1px #000;
+        flex: none;
+      }
+      .led.round {
+        border-radius: 50%;
+      }
+      .led.green.on {
+        background: var(--led-green);
+        box-shadow: 0 0 7px var(--led-green);
+      }
+      .led.red.on {
+        background: var(--led-red);
+        box-shadow: 0 0 7px var(--led-red);
+      }
+      .led.yellow.on {
+        background: var(--led-yellow);
+        box-shadow: 0 0 8px var(--led-yellow);
+      }
+
+      /* ---------- Header ---------- */
+      header.panel {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        padding: 16px 28px 14px;
+        border-radius: 0 0 var(--r-panel) var(--r-panel);
+        margin: 0 14px;
+      }
+      .brand {
+        min-width: 0;
+      }
+      .brand h1 {
+        margin: 0;
+        font: 700 22px/1 var(--font-legend);
+        letter-spacing: 0.01em;
+      }
+      .brand h1 span {
+        font-weight: 500;
+        color: var(--legend-panel);
+      }
+      .brand p {
+        margin: 5px 0 0;
+        font: 500 12px var(--font-body);
+        color: var(--legend-panel);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .status {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .status div {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .toolbar {
+        margin-left: auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        flex: none;
+      }
+      .toolbar .div {
+        width: 1px;
+        align-self: stretch;
+        background: var(--panel-line);
+        margin: 0 4px;
+      }
+
+      /* ---------- Main ---------- */
+      main {
+        display: grid;
+        grid-template-columns: minmax(340px, 1fr) 430px;
+        gap: 18px;
+        min-height: 0;
+        padding: 18px 14px 14px;
+      }
+      .col {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Memory map, a small black inset like the display bezel */
+      .memmap {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        padding: 12px 16px;
+        border-radius: var(--r-panel);
+        margin: 0 4px 12px;
+      }
+      .grid99 {
+        display: grid;
+        grid-template-columns: repeat(20, 11px);
+        gap: 3px;
+      }
+      .cell {
+        width: 11px;
+        height: 11px;
+        border-radius: 2px;
+        border: 0;
+        padding: 0;
+        background: #202227;
+        box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.7);
+        cursor: pointer;
+      }
+      .cell.used {
+        background: #2a3a1a;
+      }
+      .cell.used::after {
+        content: '';
+        display: block;
+        width: 5px;
+        height: 5px;
+        margin: 3px;
+        border-radius: 1px;
+        background: #6c9a2a;
+      }
+      .cell.focus::after {
+        background: var(--seg);
+        box-shadow: 0 0 5px var(--seg);
+      }
+      .memmap .stat {
+        font: 600 15px var(--font-legend);
+      }
+      .memmap .stat span {
+        display: block;
+        font: 500 12px var(--font-body);
+        color: var(--legend-panel);
+      }
+
+      .listbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 6px 10px;
+      }
+      .linkbtn {
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        font: 600 13px var(--font-body);
+        color: var(--legend);
+        text-decoration: underline;
+        text-decoration-color: var(--legend-blue);
+        text-underline-offset: 3px;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font: 500 13px var(--font-body);
+        color: var(--legend-blue);
+        cursor: pointer;
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+      .list {
+        overflow-y: auto;
+        padding: 2px 4px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* Footswitch plate = one patch */
+      .row {
+        display: grid;
+        grid-template-columns: 20px 58px minmax(0, 1fr) 74px 74px 40px;
+        align-items: center;
+        gap: 14px;
+        padding: 9px 14px 9px 12px;
+        border-radius: var(--r-plate);
+        cursor: pointer;
+        background: linear-gradient(180deg, var(--blue-plate-hi) 0%, var(--blue-plate) 60%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+          0 0 0 1px var(--blue-lo),
+          0 3px 0 var(--blue-lo);
+        border: 2px solid transparent;
+      }
+      .row:hover {
+        background: linear-gradient(180deg, #3157bb 0%, var(--blue-plate-hi) 60%);
+      }
+      .row.focus {
+        border-color: var(--legend);
+      }
+      .row.empty {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(180, 195, 234, 0.25);
+        border-style: dashed;
+        border-color: transparent;
+        grid-template-columns: 20px 58px 1fr;
+        padding: 5px 14px 5px 12px;
+        color: var(--legend-blue);
+      }
+      .row.empty .window {
+        opacity: 0.5;
+      }
+      .row .window {
+        justify-content: center;
+        padding: 5px 7px;
+      }
+      .selbtn {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+      }
+      .selbtn .led {
+        width: 12px;
+        height: 12px;
+      }
+      .name {
+        font: 700 19px/1.1 var(--font-legend);
+        letter-spacing: 0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .name.blank {
+        color: var(--legend-blue);
+        font-weight: 600;
+      }
+      .meta {
+        font: 500 12.5px var(--font-body);
+        color: var(--legend-blue);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bpm {
+        font: 700 20px var(--font-legend);
+        text-align: right;
+      }
+      .bpm small {
+        font: 500 11px var(--font-body);
+        color: var(--legend-blue);
+      }
+      .flags {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .flags span {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font: 600 11px var(--font-legend);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--legend-blue);
+      }
+      .flags .led {
+        width: 7px;
+        height: 7px;
+      }
+
+      /* Chrome stomp switch = play */
+      .stomp {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        position: relative;
+        background: radial-gradient(circle at 40% 35%, #fbfbf8 0%, #cfccc3 45%, #8d8a83 100%);
+        box-shadow:
+          0 0 0 3px #10204f,
+          0 0 0 4px var(--blue-hi),
+          0 3px 4px rgba(0, 0, 0, 0.45),
+          inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+        display: grid;
+        place-items: center;
+        color: #3a3833;
+        font-size: 11px;
+        padding-left: 2px;
+      }
+      .stomp:hover {
+        background: radial-gradient(circle at 40% 35%, #fff 0%, #dcd9d1 45%, #99968e 100%);
+      }
+      .stomp:active {
+        transform: scale(0.94);
+      }
+
+      /* ---------- Detail: a second control panel ---------- */
+      .detail {
+        border-radius: var(--r-panel);
+        padding: 24px 24px 22px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .display {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .display .window {
+        padding: 10px 14px;
+      }
+      .tempo {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .tempo b {
+        font: 700 30px/1 var(--font-legend);
+      }
+      .tempo .row-led {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .blink {
+        animation: beat var(--beat, 0.625s) steps(1) infinite;
+      }
+      @keyframes beat {
+        50% {
+          background: var(--led-off);
+          box-shadow:
+            inset 0 1px 1px rgba(0, 0, 0, 0.6),
+            0 0 0 1px #000;
+        }
+      }
+      .detail h2 {
+        margin: 0;
+        font: 700 30px/1.05 var(--font-legend);
+        letter-spacing: 0.005em;
+      }
+      .detail .dir {
+        font: 500 13px var(--font-body);
+        color: var(--legend-panel);
+        margin-top: 3px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 22px;
+        align-items: start;
+        padding: 16px 0;
+        border-top: 1px solid var(--panel-line);
+        border-bottom: 1px solid var(--panel-line);
+      }
+      .knobctl {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        text-align: center;
+      }
+      .knobctl .val {
+        font: 500 12.5px var(--font-body);
+        color: var(--legend-panel);
+      }
+      .knob {
+        width: 78px;
+        height: 78px;
+      }
+      .stopsel {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .stopsel div {
+        display: grid;
+        grid-template-columns: 10px 1fr;
+        align-items: center;
+        gap: 9px;
+      }
+      .stopsel .pill {
+        justify-self: start;
+        opacity: 0.35;
+      }
+      .stopsel .on .pill {
+        opacity: 1;
+      }
+
+      .phrases {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .phrase {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px 12px;
+        align-items: center;
+      }
+      .phrase + .phrase {
+        padding-top: 10px;
+        border-top: 1px solid var(--panel-line);
+      }
+      .phrase .wave {
+        grid-column: 1 / -1;
+        height: 40px;
+        padding: 4px 8px;
+        display: block;
+      }
+      .phrase .wave svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .phrase .info {
+        display: flex;
+        gap: 14px;
+        font: 500 12.5px var(--font-body);
+        color: var(--legend-panel);
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .phrase .info b {
+        color: var(--legend);
+        font: 700 15px var(--font-legend);
+        letter-spacing: 0.02em;
+      }
+      .phrase .info .ll {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .panel .stomp {
+        box-shadow:
+          0 0 0 3px #000,
+          0 0 0 4px #3a3d44,
+          0 3px 4px rgba(0, 0, 0, 0.6),
+          inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: auto;
+      }
+
+      /* ---------- Transport ---------- */
+      footer.panel {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 20px;
+        padding: 12px 28px;
+        margin: 0 14px;
+        border-radius: var(--r-panel) var(--r-panel) 0 0;
+      }
+      footer .now {
+        font: 700 17px/1.1 var(--font-legend);
+      }
+      footer .now span {
+        display: block;
+        font: 500 12px var(--font-body);
+        color: var(--legend-panel);
+      }
+      .transport {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .colon {
+        color: var(--seg);
+        font: 700 18px var(--font-legend);
+        line-height: 1;
+        text-shadow: 0 0 4px var(--seg);
+        padding: 0 1px;
+      }
+      .level {
+        justify-self: end;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .fader {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 150px;
+        height: 6px;
+        border-radius: 3px;
+        background: #050506;
+        box-shadow:
+          inset 0 1px 2px rgba(0, 0, 0, 0.8),
+          0 0 0 1px #2c2f35;
+      }
+      .fader::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 40% 35%, #3a3d43, #0f1012);
+        border: 1px solid #000;
+        box-shadow: 0 0 0 2px #2a2c31;
+      }
+
+      @media (max-width: 960px) {
+        body {
+          overflow: auto;
+          height: auto;
+        }
+        header.panel {
+          flex-wrap: wrap;
+        }
+        .toolbar {
+          flex: 1 1 100%;
+          flex-wrap: wrap;
+          margin-left: 0;
+        }
+        main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .grid99 {
+          grid-template-columns: repeat(10, 11px);
+        }
+        .row {
+          grid-template-columns: 20px 50px minmax(0, 1fr) 56px 36px;
+          gap: 10px;
+        }
+        .row .flags {
+          display: none;
+        }
+        .controls {
+          grid-template-columns: 1fr;
+        }
+        footer.panel {
+          grid-template-columns: 1fr;
+        }
+        .level {
+          justify-self: start;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .blink {
+          animation: none;
+        }
+        .key .cap {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="panel">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span
+      ><span class="screw br"></span>
+      <div class="window" aria-hidden="true" id="hdr-seg"></div>
+      <div class="status" aria-label="Card status">
+        <div><span class="led green on"></span><span class="legend">Card</span></div>
+        <div>
+          <span class="led"></span
+          ><span class="legend" style="color: var(--legend-panel)">Unsaved</span>
+        </div>
+      </div>
+      <div class="brand">
+        <h1>JamMan <span>Manager</span></h1>
+        <p>/Volumes/JAMMAN/JamManStereo, 412.6 MB on card</p>
+      </div>
+      <nav class="toolbar" aria-label="Actions">
+        <button class="key"><span class="cap">Load</span><span class="pill">⌘O</span></button>
+        <span class="div"></span>
+        <button class="key" aria-label="Undo">
+          <span class="cap">Undo</span><span class="pill">⌘Z</span>
+        </button>
+        <button class="key" aria-label="Redo" disabled>
+          <span class="cap">Redo</span><span class="pill">⇧⌘Z</span>
+        </button>
+        <span class="div"></span>
+        <button class="key"><span class="cap">Sort</span><span class="pill">Reorder</span></button>
+        <button class="key">
+          <span class="cap">Export</span><span class="pill">TXT / PDF</span>
+        </button>
+        <button class="key">
+          <span class="cap">Backup</span><span class="pill">Restore</span>
+        </button>
+        <button class="key">
+          <span class="cap">Setlists</span><span class="pill">Move to top</span>
+        </button>
+        <span class="div"></span>
+        <button class="key wide">
+          <span class="cap"><span class="dot on"></span>New patch</span
+          ><span class="pill">Store</span>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="col" aria-label="Patches">
+        <div class="panel memmap">
+          <div class="grid99" id="grid99" role="group" aria-label="SD card slots"></div>
+          <div class="stat">
+            <span class="legend" style="color: var(--legend-panel)">Card mem</span><b id="used"></b
+            ><span>slots in use</span>
+          </div>
+        </div>
+        <div class="listbar">
+          <span class="legend" id="selcount"></span>
+          <span style="display: flex; gap: 18px; align-items: center">
+            <button class="toggle" id="showEmpty" aria-pressed="false">
+              <span class="led"></span>Show empty slots
+            </button>
+            <button class="linkbtn" id="selall"></button>
+          </span>
+        </div>
+        <div class="list" id="list"></div>
+      </section>
+
+      <aside class="col" aria-label="Patch detail">
+        <div class="panel detail" id="detail"></div>
+      </aside>
+    </main>
+
+    <footer class="panel">
+      <div class="now">Verse groove<span>Patch02, Phrase01</span></div>
+      <div class="transport">
+        <button class="key" aria-label="Stop"><span class="cap">■</span></button>
+        <button class="key" aria-label="Pause" aria-pressed="true">
+          <span class="cap">❚❚</span>
+        </button>
+        <div class="window" aria-label="Elapsed 0:07">
+          <span id="t1"></span><span class="colon">:</span><span id="t2"></span>
+        </div>
+      </div>
+      <div class="level">
+        <span class="legend">Loop level</span
+        ><input class="fader" type="range" value="70" aria-label="Volume" />
+      </div>
+    </footer>
+
+    <script>
+      const RHYTHMS = [
+        'Silence',
+        'WoodBlocks',
+        'Sticks',
+        'Click',
+        'AlternativeKickAndHighHat',
+        'StudioKickAndHighHat',
+        'TechnoKickAndHighHat',
+        'Cowbell',
+        'Conga',
+        'Tambourine',
+      ];
+      const RHYTHM_LABEL = {
+        Silence: 'Silence',
+        WoodBlocks: 'Wood blocks',
+        Sticks: 'Sticks',
+        Click: 'Click',
+        AlternativeKickAndHighHat: 'Alt. kick + hat',
+        StudioKickAndHighHat: 'Studio kick + hat',
+        TechnoKickAndHighHat: 'Techno kick + hat',
+        Cowbell: 'Cowbell',
+        Conga: 'Conga',
+        Tambourine: 'Tambourine',
+      };
+      // Same words the pedal prints next to its stop-mode LEDs
+      const STOPS = {
+        StopInstantly: ['Stop', 'Stops instantly'],
+        StopAtEndOfLoop: ['Finish', 'Finishes the loop'],
+        FadeOut: ['Fade', 'Fades out'],
+      };
+      const P = (slot, name, rhythm, stop, phrases) => ({ slot, name, rhythm, stop, phrases });
+      const ph = (bpm, ts, loop, rev, dur) => ({ bpm, ts, loop, rev, dur });
+      const patches = [
+        P(1, 'Intro drone', 'Silence', 'FadeOut', [ph(72, 4, 1, 0, '0:42')]),
+        P(2, 'Verse groove', 'StudioKickAndHighHat', 'StopAtEndOfLoop', [
+          ph(96, 4, 1, 0, '0:20'),
+          ph(96, 4, 1, 0, '0:10'),
+        ]),
+        P(3, 'Chorus wall', 'Click', 'StopAtEndOfLoop', [ph(96, 4, 1, 0, '0:20')]),
+        P(5, 'Funk 16ths', 'Conga', 'StopInstantly', [ph(104, 4, 1, 0, '0:09')]),
+        P(6, 'Backwards swell', 'Silence', 'FadeOut', [ph(80, 4, 1, 1, '0:24')]),
+        P(7, 'Bridge in 6/8', 'Tambourine', 'StopAtEndOfLoop', [
+          ph(66, 6, 1, 0, '0:16'),
+          ph(66, 6, 0, 0, '0:05'),
+        ]),
+        P(9, '', 'Click', 'StopInstantly', [ph(120, 4, 1, 0, '0:08')]),
+        P(12, 'Outro ambient', 'WoodBlocks', 'FadeOut', [ph(60, 4, 1, 0, '1:04')]),
+        P(14, 'Bass loop Dm', 'Sticks', 'StopAtEndOfLoop', [ph(88, 4, 1, 0, '0:11')]),
+        P(21, 'Jam in A', 'TechnoKickAndHighHat', 'StopAtEndOfLoop', [ph(124, 4, 1, 0, '0:15')]),
+        P(22, 'Cowbell fever', 'Cowbell', 'StopInstantly', [ph(110, 4, 1, 0, '0:13')]),
+        P(40, 'Practice 70', 'Click', 'StopInstantly', [ph(70, 4, 1, 0, '0:27')]),
+      ];
+      const pad = n => String(n).padStart(2, '0');
+
+      const SEGS = {
+        a: [2.5, 0.5, 7, 1.6],
+        b: [9.6, 2.2, 1.6, 7],
+        c: [9.6, 10.8, 1.6, 7],
+        d: [2.5, 17.9, 7, 1.6],
+        e: [0.8, 10.8, 1.6, 7],
+        f: [0.8, 2.2, 1.6, 7],
+        g: [2.5, 9.2, 7, 1.6],
+      };
+      const MAP = {
+        0: 'abcdef',
+        1: 'bc',
+        2: 'abged',
+        3: 'abgcd',
+        4: 'fgbc',
+        5: 'afgcd',
+        6: 'afgedc',
+        7: 'abc',
+        8: 'abcdefg',
+        9: 'abcdfg',
+        '-': 'g',
+        ' ': '',
+      };
+      function seg(str, h = 26) {
+        const w = h * 0.6;
+        return (
+          '<span class="seg">' +
+          [...str]
+            .map(
+              ch =>
+                `<svg width="${w}" height="${h}" viewBox="0 0 12 20"><g transform="skewX(-6) translate(1 0)">${Object.entries(
+                  SEGS,
+                )
+                  .map(
+                    ([k, [x, y, ww, hh]]) =>
+                      `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" rx=".8" class="${MAP[ch].includes(k) ? 'on' : ''}"/>`,
+                  )
+                  .join('')}</g></svg>`,
+            )
+            .join('') +
+          '</span>'
+        );
+      }
+      function rand(seed) {
+        let s = seed * 9301 + 49297;
+        return () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      }
+      function wave(seed) {
+        const r = rand(seed);
+        let bars = '';
+        for (let i = 0; i < 90; i++) {
+          const env = Math.sin((Math.PI * i) / 90) * 0.6 + 0.4;
+          const h = Math.max(1, r() * 26 * env);
+          bars += `<rect x="${i * 2.2}" y="${15 - h / 2}" width="1.3" height="${h}" fill="#b6f03c" opacity="${i < 32 ? 1 : 0.35}"/>`;
+        }
+        return `<svg viewBox="0 0 198 30" preserveAspectRatio="none">${bars}</svg>`;
+      }
+      // Black knob with white pointer and printed tick scale, like the pedal's level knobs
+      function knob(index, count) {
+        const a0 = -135,
+          a1 = 135,
+          ang = a0 + ((a1 - a0) * index) / (count - 1);
+        let ticks = '';
+        for (let i = 0; i < count; i++) {
+          const t = ((a0 + ((a1 - a0) * i) / (count - 1)) * Math.PI) / 180;
+          ticks += `<line x1="${39 + Math.sin(t) * 30}" y1="${39 - Math.cos(t) * 30}" x2="${39 + Math.sin(t) * 36}" y2="${39 - Math.cos(t) * 36}" stroke="#f1f3f6" stroke-width="${i === index ? 2.6 : 1.4}" opacity="${i === index ? 1 : 0.7}"/>`;
+        }
+        return `<svg class="knob" viewBox="0 0 78 78" aria-hidden="true">${ticks}
+    <circle cx="39" cy="40" r="24" fill="#000"/>
+    <circle cx="39" cy="39" r="23" fill="url(#kg)"/>
+    <defs><radialGradient id="kg" cx=".4" cy=".35"><stop offset="0" stop-color="#3a3d43"/><stop offset="1" stop-color="#0c0d0f"/></radialGradient></defs>
+    <line x1="39" y1="39" x2="39" y2="19" stroke="#f1f3f6" stroke-width="3" stroke-linecap="round" transform="rotate(${ang} 39 39)"/></svg>`;
+      }
+
+      let focus = 2,
+        selected = new Set([5, 6]),
+        showEmpty = false;
+      function render() {
+        document.getElementById('hdr-seg').innerHTML = seg(pad(focus), 34);
+        document.getElementById('used').textContent = `${patches.length} / 99`;
+        const used = new Set(patches.map(p => p.slot));
+        document.getElementById('grid99').innerHTML = Array.from({ length: 99 }, (_, i) => {
+          const s = i + 1,
+            u = used.has(s);
+          return `<button class="cell ${u ? 'used' : ''} ${s === focus ? 'focus' : ''}" data-slot="${s}" aria-label="Slot ${pad(s)}${u ? '' : ' (empty)'}" title="Patch${pad(s)}"></button>`;
+        }).join('');
+        document.getElementById('selcount').textContent = selected.size
+          ? `${selected.size} selected`
+          : `${patches.length} patches`;
+        document.getElementById('selall').textContent = selected.size
+          ? 'Clear selection'
+          : 'Select all';
+        const se = document.getElementById('showEmpty');
+        se.setAttribute('aria-pressed', showEmpty);
+        se.querySelector('.led').className = `led green ${showEmpty ? 'on' : ''}`;
+
+        const rows = [];
+        const slots = showEmpty
+          ? Array.from({ length: 99 }, (_, i) => i + 1)
+          : patches.map(p => p.slot);
+        for (const s of slots) {
+          const p = patches.find(x => x.slot === s);
+          if (!p) {
+            rows.push(
+              `<div class="row empty"><span></span><div class="window">${seg(pad(s), 18)}</div><span class="meta">Empty. Click to store a new patch here.</span></div>`,
+            );
+            continue;
+          }
+          const f = p.phrases[0];
+          rows.push(`<div class="row ${s === focus ? 'focus' : ''}" data-slot="${s}">
+      <button class="selbtn" data-sel="${s}" aria-pressed="${selected.has(s)}" aria-label="Select Patch${pad(s)}"><span class="led round red ${selected.has(s) ? 'on' : ''}"></span></button>
+      <div class="window">${seg(pad(s), 20)}</div>
+      <div style="min-width:0"><div class="name ${p.name ? '' : 'blank'}">${p.name || 'Untitled'}</div><div class="meta">${RHYTHM_LABEL[p.rhythm]}, ${STOPS[p.stop][1].toLowerCase()}, ${p.phrases.length} phrase${p.phrases.length > 1 ? 's' : ''}</div></div>
+      <div class="bpm">${f.bpm} <small>bpm</small></div>
+      <div class="flags"><span><i class="led green ${f.loop ? 'on' : ''}"></i>Loop</span><span><i class="led red ${f.rev ? 'on' : ''}"></i>Reverse</span></div>
+      <button class="stomp" aria-label="Play Patch${pad(s)}">▶</button>
+    </div>`);
+        }
+        document.getElementById('list').innerHTML = rows.join('');
+
+        const p = patches.find(x => x.slot === focus),
+          f = p.phrases[0];
+        document.getElementById('detail').innerHTML = `
+    <span class="screw tl"></span><span class="screw tr"></span>
+    <div class="display">
+      <div class="window">${seg(pad(p.slot), 56)}</div>
+      <div class="tempo"><span class="legend" style="color:var(--legend-panel)">Tempo</span><b>${f.bpm}</b>
+        <span class="row-led"><span class="led round yellow on blink" style="--beat:${(60 / f.bpm).toFixed(3)}s"></span><span class="pill">${f.ts}/4</span></span></div>
+    </div>
+    <div><h2>${p.name || 'Untitled'}</h2><div class="dir">Patch${pad(p.slot)}</div></div>
+    <div class="controls">
+      <div class="knobctl">${knob(RHYTHMS.indexOf(p.rhythm), 10)}<span class="legend">Rhythm</span><span class="pill">${RHYTHM_LABEL[p.rhythm]}</span></div>
+      <div><div class="legend" style="margin-bottom:10px">Stop mode</div>
+        <div class="stopsel">${Object.entries(STOPS)
+          .map(
+            ([k, [short, long]]) =>
+              `<div class="${k === p.stop ? 'on' : ''}"><span class="led red ${k === p.stop ? 'on' : ''}"></span><span class="pill" title="${long}">${short}</span></div>`,
+          )
+          .join('')}</div>
+        <p class="meta" style="color:var(--legend-panel);margin:10px 0 0;white-space:normal">${STOPS[p.stop][1]} when you press stop.</p></div>
+    </div>
+    <div>
+      <div class="legend" style="margin-bottom:10px">Phrases</div>
+      <div class="phrases">${p.phrases
+        .map(
+          (q, i) => `
+        <div class="phrase">
+          <div class="info"><b>Phrase${pad(i + 1)}</b><span>${q.bpm} bpm</span><span>${q.ts}/4</span><span>${q.dur}</span>
+            <span class="ll"><span class="led green ${q.loop ? 'on' : ''}"></span>Loop</span><span class="ll"><span class="led red ${q.rev ? 'on' : ''}"></span>Reverse</span></div>
+          <button class="stomp" aria-label="Play phrase">▶</button>
+          <div class="window wave">${wave(p.slot * 7 + i)}</div>
+        </div>`,
+        )
+        .join('')}</div>
+    </div>
+    <div class="actions">
+      <button class="key"><span class="cap">Delete</span><span class="pill">Shift + Store</span></button>
+      <button class="key wide"><span class="cap"><span class="dot on"></span>Edit patch</span><span class="pill">Store</span></button>
+    </div>`;
+      }
+      document.addEventListener('click', e => {
+        const sel = e.target.closest('[data-sel]');
+        if (sel) {
+          const s = +sel.dataset.sel;
+          selected.has(s) ? selected.delete(s) : selected.add(s);
+          render();
+          return;
+        }
+        if (e.target.closest('.stomp, .key')) return;
+        if (e.target.closest('#showEmpty')) {
+          showEmpty = !showEmpty;
+          render();
+          return;
+        }
+        if (e.target.id === 'selall') {
+          selected = selected.size ? new Set() : new Set(patches.map(p => p.slot));
+          render();
+          return;
+        }
+        const row = e.target.closest('[data-slot]');
+        if (row && patches.some(p => p.slot === +row.dataset.slot)) {
+          focus = +row.dataset.slot;
+          render();
+        }
+      });
+      document.getElementById('t1').innerHTML = seg('0', 22);
+      document.getElementById('t2').innerHTML = seg('07', 22);
+      render();
+    </script>
+  </body>
+</html>

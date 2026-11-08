@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option 2 · Track Sheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=Kalam:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Direction 2 — Track sheet: the printed session sheet that lives in a studio's tape box,
+   names written in marker on masking tape, decisions circled in red grease pencil. */
+      :root {
+        --paper: #edf0e6; /* ledger stock, faintly green */
+        --paper-2: #e3e8da; /* alternate band / hover */
+        --rule: #b3c7d6; /* ruled lines, printed blue */
+        --form: #4f7898; /* printed form ink */
+        --marker: #1f2b47; /* navy marker */
+        --tape: #e8daa8; /* masking tape */
+        --grease: #c21f3a; /* red grease pencil */
+        --graphite: #55595f; /* pencil notes */
+        --counter: #232528; /* tape counter drums */
+        --font-form: 'Archivo Narrow', sans-serif;
+        --font-hand: 'Kalam', cursive;
+        --row: 44px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--paper);
+        color: var(--marker);
+        font: 400 15px/1.4 var(--font-form);
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        height: 100vh;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid var(--grease);
+        outline-offset: 2px;
+      }
+
+      /* ---------- Printed form header ---------- */
+      .sheet-head {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0;
+        border-bottom: 2px solid var(--form);
+      }
+      .title {
+        padding: 14px 20px;
+        border-right: 1px solid var(--form);
+        color: var(--form);
+      }
+      .title h1 {
+        margin: 0;
+        font: 700 24px/1 var(--font-form);
+        letter-spacing: 0.01em;
+      }
+      .title p {
+        margin: 4px 0 0;
+        font-size: 13px;
+      }
+      .fields {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+      }
+      .field:last-child {
+        border-right: 0;
+      }
+      .field {
+        border-right: 1px solid var(--rule);
+        padding: 8px 14px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .field label {
+        color: var(--form);
+        font-size: 12px;
+      }
+      .field .hand {
+        font: 700 18px var(--font-hand);
+        color: var(--marker);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .toolbar {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 20px;
+        border-top: 1px solid var(--form);
+      }
+      .toolbar .btn.tape {
+        margin-left: auto;
+      }
+
+      /* ---------- Buttons: printed boxes; primary is a strip of tape ---------- */
+      .btn {
+        height: 34px;
+        padding: 0 12px;
+        background: transparent;
+        cursor: pointer;
+        border: 1.5px solid var(--form);
+        color: var(--form);
+        border-radius: 1px;
+        font: 600 14px var(--font-form);
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: rgba(79, 120, 152, 0.1);
+      }
+      .btn:active {
+        background: rgba(79, 120, 152, 0.2);
+      }
+      .btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        background: transparent;
+      }
+      .btn.sq {
+        width: 34px;
+        padding: 0;
+        font-size: 17px;
+      }
+      .btn.tape {
+        border: 0;
+        background: var(--tape);
+        color: var(--marker);
+        font: 700 17px var(--font-hand);
+        padding: 0 18px;
+        transform: rotate(-1.5deg);
+        clip-path: polygon(2% 0, 98% 4%, 100% 50%, 97% 100%, 1% 96%, 0 45%);
+      }
+      .btn.tape:hover {
+        background: #efe3b8;
+      }
+      .btn.tape:active {
+        transform: rotate(0);
+      }
+      .btn.danger {
+        border-color: var(--grease);
+        color: var(--grease);
+      }
+      .sep {
+        width: 1px;
+        height: 22px;
+        background: var(--rule);
+        margin: 0 6px;
+      }
+
+      /* ---------- Selection strip ---------- */
+      .strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 20px;
+        border-bottom: 1px solid var(--rule);
+        color: var(--form);
+        font-size: 14px;
+      }
+      .strip .count {
+        font: 700 18px var(--font-hand);
+        color: var(--grease);
+      }
+      .link {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--form);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      /* ---------- The sheet ---------- */
+      .sheet {
+        overflow: auto;
+        min-height: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--paper);
+        text-align: left;
+        font: 600 13px var(--font-form);
+        color: var(--form);
+        padding: 8px 10px;
+        border-bottom: 2px solid var(--form);
+        border-right: 1px solid var(--rule);
+      }
+      td {
+        height: var(--row);
+        padding: 0 10px;
+        border-bottom: 1px solid var(--rule);
+        border-right: 1px solid var(--rule);
+        white-space: nowrap;
+      }
+      th:last-child,
+      td:last-child {
+        border-right: 0;
+      }
+      tbody tr.patch {
+        cursor: pointer;
+      }
+      tbody tr.patch:hover td {
+        background: var(--paper-2);
+      }
+      .num {
+        font: 600 16px var(--font-form);
+        font-variant-numeric: tabular-nums;
+        color: var(--form);
+        position: relative;
+        width: 58px;
+        text-align: center;
+      }
+      .num svg {
+        position: absolute;
+        inset: 4px 2px;
+        width: calc(100% - 4px);
+        height: calc(100% - 8px);
+        pointer-events: none;
+      }
+      .namecell {
+        width: 34%;
+      }
+      .label {
+        display: inline-block;
+        background: var(--tape);
+        padding: 3px 12px 2px;
+        font: 700 18px/1.15 var(--font-hand);
+        color: var(--marker);
+        clip-path: polygon(1% 4%, 99% 0, 100% 52%, 98% 100%, 0 97%, 1.5% 50%);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .label.blank {
+        background: transparent;
+        color: var(--graphite);
+        font: italic 400 14px var(--font-form);
+        clip-path: none;
+        padding-left: 0;
+      }
+      .data {
+        font-variant-numeric: tabular-nums;
+      }
+      .tick {
+        width: 52px;
+        text-align: center;
+      }
+      .tick svg {
+        width: 22px;
+        height: 18px;
+        vertical-align: middle;
+      }
+      .play {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 1.5px solid var(--form);
+        background: transparent;
+        color: var(--form);
+        cursor: pointer;
+        font-size: 11px;
+        display: inline-grid;
+        place-content: center;
+        padding-left: 2px;
+      }
+      .play:hover {
+        background: var(--form);
+        color: var(--paper);
+      }
+      tr.patch.open td {
+        border-bottom-color: transparent;
+        background: var(--paper-2);
+      }
+
+      /* Expanded notes */
+      tr.notes td {
+        padding: 4px 20px 18px 78px;
+        background: var(--paper-2);
+        height: auto;
+        white-space: normal;
+        border-bottom: 2px solid var(--form);
+      }
+      .notes-grid {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        align-items: start;
+      }
+      .phr {
+        display: grid;
+        grid-template-columns: 96px 1fr 210px 34px;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 0;
+        border-bottom: 1px dashed var(--rule);
+      }
+      .phr:last-child {
+        border-bottom: 0;
+      }
+      .phr .pname {
+        font: 700 16px var(--font-hand);
+      }
+      .phr .pinfo {
+        color: var(--graphite);
+        font-size: 14px;
+        font-variant-numeric: tabular-nums;
+      }
+      .phr svg.wave {
+        width: 100%;
+        height: 34px;
+        display: block;
+      }
+      .side {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-end;
+      }
+      .pencil {
+        font: italic 400 14px var(--font-form);
+        color: var(--graphite);
+      }
+
+      /* ---------- Tape counter transport ---------- */
+      footer {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 20px;
+        padding: 10px 20px;
+        border-top: 2px solid var(--form);
+      }
+      .now .label {
+        font-size: 16px;
+      }
+      .now small {
+        display: block;
+        color: var(--graphite);
+        margin-top: 2px;
+      }
+      .transport {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .counter {
+        display: inline-flex;
+        gap: 2px;
+        background: #c9cbc4;
+        padding: 3px;
+        border-radius: 2px;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+      }
+      .drum {
+        width: 20px;
+        height: 30px;
+        background: linear-gradient(#0d0e10, var(--counter) 30%, var(--counter) 70%, #0d0e10);
+        color: #f2f2ee;
+        font: 600 19px/30px var(--font-form);
+        text-align: center;
+        overflow: hidden;
+        border-radius: 1px;
+      }
+      .drum span {
+        display: block;
+        transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+      }
+      .vol {
+        justify-self: end;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--form);
+        font-size: 13px;
+      }
+      input[type='range'] {
+        accent-color: var(--form);
+        width: 140px;
+      }
+      .check {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--grease);
+        cursor: pointer;
+        margin: 0;
+      }
+
+      @media (max-width: 900px) {
+        body {
+          height: auto;
+          overflow: auto;
+        }
+        .sheet-head {
+          grid-template-columns: 1fr;
+        }
+        .fields {
+          grid-template-columns: 1fr 1fr;
+        }
+        .toolbar {
+          flex-wrap: wrap;
+        }
+        .hide-sm {
+          display: none;
+        }
+        tr.notes td {
+          padding-left: 16px;
+        }
+        .phr {
+          grid-template-columns: 1fr 34px;
+        }
+        .phr svg.wave,
+        .phr .pinfo {
+          grid-column: 1 / -1;
+        }
+        footer {
+          grid-template-columns: 1fr;
+        }
+        .vol {
+          justify-self: start;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .drum span {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet-head">
+      <div class="title">
+        <h1>JamMan Manager</h1>
+        <p>Loop sheet, JamMan Stereo</p>
+      </div>
+      <div class="fields">
+        <div class="field">
+          <label>Card</label><span class="hand">/Volumes/JAMMAN/JamManStereo</span>
+        </div>
+        <div class="field"><label>Patches</label><span class="hand" id="pcount"></span></div>
+        <div class="field"><label>Size on card</label><span class="hand">412.6 MB</span></div>
+      </div>
+      <nav class="toolbar" aria-label="Actions">
+        <button class="btn">Load SD card</button>
+        <span class="sep"></span>
+        <button class="btn sq" aria-label="Undo" title="Undo (Cmd+Z)">↶</button>
+        <button class="btn sq" aria-label="Redo" title="Redo (Cmd+Shift+Z)" disabled>↷</button>
+        <span class="sep"></span>
+        <button class="btn">Sort</button>
+        <button class="btn">Export</button>
+        <button class="btn">Backup</button>
+        <button class="btn">Setlists</button>
+        <button class="btn tape">New patch</button>
+      </nav>
+    </div>
+
+    <div class="strip">
+      <span id="selinfo"></span>
+      <span style="display: flex; gap: 16px; align-items: center"
+        ><button class="btn danger" id="del" style="height: 28px">Delete selected</button
+        ><button class="link" id="selall"></button
+      ></span>
+    </div>
+
+    <div class="sheet">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 40px"><span class="hide-sm" style="visibility: hidden">Sel</span></th>
+            <th>Slot</th>
+            <th>Name</th>
+            <th class="hide-sm">Rhythm</th>
+            <th class="hide-sm">Stops</th>
+            <th>Tempo</th>
+            <th class="hide-sm">Time</th>
+            <th class="hide-sm">Phrases</th>
+            <th class="tick">Loop</th>
+            <th class="tick">Rev</th>
+            <th style="width: 52px"></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <footer>
+      <div class="now"><span class="label">Verse groove</span><small>Patch02, Phrase01</small></div>
+      <div class="transport">
+        <button class="btn sq" aria-label="Stop">■</button>
+        <button class="btn sq" aria-label="Play">▶</button>
+        <div class="counter" aria-label="Elapsed time" id="counter"></div>
+      </div>
+      <label class="vol">Level <input type="range" value="70" /></label>
+    </footer>
+
+    <script>
+      const RHYTHM_LABEL = {
+        Silence: 'Silence',
+        WoodBlocks: 'Wood blocks',
+        Sticks: 'Sticks',
+        Click: 'Click',
+        AlternativeKickAndHighHat: 'Alt. kick + hat',
+        StudioKickAndHighHat: 'Studio kick + hat',
+        TechnoKickAndHighHat: 'Techno kick + hat',
+        Cowbell: 'Cowbell',
+        Conga: 'Conga',
+        Tambourine: 'Tambourine',
+      };
+      const STOPS = {
+        StopInstantly: 'Instantly',
+        StopAtEndOfLoop: 'End of loop',
+        FadeOut: 'Fade out',
+      };
+      const P = (slot, name, rhythm, stop, phrases) => ({ slot, name, rhythm, stop, phrases });
+      const ph = (bpm, ts, loop, rev, dur) => ({ bpm, ts, loop, rev, dur });
+      const patches = [
+        P(1, 'Intro drone', 'Silence', 'FadeOut', [ph(72, 4, 1, 0, '0:42')]),
+        P(2, 'Verse groove', 'StudioKickAndHighHat', 'StopAtEndOfLoop', [
+          ph(96, 4, 1, 0, '0:20'),
+          ph(96, 4, 1, 0, '0:10'),
+        ]),
+        P(3, 'Chorus wall', 'Click', 'StopAtEndOfLoop', [ph(96, 4, 1, 0, '0:20')]),
+        P(5, 'Funk 16ths', 'Conga', 'StopInstantly', [ph(104, 4, 1, 0, '0:09')]),
+        P(6, 'Backwards swell', 'Silence', 'FadeOut', [ph(80, 4, 1, 1, '0:24')]),
+        P(7, 'Bridge in 6/8', 'Tambourine', 'StopAtEndOfLoop', [
+          ph(66, 6, 1, 0, '0:16'),
+          ph(66, 6, 0, 0, '0:05'),
+        ]),
+        P(9, '', 'Click', 'StopInstantly', [ph(120, 4, 1, 0, '0:08')]),
+        P(12, 'Outro ambient', 'WoodBlocks', 'FadeOut', [ph(60, 4, 1, 0, '1:04')]),
+        P(14, 'Bass loop Dm', 'Sticks', 'StopAtEndOfLoop', [ph(88, 4, 1, 0, '0:11')]),
+        P(21, 'Jam in A', 'TechnoKickAndHighHat', 'StopAtEndOfLoop', [ph(124, 4, 1, 0, '0:15')]),
+        P(22, 'Cowbell fever', 'Cowbell', 'StopInstantly', [ph(110, 4, 1, 0, '0:13')]),
+        P(40, 'Practice 70', 'Click', 'StopInstantly', [ph(70, 4, 1, 0, '0:27')]),
+      ];
+      const pad = n => String(n).padStart(2, '0');
+      function rand(seed) {
+        let s = seed * 9301 + 49297;
+        return () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      }
+
+      // Hand-drawn marks: grease-pencil circle and check, pencil waveform
+      function circle(seed) {
+        const r = rand(seed),
+          j = () => (r() - 0.5) * 4;
+        return `<svg viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><path d="M8 ${20 + j()} C 8 ${4 + j()}, 52 ${2 + j()}, 53 ${19 + j()} S 14 ${40 + j()}, 6 ${22 + j()} S 30 3, 47 ${7 + j()}" fill="none" stroke="#c21f3a" stroke-width="2" stroke-linecap="round"/></svg>`;
+      }
+      const tickMark = `<svg viewBox="0 0 22 18" aria-label="yes"><path d="M3 10 L8 15 L19 3" fill="none" stroke="#c21f3a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      const dash = `<svg viewBox="0 0 22 18" aria-label="no"><path d="M6 9 L16 9.5" stroke="#9aa6ae" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+      function wave(seed) {
+        const r = rand(seed);
+        let d = 'M0 17';
+        for (let i = 1; i <= 120; i++) {
+          const env = Math.sin((Math.PI * i) / 120) * 0.7 + 0.3;
+          d += ` L${i * 2} ${17 + (i % 2 ? -1 : 1) * r() * 15 * env}`;
+        }
+        return `<svg class="wave" viewBox="0 0 240 34" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="#55595f" stroke-width=".8"/></svg>`;
+      }
+
+      let open = 2,
+        selected = new Set([5, 6]);
+      function render() {
+        document.getElementById('pcount').textContent = `${patches.length} of 99`;
+        document.getElementById('selinfo').innerHTML = selected.size
+          ? `<span class="count">${selected.size} circled</span>`
+          : `${patches.length} patches on this card`;
+        document.getElementById('del').style.visibility = selected.size ? 'visible' : 'hidden';
+        document.getElementById('selall').textContent = selected.size
+          ? 'Clear selection'
+          : 'Select all';
+        document.getElementById('rows').innerHTML = patches
+          .map(p => {
+            const f = p.phrases[0],
+              s = p.slot,
+              isOpen = s === open;
+            let html = `<tr class="patch ${isOpen ? 'open' : ''}" data-slot="${s}" aria-expanded="${isOpen}">
+      <td><input type="checkbox" class="check" data-sel="${s}" ${selected.has(s) ? 'checked' : ''} aria-label="Select Patch${pad(s)}"/></td>
+      <td class="num">${pad(s)}${selected.has(s) ? circle(s) : ''}</td>
+      <td class="namecell"><span class="label ${p.name ? '' : 'blank'}">${p.name || 'no name yet'}</span></td>
+      <td class="hide-sm">${RHYTHM_LABEL[p.rhythm]}</td>
+      <td class="hide-sm">${STOPS[p.stop]}</td>
+      <td class="data">${f.bpm} bpm</td>
+      <td class="hide-sm data">${f.ts}/4</td>
+      <td class="hide-sm data">${p.phrases.length}</td>
+      <td class="tick">${f.loop ? tickMark : dash}</td>
+      <td class="tick">${f.rev ? tickMark : dash}</td>
+      <td><button class="play" aria-label="Play Patch${pad(s)}">▶</button></td>
+    </tr>`;
+            if (isOpen)
+              html += `<tr class="notes"><td colspan="11"><div class="notes-grid">
+      <div>${p.phrases
+        .map(
+          (q, i) => `<div class="phr">
+        <span class="pname">Phrase${pad(i + 1)}</span>${wave(s * 5 + i)}
+        <span class="pinfo">${q.bpm} bpm, ${q.ts}/4, ${q.dur}${q.loop ? ', loops' : ''}${q.rev ? ', reversed' : ''}</span>
+        <button class="play" aria-label="Play phrase">▶</button></div>`,
+        )
+        .join('')}
+        <p class="pencil">Patch${pad(s)}, settings v1. Rhythm ${RHYTHM_LABEL[p.rhythm].toLowerCase()}, stops ${STOPS[p.stop].toLowerCase()}.</p>
+      </div>
+      <div class="side"><button class="btn">Edit patch</button><button class="btn danger">Delete</button></div>
+    </div></td></tr>`;
+            return html;
+          })
+          .join('');
+      }
+      document.addEventListener('click', e => {
+        const sel = e.target.closest('[data-sel]');
+        if (sel) {
+          const s = +sel.dataset.sel;
+          selected.has(s) ? selected.delete(s) : selected.add(s);
+          render();
+          return;
+        }
+        if (e.target.closest('.play, .btn')) return;
+        const row = e.target.closest('tr.patch');
+        if (row) {
+          const s = +row.dataset.slot;
+          open = open === s ? null : s;
+          render();
+        }
+        if (e.target.id === 'selall') {
+          selected = selected.size ? new Set() : new Set(patches.map(p => p.slot));
+          render();
+        }
+      });
+
+      // Tape counter rolls forward once a second while "playing"
+      const counter = document.getElementById('counter');
+      counter.innerHTML = Array.from(
+        { length: 4 },
+        () => `<div class="drum"><span>0</span></div>`,
+      ).join('');
+      let t = 7;
+      function tick() {
+        const str = `${String(Math.floor(t / 60)).padStart(2, '0')}${String(t % 60).padStart(2, '0')}`;
+        counter.querySelectorAll('.drum span').forEach((el, i) => {
+          if (el.textContent !== str[i]) {
+            el.style.transform = 'translateY(-30px)';
+            setTimeout(() => {
+              el.style.transition = 'none';
+              el.textContent = str[i];
+              el.style.transform = 'translateY(30px)';
+              requestAnimationFrame(() => {
+                el.style.transition = '';
+                el.style.transform = '';
+              });
+            }, 180);
+          }
+        });
+        t = t >= 20 ? 0 : t + 1;
+      }
+      tick();
+      setInterval(tick, 1000);
+      render();
+    </script>
+  </body>
+</html>
