@@ -1,216 +1,197 @@
 # JamMan Manager
 
-JamMan Manager is a desktop app that allows musicians to manage loops on their Digitech JamMan Stereo looper pedal using an SD card. Built with Electron, React, and TypeScript, it provides a clean and powerful interface to view, create, edit, reorder, and delete JamMan patches and their phrase data.
+A desktop app for managing the loops on a Digitech JamMan Stereo looper pedal. Put the pedal's SD card in your computer, open its folder, and you can play, create, edit, reorder, back up and delete patches without touching the pedal.
 
-![Screenshot Placeholder](screenshot.png)
+Built with Electron, React and TypeScript. Runs on macOS, Windows and Linux.
 
-## ✨ Features
+![JamMan Manager showing three patches on a card, with Patch02 open in the detail panel and its first phrase playing](docs/images/main-screen.png)
 
-- 🔍 View all patches and phrases from the SD card
-- 📝 Edit patch metadata: name, rhythm type, stop mode
-- 🎵 Edit phrase metadata: BPM, time signature, loop type, reverse, etc.
-- 🎧 Audio playback with real-time preview of phrases
-- 📁 Import WAV files into phrases with validation
-- ➕ Create new patches and phrases
-- ✏️ Rename and reorder patches with drag-and-drop
-- ☑️ Multi-select functionality for batch operations
-- 🗑 Delete patches safely with automatic backups
-- 🔒 File locking to prevent concurrent operation conflicts
-- ⚡ Priority-based operation queue for optimal performance
-- 💽 Compatible with JamMan Stereo's SD card structure
+> There is no published release yet. To use the app, [build it from source](#build-installers).
 
-## 🚀 Installation
+## What it does
+
+- **See the whole card.** A memory map of the 99 slots, the patch list with tempo, loop and reverse at a glance, and a detail panel for the selected patch.
+- **Play phrases** from the card or from any patch row, with a player for seek and volume.
+- **Create and edit patches.** Name, rhythm (the pedal's 10 rhythms, from Off to Tambourine), stop mode (Stop, Finish or Fade) and phrases. Each phrase has a WAV file, BPM, beats per bar, loop and reverse.
+- **Delete** one patch or a selection.
+- **Undo and redo** deletes, edits, reorders and restores with ⌘Z and ⇧⌘Z (Ctrl+Z and Ctrl+Shift+Z on Windows and Linux).
+- **Reorder** patches by dragging them, or sort by name, slot, tempo or in reverse. Applying the order renumbers the folders from Patch01.
+- **Playlists**: group patches into setlists, reorder them, export a setlist as text, and move a setlist to the first slots of the card.
+- **Back up and restore** the whole card or only the selected patches as a ZIP file. Restore can merge with the patches on the card or replace them.
+- **Export** the patch list as TXT or PDF.
+- **Reopen** the last card you used when the app starts.
+
+## Using it with the pedal
+
+The JamMan Stereo stores each patch as a folder with an XML file and one folder per phrase:
+
+```
+JamManStereo/
+├── Patch01/
+│   ├── patch.xml
+│   ├── PhraseA/
+│   │   ├── phrase.xml
+│   │   └── phrase.wav
+│   └── PhraseB/
+│       └── ...
+├── Patch02/
+└── ...
+```
+
+1. Put the SD card in your computer.
+2. Click **Load patches** and pick the folder that contains `Patch01`, `Patch02`, and so on.
+3. When you're done, eject the card before putting it back in the pedal.
+
+The app only reads and writes inside the folder you pick, plus any WAV or backup file you choose in a file dialog.
+
+### WAV files
+
+When you add a phrase, the app copies your WAV file to the card as it is. It does not convert it. Use 16-bit, 44.1 kHz WAV files (mono or stereo). Before playback the app checks that format and warns you if a file doesn't match.
+
+## Development
 
 ### Requirements
 
-- Node.js >= 24 (see `.nvmrc`; with nvm run `nvm use`)
+- Node.js 24 or later. The version is in `.nvmrc`; with nvm, run `nvm use`.
+- npm, which comes with Node.js. The repository uses npm workspaces.
 
-### Running Locally
+### Run the app
 
 ```bash
 npm install
 npm start
 ```
 
-### Building a Distributable
+`npm start` runs the renderer on the Vite dev server with hot reload and rebuilds the main and preload processes when they change.
+
+### Build installers
 
 ```bash
 npm run compile
 ```
 
-This will create platform-specific installers (DMG for macOS, NSIS for Windows, AppImage for Linux).
+This builds the app and packages it for the current platform into `dist/`:
 
-### Development Workflow
+| Platform | Output                               | Architectures |
+| -------- | ------------------------------------ | ------------- |
+| macOS    | DMG and ZIP                          | x64, arm64    |
+| Windows  | NSIS installer and a portable `.exe` | x64           |
+| Linux    | AppImage, `.deb` and `.rpm`          | x64           |
 
-```bash
-npm run verify   # typecheck + lint + unit tests (also runs in the pre-push hook)
-npm run format   # format the whole repository with Prettier
-```
+`npm run dist:mac`, `dist:win`, `dist:linux` and `dist:all` target a specific platform. [BUILD.md](BUILD.md) covers signing, notarization and releases.
 
-Husky runs `lint-staged` before each commit and `npm run verify` before each push.
-Continuous integration (`.github/workflows/ci.yml`) runs the same checks plus a
-formatting check and a production dependency audit; they must pass before merging
-into `main`. See [CHANGELOG.md](CHANGELOG.md) for release notes and [BUILD.md](BUILD.md)
-for packaging and release details.
+### Checks
 
-## 🏗️ Architecture
+| Command                                   | What it does                                             |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `npm run verify`                          | Typecheck, lint and unit tests                           |
+| `npm test`                                | Unit tests (Vitest)                                      |
+| `npm run test:e2e`                        | End-to-end tests (Playwright) against the app in `dist/` |
+| `npm run format` / `npm run format:check` | Format the repository with Prettier, or only check it    |
 
-JamMan Manager uses Electron's multi-process architecture with three main components:
+The end-to-end tests launch the packaged app, so run `npm run compile` first. They use a small synthetic SD card in [`tests/fixtures`](tests/fixtures/README.md) and never touch a real card.
 
-### Main Process (`packages/main`)
+Husky runs `lint-staged` (Prettier) before each commit and `npm run verify` before each push. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on macOS, Windows and Linux. It also runs the typecheck, lint, a format check and a production dependency audit, and runs the end-to-end tests on Linux. All of it must pass before merging into `main`.
 
-The Node.js process that manages the application lifecycle, native OS integration, and secure file system operations. Key modules:
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and [CHANGELOG.md](CHANGELOG.md) for release notes.
 
-- **WindowManager** - Creates and manages the browser window with custom icon
-- **IpcHandlers** - Exposes secure IPC endpoints for file operations
-- **FileSystem** - Direct access to SD card with safety checks and rollback support
+## Architecture
 
-### Renderer Process (`packages/renderer`)
-
-The Chromium-based UI process running React 19. Communicates with the main process only through the preload bridge. Key components:
-
-- **MainView** - Primary patch list with multi-select and drag-and-drop
-- **PatchEditor** - Edit patch metadata and phrases
-- **PlaylistsModal** - Virtual playlist management with reordering
-- **BackupRestoreModal** - Backup/restore system with ZIP format
-
-### Preload Script (`packages/preload`)
-
-The security bridge that exposes a safe, limited API from main to renderer via `contextBridge`. All file operations go through this layer to prevent arbitrary code execution in the renderer.
+The app follows Electron's three-process model. The renderer has no Node.js access: everything it does on disk goes through a typed IPC contract.
 
 ```
-┌─────────────────┐
-│  Renderer (UI)  │
-│   React + TS    │
-└────────┬────────┘
-         │ IPC via contextBridge
-┌────────▼────────┐
-│  Preload Bridge │
-│  (Security)     │
-└────────┬────────┘
-         │ Exposed APIs
-┌────────▼────────┐
-│  Main Process   │
-│  Node.js + FS   │
-└─────────────────┘
+┌──────────────────────┐
+│  Renderer            │  React 19, Zustand, CSS Modules
+└──────────┬───────────┘
+           │  window.electronAPI (contextBridge)
+┌──────────▼───────────┐
+│  Preload             │  Typed IPC contract
+└──────────┬───────────┘
+           │  ipcRenderer.invoke / ipcMain.handle
+┌──────────▼───────────┐
+│  Main                │  File system, dialogs, backups, audio
+└──────────────────────┘
 ```
 
-### State Management
+### Main process (`packages/main`)
 
-- **Zustand** store provides centralized state for patches, playlists, and operations
-- **Operation Queue** serializes file operations with priority levels (high/normal/low)
-- **File Locking** prevents concurrent modifications using lock files
-- **Automatic Rollback** on operation failures using backup mechanism
+- **`ipc/`**: one handler file per area (patches, audio, backup, playlists, export, undo, dialogs), registered in `ipc/register.ts`.
+- **`OperationQueue`**: runs file operations one at a time, with high, normal and low priorities.
+- **`LockManager`**: an in-memory lock per patch folder, so two operations never write the same patch at once.
+- **Recovering from failures**: a deleted patch is kept aside for 5 seconds before it's removed, a reorder that fails part-way renames the folders back, and edits, deletes and restores take a snapshot that Undo can bring back.
+- **`BackupManager`** and **`PlaylistManager`**: ZIP backups and the playlists stored in `.jamman-playlists.json` on the card.
+- **`modules/`**: window management, single instance, auto-updates and other app-level behaviour.
 
-## 📁 Project Structure
+### Preload (`packages/preload`)
+
+[`ipc-contract.ts`](packages/preload/src/ipc-contract.ts) defines every channel, its arguments and its result. Both sides are typed from it, so the API listed there is the source of truth. The preload exposes it as `window.electronAPI`, grouped like this:
+
+- **Dialogs**: pick the card folder, a WAV file or a backup file.
+- **Patches**: read, create, update, delete (one or a batch), reorder, export as TXT or PDF.
+- **Audio**: get a playable URL for a phrase, check a WAV file's format, read a WAV file.
+- **Backups**: create, validate and restore.
+- **Undo**: create, restore and discard snapshots.
+- **Playlists**: load, create, update, delete, add and remove patches, reorder, export.
+
+### Renderer (`packages/renderer`)
+
+- **`components/`**: the screens (header, memory map, patch list and detail, player, dialogs, sort view).
+- **`ui/`**: the reusable components of the "Pedal" design system: panels, keys, LEDs, the seven-segment display, form controls, dialogs. The tokens and rules are in [design/DESIGN.md](design/DESIGN.md).
+- **`store/`**: Zustand stores for the patches, the audio player and the undo history.
+
+### Security
+
+- The renderer runs sandboxed, with context isolation and a strict Content Security Policy.
+- The main process only accepts IPC calls from the app's own window.
+- File access is limited to the folder you picked and to the files you chose in a dialog.
+- Audio plays through a custom `jamman://` protocol instead of `file://` URLs. See [ADR 0001](docs/adr/0001-jamman-protocol.md).
+- Patch and phrase XML is parsed with external entities and DTDs disabled.
+
+## Project structure
 
 ```
 jamman-manager/
 ├── packages/
-│   ├── main/           # Electron main process
-│   │   ├── src/
-│   │   │   ├── modules/        # Core modules (WindowManager, etc.)
-│   │   │   ├── ipc-handlers/   # IPC API implementations
-│   │   │   └── index.ts        # Entry point
-│   │   └── vite.config.js
-│   ├── preload/        # Preload security bridge
-│   │   ├── src/
-│   │   │   └── index.ts        # contextBridge API exposure
-│   │   └── vite.config.js
-│   └── renderer/       # React UI application
-│       ├── src/
-│       │   ├── components/     # React components
-│       │   ├── store/          # Zustand state management
-│       │   ├── types/          # TypeScript definitions
-│       │   └── main.tsx        # React entry point
-│       ├── public/             # Static assets (icon, etc.)
-│       ├── index.html          # HTML shell
-│       └── vite.config.js
-├── buildResources/     # Icons and build assets
-├── tests/              # E2E tests (Playwright)
-├── electron-builder.mjs  # Multi-platform build config
-└── package.json        # Root dependencies and scripts
+│   ├── main/               # Electron main process
+│   │   └── src/
+│   │       ├── ipc/        # IPC handlers by area
+│   │       ├── modules/    # Window, updates, single instance…
+│   │       ├── security/   # CSP, folder access, jamman:// protocol
+│   │       └── index.ts
+│   ├── preload/            # contextBridge and the IPC contract
+│   ├── renderer/           # React UI
+│   │   └── src/
+│   │       ├── components/ # Screens
+│   │       ├── ui/         # Design system components
+│   │       ├── store/      # Zustand stores
+│   │       └── styles/     # Design tokens
+│   ├── electron-versions/  # Shared Electron/Chrome/Node targets
+│   └── dev-mode.js         # `npm start`
+├── tests/                  # E2E tests (Playwright) and the synthetic SD card
+├── design/                 # DESIGN.md, mockups and icon options
+├── docs/                   # ADRs, specs and policies
+├── buildResources/         # App icon and macOS entitlements
+└── electron-builder.mjs    # Packaging config
 ```
 
-## 🛠 Technologies Used
+## Tech stack
 
-### Core
+- **App:** Electron, React 19, TypeScript, Vite
+- **UI:** CSS Modules with design tokens, Barlow and Barlow Condensed (bundled with @fontsource), dnd-kit for drag and drop, React Toastify
+- **State:** Zustand
+- **Files:** fs-extra, xml2js, adm-zip (backups), pdfkit (PDF export), music-metadata (WAV checks)
+- **App services:** electron-log, electron-updater
+- **Tooling:** Vitest, Playwright, ESLint, Prettier, Husky, lint-staged
 
-- **Electron** - Desktop application framework
-- **React 19** - UI library
-- **TypeScript** - Type-safe JavaScript
-- **Vite** - Build tool and dev server
+Dependencies follow [docs/dependency-policy.md](docs/dependency-policy.md).
 
-### UI & Styling
+## Why?
 
-- **Bootstrap 5** + **Reactstrap** - Component library
-- **Styled Components** - CSS-in-JS styling
-- **React Toastify** - Toast notifications
-- **@dnd-kit** - Drag and drop functionality
+Digitech discontinued official support for managing loops on the JamMan Stereo. This app helps you keep control of your loop library with a modern interface: no MIDI, no syncing, just drag, drop and play.
 
-### State & Data Management
+## License
 
-- **Zustand** - State management
-- **fs-extra** - Enhanced file system operations
-- **xml2js** - XML parsing for patch files
-- **music-metadata** - Audio file metadata parsing
-
-### Development & Testing
-
-- **Vitest** - Unit testing framework
-- **Playwright** - E2E testing
-- **ESLint** + **Prettier** - Code quality and formatting
-- **electron-log** - Application logging
-
-## 🔌 IPC API
-
-The preload script exposes a safe API for renderer-to-main communication:
-
-### File Operations
-
-- `selectFolder()` - Open native folder picker dialog
-- `readFolder(path)` - Read JamMan patches from folder
-- `savePatch(patchPath, data)` - Update patch XML
-- `deletePatch(patchPath)` - Delete patch with backup
-- `renamePatch(oldPath, newPath)` - Rename patch directory
-
-### Playlist Operations
-
-- `loadPlaylists(folderPath)` - Load playlist metadata
-- `savePlaylist(folderPath, playlist)` - Save playlist changes
-- `deletePlaylist(folderPath, id)` - Remove playlist
-
-### Backup/Restore
-
-- `createBackup(folderPath, patchIds?, backupPath?)` - Create ZIP backup
-- `restoreBackup(backupPath, targetPath, mode)` - Restore from backup
-
-### Audio
-
-- `getAudioPath(phrasePath)` - Get file:// URL for audio playback
-
-All IPC calls return `Promise<Result<T, Error>>` for safe error handling.
-
-## 🧠 Why?
-
-Digitech discontinued official support for managing loops on the JamMan Stereo. This app helps you keep control of your loop library with a modern interface — no MIDI, no syncing, just drag, drop, and play.
-
-## 📂 SD Card Structure
-
-This app works directly with the expected JamMan directory structure:
-
-```
-/JAMMAN/JamManStereo/
-  Patch01/
-    patch.xml
-    PhraseA/
-      phrase.wav
-      phrase.xml
-```
-
-## 📄 License
-
-MIT License
+MIT License. See [LICENSE](LICENSE).
 © 2025 Renán Gabriel Díaz Reyes
 
 ---
