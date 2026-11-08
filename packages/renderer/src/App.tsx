@@ -19,6 +19,9 @@ import {
 import { patchDirForSlot, shortcut, slotNumber } from './utils/format';
 import s from './App.module.css';
 import { usePatchStore } from './store/usePatchStore';
+import { usePedalStore } from './store/usePedalStore';
+import { useAudioPlayerStore } from './store/useAudioPlayerStore';
+import { BANK_LABELS, isPedalPath, pedalFolderLabel } from './utils/pedal';
 import { useUndoStore } from './store/useUndoStore';
 import { executeUndo, executeRedo, canUndo, canRedo } from './utils/undoHandler';
 import type { Patch, Playlist } from './types';
@@ -29,6 +32,8 @@ const SortView = lazy(() => import('./components/SortView').then(m => ({ default
 const DeleteConfirmModal = lazy(() => import('./components/DeleteConfirmModal'));
 const BackupRestoreModal = lazy(() => import('./components/BackupRestoreModal'));
 const PlaylistsModal = lazy(() => import('./components/PlaylistsModal'));
+const PedalDialog = lazy(() => import('./components/PedalDialog'));
+const PedalWriteConfirm = lazy(() => import('./components/PedalWriteConfirm'));
 const FooterPlayer = lazy(() =>
   import('./components/FooterPlayer').then(m => ({ default: m.FooterPlayer })),
 );
@@ -64,6 +69,82 @@ function App() {
   const [focusedDir, setFocusedDir] = useState<string | null>(null);
   const [showEmptySlots, setShowEmptySlots] = useState<boolean>(false);
   const [createInDir, setCreateInDir] = useState<string | undefined>(undefined);
+
+  // Pedal over USB
+  const pedal = usePedalStore(state => state.pedal);
+  const pedalConnecting = usePedalStore(state => state.connecting);
+  const pedalProgress = usePedalStore(state => state.progress);
+  const [pedalDialogIsOpen, setPedalDialogIsOpen] = useState<boolean>(false);
+  /** A pedal bank is being read, so the loading panel says where from. */
+  const [readingPedal, setReadingPedal] = useState<boolean>(false);
+  /** A pedal over USB: everything works; some texts and empty states differ. */
+  const pedalMode = isPedalPath(currentFolder);
+  /** The slot the pedal has loaded, when it belongs to the bank open now. */
+  const openBank = pedal?.banks.find(b => b.path === currentFolder)?.id ?? null;
+  const pedalSlot = pedal && openBank && pedal.live.bank === openBank ? pedal.live.patch : null;
+  const pedalLoaded =
+    pedal?.live.bank && pedal.live.patch
+      ? `${BANK_LABELS[pedal.live.bank]} ${pedal.live.patch}`
+      : null;
+
+  /** Closes the pedal bank, and the player if it is playing audio from the pedal. */
+  const closePedalBank = useCallback(() => {
+    clearPatches();
+    const player = useAudioPlayerStore.getState();
+    if (isPedalPath(player.audioInfo?.wavPath)) player.close();
+  }, [clearPatches]);
+
+  useEffect(() => usePedalStore.getState().subscribe(), []);
+
+  // The open pedal bank went away: the pedal was unplugged or its SD card removed.
+  useEffect(() => {
+    if (!isPedalPath(currentFolder)) return;
+    const bank = pedal?.banks.find(b => b.path === currentFolder);
+    if (!pedal || !bank?.available) {
+      closePedalBank();
+      toast.info(pedal ? 'The SD card was removed from the pedal' : 'The pedal was disconnected');
+    }
+  }, [pedal, currentFolder, closePedalBank]);
+
+  const handlePedal = useCallback(async () => {
+    if (!usePedalStore.getState().pedal) {
+      try {
+        await usePedalStore.getState().connect();
+      } catch (error) {
+        console.error('Error connecting to the pedal:', error);
+        toast.error(
+          error instanceof Error
+            ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+            : 'Could not connect to the pedal',
+        );
+        return;
+      }
+    }
+    setPedalDialogIsOpen(true);
+  }, []);
+
+  const handleOpenPedalBank = useCallback(
+    async (bank: { path: string }) => {
+      setPedalDialogIsOpen(false);
+      setReadingPedal(true);
+      try {
+        await loadPatches(bank.path);
+      } finally {
+        setReadingPedal(false);
+      }
+    },
+    [loadPatches],
+  );
+
+  const handleDisconnectPedal = useCallback(async () => {
+    setPedalDialogIsOpen(false);
+    if (isPedalPath(usePatchStore.getState().currentFolder)) closePedalBank();
+    try {
+      await usePedalStore.getState().disconnect();
+    } catch (error) {
+      console.error('Error disconnecting the pedal:', error);
+    }
+  }, [closePedalBank]);
 
   // Undo/Redo state
   const undoAvailable = useUndoStore(state => state.undoStack.length > 0);
@@ -307,6 +388,12 @@ function App() {
     <div className={s.app}>
       <AppHeader
         currentFolder={currentFolder}
+        sourceLabel={pedalFolderLabel(currentFolder, pedal)}
+        pedalMode={pedalMode}
+        pedalConnected={!!pedal}
+        pedalBusy={pedalConnecting}
+        pedalLoaded={pedalLoaded}
+        pedalWorking={!!pedal?.live.busy}
         folderSizeBytes={folderSizeBytes}
         loading={loading}
         focusedSlot={focusedPatch ? slotNumber(focusedPatch.dir) : null}
@@ -314,6 +401,7 @@ function App() {
         canUndo={undoAvailable}
         canRedo={redoAvailable}
         onLoad={handleLoad}
+        onPedal={handlePedal}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onClose={clearPatches}
@@ -332,7 +420,14 @@ function App() {
               <SevenSegment value="--" height={40} />
             </DisplayWindow>
             <p className={s.messageTitle}>
-              <Led color="yellow" shape="round" on blinkSeconds={0.5} /> Reading the card
+              <Led color="yellow" shape="round" on blinkSeconds={0.5} />{' '}
+              {readingPedal
+                ? 'Reading the pedal over USB'
+                : pedalProgress
+                  ? `${pedalProgress.label}: ${Math.floor((100 * pedalProgress.done) / Math.max(pedalProgress.total, 1))}%`
+                  : pedalMode
+                    ? 'Working on the pedal over USB'
+                    : 'Reading the card'}
             </p>
           </Panel>
         </main>
@@ -383,6 +478,7 @@ function App() {
                     isFocused={dir === focusedPatch.dir}
                     onFocus={setFocusedDir}
                     onToggleSelection={toggleSelection}
+                    onPedal={dir === pedalSlot}
                   />
                 ) : (
                   <EmptySlotItem key={dir} dir={dir} onCreate={openNewPatch} />
@@ -391,7 +487,12 @@ function App() {
             </ul>
           </section>
 
-          <PatchDetail patch={focusedPatch} onEdit={handleEditPatch} onDelete={handleDeletePatch} />
+          <PatchDetail
+            patch={focusedPatch}
+            onEdit={handleEditPatch}
+            onDelete={handleDeletePatch}
+            onPedal={focusedPatch.dir === pedalSlot}
+          />
         </main>
       ) : currentFolder ? (
         <main className={s.center}>
@@ -399,14 +500,33 @@ function App() {
             <DisplayWindow>
               <SevenSegment value="00" height={40} />
             </DisplayWindow>
-            <h2 className={s.messageTitle}>This card has no patches yet</h2>
-            <p className={s.messageText}>
-              Store a new patch in any of its 99 slots, or restore patches from a backup.
-            </p>
-            <div className={s.messageActions}>
-              <PanelKey label="Restore backup" onClick={() => setBackupRestoreModalIsOpen(true)} />
-              <PanelKey label="New patch" led onClick={() => openNewPatch()} />
-            </div>
+            <h2 className={s.messageTitle}>
+              {pedalMode ? 'This bank has no patches yet' : 'This card has no patches yet'}
+            </h2>
+            {pedalMode ? (
+              <>
+                <p className={s.messageText}>
+                  Store a new patch in any of its 99 slots, or record a loop on the pedal and reload
+                  this bank.
+                </p>
+                <div className={s.messageActions}>
+                  <PanelKey label="New patch" led onClick={() => openNewPatch()} />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={s.messageText}>
+                  Store a new patch in any of its 99 slots, or restore patches from a backup.
+                </p>
+                <div className={s.messageActions}>
+                  <PanelKey
+                    label="Restore backup"
+                    onClick={() => setBackupRestoreModalIsOpen(true)}
+                  />
+                  <PanelKey label="New patch" led onClick={() => openNewPatch()} />
+                </div>
+              </>
+            )}
           </Panel>
         </main>
       ) : (
@@ -417,9 +537,16 @@ function App() {
             </DisplayWindow>
             <h2 className={s.messageTitle}>Load your JamMan SD card</h2>
             <p className={s.messageText}>
-              Choose the card's folder to see, play and edit its patches.
+              Choose the card's folder to see, play and edit its patches, or connect the pedal with
+              a USB cable to browse and play them without removing the card.
             </p>
             <div className={s.messageActions}>
+              <PanelKey
+                label="Connect pedal"
+                hint="USB"
+                onClick={handlePedal}
+                disabled={pedalConnecting}
+              />
               <PanelKey label="Load patches" hint={shortcut('O')} led onClick={handleLoad} />
             </div>
           </Panel>
@@ -500,6 +627,21 @@ function App() {
           selectedPatchDirs={selectedPatchDirs}
           onMovePlaylistToTop={handleMovePlaylistToTop}
         />
+      </Suspense>
+
+      <Suspense fallback={<div />}>
+        <PedalDialog
+          isOpen={pedalDialogIsOpen}
+          pedal={pedal}
+          currentFolder={currentFolder}
+          onOpenBank={handleOpenPedalBank}
+          onDisconnect={handleDisconnectPedal}
+          onClose={() => setPedalDialogIsOpen(false)}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <PedalWriteConfirm />
       </Suspense>
 
       <TopLayer>

@@ -17,13 +17,35 @@
 import { sha256sum } from './sha256.js';
 import { versions } from './versions.js';
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ElectronAPI, IpcArgs, IpcChannel, IpcReturn } from './ipc-contract.js';
+import type {
+  ElectronAPI,
+  IpcArgs,
+  IpcChannel,
+  IpcEventChannel,
+  IpcEvents,
+  IpcReturn,
+} from './ipc-contract.js';
 
 /**
  * Invokes an IPC channel with the arguments and result the contract declares.
  */
 function send<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcReturn<C>> {
   return ipcRenderer.invoke(channel, ...args);
+}
+
+/**
+ * Subscribes to a main → renderer event. Only the payload crosses the bridge,
+ * never the Electron event. Returns the unsubscribe function.
+ */
+function subscribe<E extends IpcEventChannel>(
+  channel: E,
+  listener: (payload: IpcEvents[E]) => void,
+): () => void {
+  const handler = (_event: unknown, payload: IpcEvents[E]) => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
 }
 
 /**
@@ -81,6 +103,17 @@ const electronAPI: ElectronAPI = {
   reorderPlaylistPatches: (basePath, playlistId, newOrder) =>
     send('playlists:reorderPatches', basePath, playlistId, newOrder),
   exportPlaylist: (basePath, playlistId) => send('playlists:export', basePath, playlistId),
+
+  // Pedal over USB
+  connectPedal: () => send('pedal:connect'),
+  disconnectPedal: () => send('pedal:disconnect'),
+  getPedalStatus: () => send('pedal:status'),
+  getPedalAudioStatus: (bankPath, patches) => send('pedal:audioStatus', bankPath, patches),
+  downloadPedalAudio: bankPath => send('pedal:downloadAudio', bankPath),
+  cancelPedalOperation: () => send('pedal:cancel'),
+  setPedalButton: (button, command) => send('pedal:setButton', button, command),
+  onPedalChanged: listener => subscribe('pedal:changed', listener),
+  onPedalProgress: listener => subscribe('pedal:progress', listener),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -8,7 +8,8 @@ interface Props {
   usedDirs: string[];
   focusedDir: string | null;
   onFocus: (directory: string) => void;
-  onCreateAt: (directory: string) => void;
+  /** Without it (read-only source) a free slot does nothing. */
+  onCreateAt?: (directory: string) => void;
 }
 
 const SLOTS = Array.from({ length: 99 }, (_, i) => patchDirForSlot(i + 1));
@@ -29,10 +30,13 @@ export const MemoryMap: FC<Props> = memo(({ usedDirs, focusedDir, onFocus, onCre
               key={dir}
               type="button"
               className={cx(s.cell, isUsed && s.used, dir === focusedDir && s.focused)}
-              aria-label={isUsed ? `Show ${dir}` : `New patch in ${dir}`}
+              aria-label={
+                isUsed ? `Show ${dir}` : onCreateAt ? `New patch in ${dir}` : `${dir} (empty)`
+              }
               title={isUsed ? dir : `${dir} (empty)`}
               tabIndex={-1}
-              onClick={() => (isUsed ? onFocus(dir) : onCreateAt(dir))}
+              disabled={!isUsed && !onCreateAt}
+              onClick={() => (isUsed ? onFocus(dir) : onCreateAt?.(dir))}
             />
           );
         })}

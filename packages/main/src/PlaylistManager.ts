@@ -31,8 +31,68 @@ export type PlaylistDataWithPatches = Omit<PlaylistData, 'playlists'> & {
   patches: string[];
 };
 
+/**
+ * Where a set of playlists lives: a card folder, or a bank of a pedal over USB.
+ * The manager's logic (IDs, migrations, ordering) is the same for both.
+ */
+export interface PlaylistStore {
+  /** Identifies the playlists file, so changes to it run one after another. */
+  readonly key: string;
+  /** The playlists file, or null when there is none. */
+  read(): Promise<string | null>;
+  write(content: string): Promise<void>;
+  /** The `<ID>` of a patch folder, or null. */
+  patchId(dir: string): Promise<string | null>;
+  /** Every patch folder that has an `<ID>`, as ID → folder. */
+  allPatchIds(): Promise<Map<string, string>>;
+}
+
+/** A card folder path, or any other store. */
+export type PlaylistBase = string | PlaylistStore;
+
+const PLAYLIST_FILENAME = '.jamman-playlists.json';
+
+/** The playlists of a folder on disk (a card, or a copy of one). */
+function localPlaylistStore(basePath: string): PlaylistStore {
+  const playlistPath = path.join(basePath, PLAYLIST_FILENAME);
+  const patchId = async (patchDir: string): Promise<string | null> => {
+    const patchXmlPath = path.join(basePath, patchDir, 'patch.xml');
+    if (!fs.existsSync(patchXmlPath)) {
+      return null;
+    }
+    try {
+      const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
+      // Security: Use hardened XML parser to prevent XXE attacks
+      const result = await SecureXMLParser.parsePatchXML(xmlContent);
+      return result.JamManPatch?.ID?.[0] || null;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    key: path.resolve(basePath),
+    read: async () => (fs.existsSync(playlistPath) ? fs.readFileSync(playlistPath, 'utf-8') : null),
+    write: async content => fs.writeFileSync(playlistPath, content, 'utf-8'),
+    patchId,
+    allPatchIds: async () => {
+      const patchMap = new Map<string, string>();
+      try {
+        for (const entry of fs.readdirSync(basePath)) {
+          const fullPath = path.join(basePath, entry);
+          if (fs.statSync(fullPath).isDirectory() && entry.startsWith('Patch')) {
+            const id = await patchId(entry);
+            if (id) patchMap.set(id, entry);
+          }
+        }
+      } catch (error) {
+        console.error('Error reading patch IDs:', error);
+      }
+      return patchMap;
+    },
+  };
+}
+
 export class PlaylistManager {
-  private static readonly PLAYLIST_FILENAME = '.jamman-playlists.json';
   private static readonly VERSION = '2.0'; // Incremented for ID-based storage
 
   /** Tail of the write queue per playlist file (see `serialized`). */
@@ -45,8 +105,8 @@ export class PlaylistManager {
    * change. Queuing here (instead of in the IPC handlers) keeps that true no matter who
    * calls the manager. A failing operation does not block the ones queued behind it.
    */
-  private static serialized<T>(basePath: string, operation: () => Promise<T>): Promise<T> {
-    const key = path.resolve(basePath);
+  private static serialized<T>(base: PlaylistBase, operation: () => Promise<T>): Promise<T> {
+    const key = this.store(base).key;
     const previous = this.writeQueues.get(key) ?? Promise.resolve();
     const run = previous.then(operation, operation);
     const tail = run.catch(() => undefined);
@@ -59,64 +119,25 @@ export class PlaylistManager {
     return run;
   }
 
-  /**
-   * Get the playlist file path for a given base path
-   */
-  private static getPlaylistPath(basePath: string): string {
-    return path.join(basePath, this.PLAYLIST_FILENAME);
+  private static store(base: PlaylistBase): PlaylistStore {
+    return typeof base === 'string' ? localPlaylistStore(base) : base;
   }
 
-  /**
-   * Get patch ID from a patch directory
-   */
-  private static async getPatchId(basePath: string, patchDir: string): Promise<string | null> {
-    const patchXmlPath = path.join(basePath, patchDir, 'patch.xml');
-    if (!fs.existsSync(patchXmlPath)) {
-      return null;
-    }
-
-    try {
-      const xmlContent = fs.readFileSync(patchXmlPath, 'utf-8');
-      // Security: Use hardened XML parser to prevent XXE attacks
-      const result = await SecureXMLParser.parsePatchXML(xmlContent);
-      return result.JamManPatch?.ID?.[0] || null;
-    } catch {
-      return null;
-    }
+  private static getPatchId(base: PlaylistBase, patchDir: string): Promise<string | null> {
+    return this.store(base).patchId(patchDir);
   }
 
-  /**
-   * Get all patches with their IDs (returns map of patchId -> directory)
-   */
-  private static async getAllPatchIds(basePath: string): Promise<Map<string, string>> {
-    const patchMap = new Map<string, string>();
-
-    try {
-      const entries = fs.readdirSync(basePath);
-
-      for (const entry of entries) {
-        const fullPath = path.join(basePath, entry);
-        if (fs.statSync(fullPath).isDirectory() && entry.startsWith('Patch')) {
-          const patchId = await this.getPatchId(basePath, entry);
-          if (patchId) {
-            patchMap.set(patchId, entry);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error reading patch IDs:', error);
-    }
-
-    return patchMap;
+  private static getAllPatchIds(base: PlaylistBase): Promise<Map<string, string>> {
+    return this.store(base).allPatchIds();
   }
 
   /**
    * Convert directory names to patch IDs
    */
-  private static async dirsToIds(basePath: string, dirs: string[]): Promise<string[]> {
+  private static async dirsToIds(base: PlaylistBase, dirs: string[]): Promise<string[]> {
     const ids: string[] = [];
     for (const dir of dirs) {
-      const id = await this.getPatchId(basePath, dir);
+      const id = await this.getPatchId(base, dir);
       if (id) {
         ids.push(id);
       }
@@ -127,34 +148,35 @@ export class PlaylistManager {
   /**
    * Convert patch IDs to current directory names
    */
-  private static async idsToDirs(basePath: string, ids: string[]): Promise<string[]> {
-    const patchMap = await this.getAllPatchIds(basePath);
+  private static async idsToDirs(base: PlaylistBase, ids: string[]): Promise<string[]> {
+    const patchMap = await this.getAllPatchIds(base);
     return ids.map(id => patchMap.get(id)).filter((dir): dir is string => dir !== undefined);
   }
 
   /**
    * Load playlists from disk and resolve patch IDs to current directory names
    */
-  static async loadPlaylists(basePath: string): Promise<PlaylistDataWithPatches> {
-    const playlistPath = this.getPlaylistPath(basePath);
-
-    if (!fs.existsSync(playlistPath)) {
-      return {
-        version: this.VERSION,
-        playlists: [],
-        patches: [],
-      };
+  static async loadPlaylists(base: PlaylistBase): Promise<PlaylistDataWithPatches> {
+    const empty = { version: this.VERSION, playlists: [], patches: [] };
+    let content: string | null;
+    try {
+      content = await this.store(base).read();
+    } catch (error) {
+      console.error('Failed to read playlists:', error);
+      return empty;
+    }
+    if (content === null) {
+      return empty;
     }
 
     try {
-      const content = fs.readFileSync(playlistPath, 'utf-8');
       const raw: unknown = JSON.parse(content);
 
       // Migrate older schemas (see PlaylistSchema.ts). Legacy directory-based
       // playlists need their directories resolved to patch IDs first.
       const dirToId = new Map<string, string>();
       for (const dir of collectLegacyPatchDirs(raw)) {
-        const id = await this.getPatchId(basePath, dir);
+        const id = await this.getPatchId(base, dir);
         if (id) {
           dirToId.set(dir, id);
         }
@@ -162,13 +184,13 @@ export class PlaylistManager {
       const { data, migrated } = migratePlaylistFile(raw, dirToId);
       if (migrated) {
         console.log(`Migrating playlists to schemaVersion ${PLAYLIST_SCHEMA_VERSION}...`);
-        this.savePlaylists(basePath, data);
+        await this.save(base, data);
       }
 
       // Resolve patch IDs to current directory names for each playlist
       const playlistsWithDirs = await Promise.all(
         data.playlists.map(async (playlist: Playlist) => {
-          const dirs = await this.idsToDirs(basePath, playlist.patchIds || []);
+          const dirs = await this.idsToDirs(base, playlist.patchIds || []);
           return {
             ...playlist,
             patches: dirs, // For frontend compatibility
@@ -195,11 +217,26 @@ export class PlaylistManager {
    * Save playlists to disk
    */
   static savePlaylists(basePath: string, data: PlaylistData): void {
-    const playlistPath = this.getPlaylistPath(basePath);
+    const playlistPath = path.join(basePath, PLAYLIST_FILENAME);
 
     try {
-      const content = JSON.stringify({ ...data, schemaVersion: PLAYLIST_SCHEMA_VERSION }, null, 2);
-      fs.writeFileSync(playlistPath, content, 'utf-8');
+      fs.writeFileSync(playlistPath, this.serialize(data), 'utf-8');
+    } catch (error) {
+      throw new Error(
+        `Failed to save playlists: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { cause: error },
+      );
+    }
+  }
+
+  private static serialize(data: PlaylistData): string {
+    return JSON.stringify({ ...data, schemaVersion: PLAYLIST_SCHEMA_VERSION }, null, 2);
+  }
+
+  /** Saves through any store (a card folder or a pedal bank). */
+  private static async save(base: PlaylistBase, data: PlaylistData): Promise<void> {
+    try {
+      await this.store(base).write(this.serialize(data));
     } catch (error) {
       throw new Error(
         `Failed to save playlists: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -212,12 +249,12 @@ export class PlaylistManager {
    * Create a new playlist
    */
   static async createPlaylist(
-    basePath: string,
+    base: PlaylistBase,
     name: string,
     patchDirs: string[] = [],
   ): Promise<PlaylistWithPatches> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
 
       // Check for duplicate names
       if (data.playlists.some(p => p.name === name)) {
@@ -225,7 +262,7 @@ export class PlaylistManager {
       }
 
       // Convert directory names to IDs
-      const patchIds = await this.dirsToIds(basePath, patchDirs);
+      const patchIds = await this.dirsToIds(base, patchDirs);
 
       const now = new Date().toISOString();
       const playlist: Playlist = {
@@ -239,10 +276,10 @@ export class PlaylistManager {
       // The new playlist has no resolved `patches` yet: it is only added to the stored list
       const stored: Playlist[] = data.playlists;
       stored.push(playlist);
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
 
       // Return with directory names for frontend: what was stored, not what was requested
-      const storedDirs = await this.idsToDirs(basePath, patchIds);
+      const storedDirs = await this.idsToDirs(base, patchIds);
       return {
         ...playlist,
         patches: storedDirs,
@@ -254,12 +291,12 @@ export class PlaylistManager {
    * Update an existing playlist
    */
   static async updatePlaylist(
-    basePath: string,
+    base: PlaylistBase,
     playlistId: string,
     updates: { name?: string; patches?: string[] },
   ): Promise<PlaylistWithPatches> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
       const playlist = data.playlists.find(p => p.id === playlistId);
 
       if (!playlist) {
@@ -275,15 +312,15 @@ export class PlaylistManager {
       }
 
       if (updates.patches !== undefined) {
-        playlist.patchIds = await this.dirsToIds(basePath, updates.patches);
+        playlist.patchIds = await this.dirsToIds(base, updates.patches);
       }
 
       playlist.updatedAt = new Date().toISOString();
 
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
 
       // Return with directory names
-      const dirs = await this.idsToDirs(basePath, playlist.patchIds);
+      const dirs = await this.idsToDirs(base, playlist.patchIds);
       return {
         ...playlist,
         patches: dirs,
@@ -294,9 +331,9 @@ export class PlaylistManager {
   /**
    * Delete a playlist
    */
-  static async deletePlaylist(basePath: string, playlistId: string): Promise<void> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+  static async deletePlaylist(base: PlaylistBase, playlistId: string): Promise<void> {
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
       const index = data.playlists.findIndex(p => p.id === playlistId);
 
       if (index === -1) {
@@ -304,7 +341,7 @@ export class PlaylistManager {
       }
 
       data.playlists.splice(index, 1);
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
     });
   }
 
@@ -312,12 +349,12 @@ export class PlaylistManager {
    * Add patches to a playlist
    */
   static async addPatchesToPlaylist(
-    basePath: string,
+    base: PlaylistBase,
     playlistId: string,
     patchDirs: string[],
   ): Promise<PlaylistWithPatches> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
       const playlist = data.playlists.find(p => p.id === playlistId);
 
       if (!playlist) {
@@ -325,7 +362,7 @@ export class PlaylistManager {
       }
 
       // Convert dirs to IDs and add patches that aren't already in the playlist
-      const idsToAdd = await this.dirsToIds(basePath, patchDirs);
+      const idsToAdd = await this.dirsToIds(base, patchDirs);
       for (const id of idsToAdd) {
         if (!playlist.patchIds.includes(id)) {
           playlist.patchIds.push(id);
@@ -333,10 +370,10 @@ export class PlaylistManager {
       }
 
       playlist.updatedAt = new Date().toISOString();
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
 
       // Return with directory names
-      const dirs = await this.idsToDirs(basePath, playlist.patchIds);
+      const dirs = await this.idsToDirs(base, playlist.patchIds);
       return {
         ...playlist,
         patches: dirs,
@@ -348,12 +385,12 @@ export class PlaylistManager {
    * Remove patches from a playlist
    */
   static async removePatchesFromPlaylist(
-    basePath: string,
+    base: PlaylistBase,
     playlistId: string,
     patchDirs: string[],
   ): Promise<PlaylistWithPatches> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
       const playlist = data.playlists.find(p => p.id === playlistId);
 
       if (!playlist) {
@@ -361,13 +398,13 @@ export class PlaylistManager {
       }
 
       // Convert dirs to IDs and remove them
-      const idsToRemove = await this.dirsToIds(basePath, patchDirs);
+      const idsToRemove = await this.dirsToIds(base, patchDirs);
       playlist.patchIds = playlist.patchIds.filter(id => !idsToRemove.includes(id));
       playlist.updatedAt = new Date().toISOString();
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
 
       // Return with directory names
-      const dirs = await this.idsToDirs(basePath, playlist.patchIds);
+      const dirs = await this.idsToDirs(base, playlist.patchIds);
       return {
         ...playlist,
         patches: dirs,
@@ -379,12 +416,12 @@ export class PlaylistManager {
    * Reorder patches within a playlist
    */
   static async reorderPlaylistPatches(
-    basePath: string,
+    base: PlaylistBase,
     playlistId: string,
     newOrderDirs: string[],
   ): Promise<PlaylistWithPatches> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
       const playlist = data.playlists.find(p => p.id === playlistId);
 
       if (!playlist) {
@@ -393,7 +430,7 @@ export class PlaylistManager {
 
       // Convert new order to IDs. A directory without a readable ID is dropped here, so a
       // shorter result means the request named something that is not a patch.
-      const newOrderIds = await this.dirsToIds(basePath, newOrderDirs);
+      const newOrderIds = await this.dirsToIds(base, newOrderDirs);
 
       // The new order must be an exact permutation of the current one: same length, no
       // repeats, nothing missing and nothing foreign. (Comparing only lengths let [P1, P1]
@@ -412,10 +449,10 @@ export class PlaylistManager {
 
       playlist.patchIds = newOrderIds;
       playlist.updatedAt = new Date().toISOString();
-      this.savePlaylists(basePath, data);
+      await this.save(base, data);
 
       // Return with directory names
-      const dirs = await this.idsToDirs(basePath, playlist.patchIds);
+      const dirs = await this.idsToDirs(base, playlist.patchIds);
       return {
         ...playlist,
         patches: dirs,
@@ -426,25 +463,28 @@ export class PlaylistManager {
   /**
    * Get all patches that are in a specific playlist
    */
-  static async getPlaylistPatches(basePath: string, playlistId: string): Promise<string[]> {
-    const data = await this.loadPlaylists(basePath);
+  static async getPlaylistPatches(base: PlaylistBase, playlistId: string): Promise<string[]> {
+    const data = await this.loadPlaylists(base);
     const playlist = data.playlists.find(p => p.id === playlistId);
 
     if (!playlist) {
       throw new Error(`Playlist not found: ${playlistId}`);
     }
 
-    return await this.idsToDirs(basePath, playlist.patchIds);
+    return await this.idsToDirs(base, playlist.patchIds);
   }
 
   /**
    * Clean up deleted patches from all playlists
    * Removes references to patches that no longer exist
    */
-  static async cleanupDeletedPatches(basePath: string, existingPatchDirs: string[]): Promise<void> {
-    return this.serialized(basePath, async () => {
-      const data = await this.loadPlaylists(basePath);
-      const existingIds = await this.dirsToIds(basePath, existingPatchDirs);
+  static async cleanupDeletedPatches(
+    base: PlaylistBase,
+    existingPatchDirs: string[],
+  ): Promise<void> {
+    return this.serialized(base, async () => {
+      const data = await this.loadPlaylists(base);
+      const existingIds = await this.dirsToIds(base, existingPatchDirs);
       let modified = false;
 
       for (const playlist of data.playlists) {
@@ -458,7 +498,7 @@ export class PlaylistManager {
       }
 
       if (modified) {
-        this.savePlaylists(basePath, data);
+        await this.save(base, data);
       }
     });
   }

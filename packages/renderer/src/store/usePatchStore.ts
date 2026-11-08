@@ -20,6 +20,8 @@ import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
 import { useUndoStore } from './useUndoStore';
 import { discardSnapshots, snapshotOrWarn } from '../utils/undoSnapshots';
+import { isPedalPath } from '../utils/pedal';
+import { confirmPedalWrite, PedalWriteCanceled } from './usePedalGuardStore';
 
 /** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
@@ -281,7 +283,8 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       }
 
       // Save to localStorage for auto-load on next launch
-      saveLastFolder(folder);
+      // A pedal bank only exists while the pedal is connected: never auto-load it.
+      if (!isPedalPath(folder)) saveLastFolder(folder);
 
       if (!update) {
         toast.success(`Successfully loaded ${result.length} patches`);
@@ -297,6 +300,11 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   createPatch: async (data: unknown) => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) return;
+    // A pedal may have that (empty) slot loaded. Throw so the form stays open.
+    const target = (data as { directory?: string }).directory;
+    if (!(await confirmPedalWrite(currentFolder, target ? [target] : []))) {
+      throw new PedalWriteCanceled();
+    }
 
     try {
       set({ loading: true });
@@ -319,6 +327,9 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
     if (!currentFolder) return;
 
     const directory = (data as { directory?: string }).directory;
+    if (!(await confirmPedalWrite(currentFolder, directory ? [directory] : []))) {
+      throw new PedalWriteCanceled(); // the form stays open with the edits
+    }
     // Snapshot the patch as it is now (audio included) so the edit can be undone
     const snapshotId = directory
       ? await snapshotOrWarn(currentFolder, { kind: 'patches', patches: [directory] })
@@ -354,6 +365,8 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   deletePatch: async (directory: string, skipUndo = false) => {
     const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+    // Undo/redo replays an action the user already confirmed
+    if (!skipUndo && !(await confirmPedalWrite(currentFolder, [directory]))) return;
 
     // Snapshot first: it is the only copy of the patch's phrases and audio once it is deleted
     const snapshotId = skipUndo
@@ -389,6 +402,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   deletePatches: async (directories: string[], skipUndo = false) => {
     const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+    if (!skipUndo && !(await confirmPedalWrite(currentFolder, directories))) return;
 
     // Only real patch folders that exist can be snapshotted (the list can also hold the
     // short-lived `__deleted_*` folders the main process leaves after a delete)
@@ -448,6 +462,7 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   restoreBackup: async (backupPath: string, mode: 'replace' | 'merge') => {
     const { currentFolder, loadPatches } = get();
     if (!currentFolder) throw new Error('No folder loaded');
+    if (!(await confirmPedalWrite(currentFolder, 'all'))) throw new PedalWriteCanceled();
 
     // Snapshot the whole folder (patches and playlists): replace mode wipes it
     const snapshotId = await snapshotOrWarn(currentFolder, { kind: 'all' });
@@ -485,6 +500,12 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
   reorderPatches: async (newOrder: Patch[], skipUndo = false) => {
     const { currentFolder, loadPatches, patches } = get();
     if (!currentFolder) return;
+    // Every slot whose content changes: the folder that moves and the slot it lands in
+    const changed = newOrder.flatMap((patch, i) => {
+      const slot = `Patch${String(i + 1).padStart(2, '0')}`;
+      return patch.dir === slot ? [] : [patch.dir, slot];
+    });
+    if (!skipUndo && !(await confirmPedalWrite(currentFolder, changed))) return;
 
     // Store previous order for undo (before reordering)
     const previousOrder = [...patches];

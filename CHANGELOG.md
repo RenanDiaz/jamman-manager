@@ -9,6 +9,21 @@ so everything so far is listed under "Unreleased".
 
 ### Added
 
+- Browse and play the patches of a JamMan Stereo connected over USB, without removing the SD card.
+  The **Pedal** key connects and lets you open the internal memory or the SD card. Phrase audio
+  streams from the pedal and is cached locally once played to the end.
+- Over USB, create, edit, delete and sort patches, add phrases and replace their WAV files (with
+  upload progress), with undo and redo. Audio an undo may need is parked on the pedal itself, so
+  it never crosses the cable twice.
+- Over USB, back up a bank to a ZIP file and restore one onto it (merge or replace, with undo), and
+  download a bank's audio ahead of time. Downloads and uploads show progress and can be stopped;
+  a download resumes where it stopped.
+- Over USB, playlists: the same `.jamman-playlists.json` as on a card, in the bank's folder.
+- Over USB, the app follows the pedal live (the loaded patch, unsaved state, SD card, free space),
+  asks before changing the patch the pedal is using, makes the pedal reload it afterwards, and sets
+  the footswitch buttons.
+- `docs/usb-protocol.md`: the pedal's USB protocol, and `tools/greenglass.py`, a small client to
+  try it from a terminal.
 - `npm run verify` (typecheck + lint + unit tests) and a Husky `pre-push` hook that runs it.
 - `.nvmrc` pinning Node 24.
 - `publish` configuration in `electron-builder.mjs` so tagged releases upload installers and

@@ -233,6 +233,71 @@ export interface PlaylistUpdate {
   patches?: string[];
 }
 
+// ==================== Pedal over USB ====================
+
+/** `internal` is the pedal's own memory, `sd` the card in its slot. */
+export type PedalBankId = 'internal' | 'sd';
+
+export interface PedalBankInfo {
+  id: PedalBankId;
+  /**
+   * The folder path the renderer uses for this bank (`jamman-pedal://<id>`).
+   * Every handler that takes a folder path accepts it and works on the pedal.
+   */
+  path: string;
+  /** False for the SD bank when no card is inserted. */
+  available: boolean;
+  capacityBytes: number;
+  freeBytes: number;
+}
+
+/** How much of a pedal bank's audio is already on this computer (in the cache). */
+export interface PedalAudioStatus {
+  files: number;
+  totalBytes: number;
+  cachedFiles: number;
+  cachedBytes: number;
+}
+
+/** Progress of a long step on the pedal, e.g. uploading a WAV. */
+export interface PedalProgress {
+  label: string;
+  /** Bytes done and in total. */
+  done: number;
+  total: number;
+}
+
+/** What the pedal is doing right now, as its notifications report it. */
+export interface PedalLiveState {
+  /** The bank of the patch loaded on the pedal. */
+  bank: PedalBankId | null;
+  /** The slot loaded on the pedal, e.g. `Patch07` (it may be an empty slot). */
+  patch: string | null;
+  /** The pedal is loading or saving a patch. */
+  busy: boolean;
+  /** The pedal holds a recording that is not saved yet. */
+  audioDirty: boolean;
+  /** The loaded patch's settings changed on the pedal and are not saved yet. */
+  settingsDirty: boolean;
+}
+
+/** The three buttons of the pedal's optional footswitch. */
+export type PedalButton = 'left' | 'middle' | 'right';
+
+/** A JamMan connected over USB. */
+export interface PedalInfo {
+  /** As the pedal reports it, e.g. "JamMan Stereo". */
+  name: string;
+  firmwareVersion: string;
+  guid: string;
+  banks: PedalBankInfo[];
+  live: PedalLiveState;
+  /** The command assigned to each footswitch button, e.g. `UndoRedo`. */
+  buttons: Record<PedalButton, string>;
+  /** Commands a button can take (the ones the pedal itself reports). */
+  buttonCommands: string[];
+}
+
 // ==================== Operation queue ====================
 
 export interface QueuedOperationInfo {
@@ -352,6 +417,23 @@ export interface IpcChannels {
   };
   'playlists:export': { args: [basePath: string, playlistId: string]; result: SaveFileResult };
 
+  // Pedal over USB
+  /** Finds a JamMan on USB and connects to it (or returns the current connection). */
+  'pedal:connect': { args: []; result: PedalInfo };
+  'pedal:disconnect': { args: []; result: void };
+  'pedal:status': { args: []; result: PedalInfo | null };
+  /** How much of a bank's audio (or some of its patches') is already cached. Reads no audio. */
+  'pedal:audioStatus': {
+    args: [bankPath: string, patches?: string[]];
+    result: PedalAudioStatus;
+  };
+  /** Downloads a bank's audio into the cache (resumes where an earlier download stopped). */
+  'pedal:downloadAudio': { args: [bankPath: string]; result: PedalAudioStatus };
+  /** Stops the download or upload running on the pedal; it fails with "Canceled". */
+  'pedal:cancel': { args: []; result: void };
+  /** Assigns a command to a footswitch button. The pedal keeps it across power cycles. */
+  'pedal:setButton': { args: [button: PedalButton, command: string]; result: PedalInfo };
+
   // Operation queue
   'operation-queue:status': { args: []; result: OperationQueueStatus };
   'operation-queue:statistics': { args: []; result: OperationQueueStatistics };
@@ -371,6 +453,18 @@ export type IpcHandlers<C extends IpcChannel> = { [K in C]: IpcHandler<K> };
 
 /** What the renderer calls for channel `C`. */
 export type IpcInvoker<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>>;
+
+// ==================== Events (main → renderer) ====================
+
+/** Events the main process pushes to the renderer, with their payload. */
+export interface IpcEvents {
+  /** The pedal connected, disconnected or changed (e.g. SD card inserted or removed). */
+  'pedal:changed': PedalInfo | null;
+  /** Progress of a long change on the pedal (an upload); null when it is over. */
+  'pedal:progress': PedalProgress | null;
+}
+
+export type IpcEventChannel = keyof IpcEvents;
 
 // ==================== window.electronAPI ====================
 
@@ -421,4 +515,16 @@ export interface ElectronAPI {
   removePatchesFromPlaylist: IpcInvoker<'playlists:removePatches'>;
   reorderPlaylistPatches: IpcInvoker<'playlists:reorderPatches'>;
   exportPlaylist: IpcInvoker<'playlists:export'>;
+
+  connectPedal: IpcInvoker<'pedal:connect'>;
+  disconnectPedal: IpcInvoker<'pedal:disconnect'>;
+  getPedalStatus: IpcInvoker<'pedal:status'>;
+  getPedalAudioStatus: IpcInvoker<'pedal:audioStatus'>;
+  downloadPedalAudio: IpcInvoker<'pedal:downloadAudio'>;
+  cancelPedalOperation: IpcInvoker<'pedal:cancel'>;
+  setPedalButton: IpcInvoker<'pedal:setButton'>;
+  /** Calls `listener` whenever the pedal connects, disconnects or changes. Returns an unsubscribe function. */
+  onPedalChanged: (listener: (info: IpcEvents['pedal:changed']) => void) => () => void;
+  /** Calls `listener` with the progress of uploads to the pedal. Returns an unsubscribe function. */
+  onPedalProgress: (listener: (progress: IpcEvents['pedal:progress']) => void) => () => void;
 }

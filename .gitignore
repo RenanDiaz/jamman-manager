@@ -65,3 +65,6 @@ thumbs.db
 coverage/
 test-results/
 playwright-report/
+
+# Python bytecode (tools/)
+__pycache__/

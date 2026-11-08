@@ -1,6 +1,7 @@
 import { FC, FormEvent, useState } from 'react';
 import { Patch, RhythmType, StopMode } from '../../types';
 import { usePatchStore } from '../../store/usePatchStore';
+import { usePedalStore } from '../../store/usePedalStore';
 import {
   ChoiceGroup,
   cx,
@@ -97,6 +98,8 @@ export const PatchForm: FC<Props> = ({
   };
 
   const { createPatch, updatePatch } = usePatchStore();
+  // Uploads to a pedal over USB take a while: show how far along they are.
+  const upload = usePedalStore(state => state.progress);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -314,6 +317,16 @@ export const PatchForm: FC<Props> = ({
           </ol>
         )}
       </section>
+
+      {upload && (
+        <Notice title={upload.label} role="status">
+          <progress value={upload.done} max={Math.max(upload.total, 1)} className={s.progress} />
+          <p>
+            {Math.floor((100 * upload.done) / Math.max(upload.total, 1))}% of{' '}
+            {(upload.total / 1024 / 1024).toFixed(1)} MB sent to the pedal
+          </p>
+        </Notice>
+      )}
 
       {error && (
         <Notice tone="danger" role="alert">

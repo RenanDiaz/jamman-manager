@@ -5,6 +5,16 @@ import s from './AppHeader.module.css';
 
 interface Props {
   currentFolder: string | null;
+  /** How to show the open source when it is not a plain folder (a pedal bank over USB). */
+  sourceLabel: string | null;
+  /** The open source is a pedal over USB (some texts change). */
+  pedalMode: boolean;
+  pedalConnected: boolean;
+  pedalBusy: boolean;
+  /** What the pedal has loaded, e.g. "SD card Patch07", while one is connected. */
+  pedalLoaded: string | null;
+  /** The pedal is loading or saving a patch. */
+  pedalWorking: boolean;
   folderSizeBytes: number | null;
   loading: boolean;
   /** Two-digit slot of the focused patch, shown on the display. */
@@ -13,6 +23,7 @@ interface Props {
   canUndo: boolean;
   canRedo: boolean;
   onLoad: () => void;
+  onPedal: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onClose: () => void;
@@ -27,6 +38,12 @@ interface Props {
 /** The app's control panel: slot display, card status and every top-level action. */
 export const AppHeader: FC<Props> = ({
   currentFolder,
+  sourceLabel,
+  pedalMode,
+  pedalConnected,
+  pedalBusy,
+  pedalLoaded,
+  pedalWorking,
   folderSizeBytes,
   loading,
   focusedSlot,
@@ -34,6 +51,7 @@ export const AppHeader: FC<Props> = ({
   canUndo,
   canRedo,
   onLoad,
+  onPedal,
   onUndo,
   onRedo,
   onClose,
@@ -55,8 +73,8 @@ export const AppHeader: FC<Props> = ({
         <Legend tone={currentFolder ? 'default' : 'muted'}>Card</Legend>
       </span>
       <span>
-        <Led color="red" on={loading} />
-        <Legend tone={loading ? 'default' : 'muted'}>Busy</Legend>
+        <Led color="red" on={loading || pedalWorking} />
+        <Legend tone={loading || pedalWorking ? 'default' : 'muted'}>Busy</Legend>
       </span>
     </div>
 
@@ -64,15 +82,24 @@ export const AppHeader: FC<Props> = ({
       <h1 className={s.title}>
         JamMan <span>Manager</span>
       </h1>
-      <p className={s.folder} title={currentFolder ?? undefined}>
+      <p className={s.folder} title={sourceLabel ?? currentFolder ?? undefined}>
         {currentFolder
-          ? `${currentFolder}${folderSizeBytes !== null ? `, ${formatBytes(folderSizeBytes)} on card` : ''}`
+          ? `${sourceLabel ?? currentFolder}${folderSizeBytes !== null ? `, ${formatBytes(folderSizeBytes)} ${sourceLabel ? 'used' : 'on card'}` : ''}`
           : 'No card loaded'}
+        {pedalLoaded && <span className={s.pedalLoaded}>Pedal: {pedalLoaded}</span>}
       </p>
     </div>
 
     <nav className={s.toolbar} aria-label="Actions">
       <PanelKey label="Load patches" hint={shortcut('O')} onClick={onLoad} disabled={loading} />
+      <PanelKey
+        label="Pedal"
+        hint="USB"
+        title={pedalConnected ? 'Pedal connected over USB' : 'Connect to a JamMan over USB'}
+        led={pedalConnected}
+        onClick={onPedal}
+        disabled={loading || pedalBusy}
+      />
       <span className={s.divider} />
       <PanelKey
         label="Undo"
@@ -95,7 +122,7 @@ export const AppHeader: FC<Props> = ({
           <PanelKey
             label="Sort"
             hint="Reorder"
-            title="Drag and drop to reorder patches. Changes sync to the SD card."
+            title={`Drag and drop to reorder patches. Changes sync to the ${pedalMode ? 'pedal' : 'SD card'}.`}
             onClick={onSort}
             disabled={patchCount === 0}
           />
@@ -111,7 +138,11 @@ export const AppHeader: FC<Props> = ({
           <PanelKey
             label="Backup"
             hint="Restore"
-            title="Create ZIP backups of patches, or restore one"
+            title={
+              pedalMode
+                ? 'Back up the pedal to a ZIP file, or restore one onto it. Audio not on this computer yet is downloaded first.'
+                : 'Create ZIP backups of patches, or restore one'
+            }
             onClick={onBackup}
           />
           <PanelKey
