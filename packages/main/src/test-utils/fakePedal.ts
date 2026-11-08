@@ -155,7 +155,12 @@ export class FakePedal {
         try {
           reply = this.#handle(frame.id, new PayloadReader(frame.payload));
         } catch {
-          // Like the pedal: a malformed request gets a failure, when its serial can be read
+          // Like the pedal: an empty WhoAmI (six zero bytes) is answered, and any
+          // other malformed request gets a failure when its serial can be read.
+          if (frame.id === MessageID.WhoAmIRequest && frame.payload.length === 0) {
+            this.#send(encodeFrame(MessageID.WhoAmIResponse, Buffer.alloc(4)));
+            continue;
+          }
           reply =
             frame.payload.length >= 4
               ? encodeFrame(

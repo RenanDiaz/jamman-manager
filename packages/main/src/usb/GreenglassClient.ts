@@ -76,6 +76,9 @@ export type GreenglassClientOptions = {
   writeTimeoutMs?: number;
 };
 
+/** Zero bytes sent at a time to complete a request cut off by an earlier session. */
+const RESYNC_BLOCK = 256;
+
 /** Requests that change storage: they can be slow to answer while the flash is busy. */
 const SLOW_REQUESTS = new Set<number>([
   MessageID.FileWriteRequest,
@@ -173,30 +176,42 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
 
   /**
    * Gets back in step with a pedal whose state is unknown, before the first
-   * request. Drops what it is sending, then checks that it answers a probe. If
-   * it does not, it is probably waiting for the rest of a request an earlier
-   * session cut off: it is fed zero bytes, one at a time, until that request is
-   * complete and it answers. (If the cut request was a file write, the zeros
-   * end up in that file, which is always a temporary `.tmp` file.)
+   * request. Drops what it is sending, then checks that it answers a probe.
+   *
+   * If it does not, it is probably waiting for the rest of a request an
+   * earlier session cut off (its parser never gives up on a frame). Then:
+   * 1. zeros go out in 256-byte blocks until it answers: the cut request is
+   *    complete (if it was a file write, the zeros end up in that file, which
+   *    is always a temporary `.tmp` file);
+   * 2. zeros go out one at a time, at most six: six zero bytes are an empty
+   *    WhoAmI, which the pedal answers, so the first answer marks a frame
+   *    boundary even when step 1 sent a few zeros too many;
+   * 3. a real WhoAmI confirms it.
    */
   async resync({ probeMs = 1500, maxFillBytes = 10_000 } = {}): Promise<void> {
+    const probe = () => this.#answers(encodeRequest(MessageID.WhoAmIRequest, 0xfffffff0), probeMs);
     await this.discardStaleInput();
-    for (let round = 0; round < 3; round++) {
-      if (await this.#answers(encodeRequest(MessageID.WhoAmIRequest, 0xfffffff0), probeMs)) {
-        await this.discardStaleInput();
-        return;
-      }
-      // Feed zeros until anything comes back. A header of six zeros is a
-      // WhoAmI with no payload, which the pedal answers too, so this also
-      // ends on a frame boundary.
-      let answered = false;
-      for (let fed = 0; fed < maxFillBytes && !answered; fed++) {
-        answered = await this.#answers(Buffer.alloc(1), fed % 64 === 63 ? 50 : 4);
-      }
-      if (!answered) break;
+    if (await probe()) {
       await this.discardStaleInput();
+      return;
     }
-    throw new GreenglassConnectionError('The pedal does not answer');
+
+    let answered = false;
+    for (let fed = 0; fed < maxFillBytes && !answered; fed += RESYNC_BLOCK) {
+      answered = await this.#answers(Buffer.alloc(RESYNC_BLOCK), 30);
+    }
+    if (!answered) throw new GreenglassConnectionError('The pedal does not answer');
+    await this.discardStaleInput();
+
+    answered = false;
+    for (let fed = 0; fed < 6 && !answered; fed++) {
+      answered = await this.#answers(Buffer.alloc(1), 250);
+    }
+    await this.discardStaleInput();
+    if (!answered || !(await probe())) {
+      throw new GreenglassConnectionError('The pedal does not answer');
+    }
+    await this.discardStaleInput();
   }
 
   /** Sends raw bytes and tells whether anything comes back within `waitMs`. */

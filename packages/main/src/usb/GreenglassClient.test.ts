@@ -241,11 +241,26 @@ describe('GreenglassClient', () => {
     expect((await client.whoAmI()).name).toBe('JamMan Stereo');
   });
 
+  it('lands on a frame boundary even after sending a few zeros too many', async () => {
+    const pedal = new FakePedal({ files: { [FILE]: CONTENT } });
+    // 10 bytes short of a frame: one block overshoots by 246 bytes (41 empty frames)
+    const body = new PayloadWriter().i64(5n).i32(100).bytes(Buffer.alloc(100, 7)).build();
+    const frame = encodeRequest(MessageID.FileWriteRequest, 99, body);
+    await pedal.transport.write(frame.subarray(0, frame.length - 10));
+
+    const client = new GreenglassClient(pedal.transport, { requestTimeoutMs: 500 });
+    const started = Date.now();
+    await client.resync({ probeMs: 100 });
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect((await client.whoAmI()).name).toBe('JamMan Stereo');
+    expect((await client.getProperties()).size).toBeGreaterThan(0);
+  });
+
   it('gives up resyncing a pedal that never answers', async () => {
     const pedal = new FakePedal();
     pedal.silent = true;
     const client = new GreenglassClient(pedal.transport);
-    await expect(client.resync({ probeMs: 20, maxFillBytes: 20 })).rejects.toThrow(
+    await expect(client.resync({ probeMs: 20, maxFillBytes: 200 })).rejects.toThrow(
       /does not answer/,
     );
   });
