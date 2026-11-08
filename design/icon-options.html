@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ícono de JamMan Manager</title>
+    <style>
+      :root {
+        --chassis: #1f3d93;
+        --panel: #18191c;
+        --legend: #f1f3f6;
+        --muted: #8e939c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 40px 32px 56px;
+        background: #0f1012;
+        color: var(--legend);
+        font:
+          400 15px/1.5 'Barlow',
+          system-ui,
+          sans-serif;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font:
+          700 30px/1.1 'Barlow Condensed',
+          'Arial Narrow',
+          sans-serif;
+      }
+      .lede {
+        margin: 0 0 32px;
+        color: var(--muted);
+        max-width: 70ch;
+      }
+      .options {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 24px;
+      }
+      .option {
+        padding: 24px;
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: inset 0 0 0 1px #2a2c31;
+      }
+      .option h2 {
+        margin: 0;
+        font:
+          700 22px/1.1 'Barlow Condensed',
+          'Arial Narrow',
+          sans-serif;
+      }
+      .option p {
+        margin: 6px 0 18px;
+        color: var(--muted);
+        min-height: 4.5em;
+      }
+      .hero {
+        display: block;
+        width: 100%;
+        max-width: 300px;
+        margin: 0 auto 20px;
+      }
+      .sizes {
+        display: flex;
+        align-items: flex-end;
+        gap: 14px;
+        padding: 14px;
+        border-radius: 8px;
+      }
+      .sizes + .sizes {
+        margin-top: 8px;
+      }
+      .dark {
+        background: #1d1e22;
+      }
+      .light {
+        background: #eceef2;
+      }
+      .dock {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin: 40px auto 0;
+        padding: 10px 14px;
+        width: fit-content;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.16);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+      }
+      .dockWrap {
+        margin-top: 32px;
+        padding: 60px 20px 24px;
+        border-radius: 12px;
+        background: linear-gradient(160deg, #3b5998, #8a4f7d 60%, #d9925b);
+      }
+      .dockWrap p {
+        margin: 0;
+        text-align: center;
+        color: #fff;
+        font-weight: 600;
+      }
+      .dock img {
+        width: 64px;
+        height: 64px;
+      }
+      .ghost {
+        width: 64px;
+        height: 64px;
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.35);
+      }
+      @media (max-width: 900px) {
+        .options {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ícono de JamMan Manager: tres opciones</h1>
+    <p class="lede">
+      Las tres usan los materiales del sistema "Pedal" (chasis azul, panel negro, display verde,
+      LEDs), sin el logo de Digitech. Cada una aparece en grande y en los tamaños donde más se ve:
+      Dock, Finder y barra de pestañas.
+    </p>
+    <section class="options">
+      <article class="option">
+        <h2>1. Display</h2>
+        <p>
+          La ventana del display marcando 99, los slots de la tarjeta. Dice lo que hace la app:
+          gestionar los patches del pedal.
+        </p>
+        <img class="hero" src="icon/option-1-display.svg" alt="" />
+        <div class="sizes dark" data-src="icon/option-1-display.svg"></div>
+        <div class="sizes light" data-src="icon/option-1-display.svg"></div>
+      </article>
+      <article class="option">
+        <h2>2. Switch</h2>
+        <p>
+          El footswitch cromado visto desde arriba, con un LED rojo y uno verde. Es lo primero que
+          uno reconoce de un looper.
+        </p>
+        <img class="hero" src="icon/option-2-stomp.svg" alt="" />
+        <div class="sizes dark" data-src="icon/option-2-stomp.svg"></div>
+        <div class="sizes light" data-src="icon/option-2-stomp.svg"></div>
+      </article>
+      <article class="option">
+        <h2>3. Loop</h2>
+        <p>
+          Un anillo de LEDs que avanza como un loop sobre el panel negro, con el slot 01 en el
+          centro. Es el más oscuro de los tres en el Dock.
+        </p>
+        <img class="hero" src="icon/option-3-loop.svg" alt="" />
+        <div class="sizes dark" data-src="icon/option-3-loop.svg"></div>
+        <div class="sizes light" data-src="icon/option-3-loop.svg"></div>
+      </article>
+    </section>
+
+    <div class="dockWrap">
+      <p>En el Dock, junto a otras apps</p>
+      <div class="dock">
+        <span class="ghost"></span>
+        <img src="icon/option-1-display.svg" alt="Opción 1" />
+        <img src="icon/option-2-stomp.svg" alt="Opción 2" />
+        <img src="icon/option-3-loop.svg" alt="Opción 3" />
+        <span class="ghost"></span>
+      </div>
+    </div>
+
+    <script>
+      for (const row of document.querySelectorAll('.sizes')) {
+        for (const size of [128, 64, 32, 16]) {
+          const img = document.createElement('img');
+          img.src = row.dataset.src;
+          img.width = size;
+          img.height = size;
+          img.alt = '';
+          row.append(img);
+        }
+      }
+    </script>
+  </body>
+</html>
