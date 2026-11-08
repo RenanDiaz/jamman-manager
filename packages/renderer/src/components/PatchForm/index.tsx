@@ -1,4 +1,4 @@
-import { FC, FormEvent, useEffect, useState } from 'react';
+import { FC, FormEvent, useState } from 'react';
 import {
   Button,
   Card,
@@ -32,31 +32,27 @@ interface Props {
 }
 
 export const PatchForm: FC<Props> = ({ formId, basePath, busyPatches, initialData, onSuccess }) => {
-  const [patchName, setPatchName] = useState('');
-  const [rhythmType, setRhythmType] = useState<RhythmType>(RhythmType.StudioKickAndHighHat);
-  const [stopMode, setStopMode] = useState<StopMode>(StopMode.StopInstantly);
-  const [phrases, setPhrases] = useState<PhraseForm[]>([]);
-  const [isEditing, setIsEditing] = useState(false);
-
-  useEffect(() => {
-    if (initialData) {
-      const data = initialData.data.JamManPatch;
-      setPatchName(data.PatchName[0]);
-      setRhythmType(data.RhythmType?.[0] as RhythmType);
-      setStopMode(data.StopMode?.[0] as StopMode);
-      setPhrases(
-        initialData.phrases.map(({ dir, data: { JamManPhrase: data }, wavPath }) => ({
-          name: dir,
-          wavPath,
-          beatsPerMinute: Number(data.BeatsPerMinute[0]),
-          beatsPerMeasure: Number(data.BeatsPerMeasure[0]),
-          isLoop: data.IsLoop?.[0] === '1',
-          isReversed: data.IsReversed?.[0] === '1',
-        })),
-      );
-    }
-    setIsEditing(!!initialData);
-  }, [initialData]);
+  // The form state is seeded from `initialData` once, at mount. The parent gives the
+  // form a `key` per patch, so editing another patch mounts a fresh form.
+  const patchData = initialData?.data.JamManPatch;
+  const [patchName, setPatchName] = useState(() => patchData?.PatchName[0] ?? '');
+  const [rhythmType, setRhythmType] = useState<RhythmType>(
+    () => (patchData?.RhythmType?.[0] as RhythmType | undefined) ?? RhythmType.StudioKickAndHighHat,
+  );
+  const [stopMode, setStopMode] = useState<StopMode>(
+    () => (patchData?.StopMode?.[0] as StopMode | undefined) ?? StopMode.StopInstantly,
+  );
+  const [phrases, setPhrases] = useState<PhraseForm[]>(() =>
+    (initialData?.phrases ?? []).map(({ dir, data: { JamManPhrase: data }, wavPath }) => ({
+      name: dir,
+      wavPath,
+      beatsPerMinute: Number(data.BeatsPerMinute[0]),
+      beatsPerMeasure: Number(data.BeatsPerMeasure[0]),
+      isLoop: data.IsLoop?.[0] === '1',
+      isReversed: data.IsReversed?.[0] === '1',
+    })),
+  );
+  const [isEditing, setIsEditing] = useState(() => !!initialData);
 
   const addPhrase = () => {
     const nextChar = String.fromCharCode(65 + phrases.length); // A, B, C...

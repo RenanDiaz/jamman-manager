@@ -59,25 +59,30 @@ export const FooterPlayer: FC = () => {
   } = useAudioPlayerStore();
 
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // The resolved URL is kept with the file it belongs to, so it is derived as null as soon as
+  // the player closes or switches file, without resetting state inside the effect.
+  const [resolved, setResolved] = useState<{ wavPath: string; url: string | null } | null>(null);
+  const audioUrl = audioInfo && resolved?.wavPath === audioInfo.wavPath ? resolved.url : null;
 
   // Load audio when audioInfo changes
   useEffect(() => {
-    if (!audioInfo) {
-      setAudioUrl(null);
-      return;
-    }
+    if (!audioInfo) return;
 
-    // Get audio URL
+    const { wavPath } = audioInfo;
+    let cancelled = false;
     (async () => {
       try {
-        const url = await window.electronAPI.getAudioURL(audioInfo.wavPath);
-        setAudioUrl(url);
+        const url = await window.electronAPI.getAudioURL(wavPath);
+        if (!cancelled) setResolved({ wavPath, url });
       } catch (error) {
+        if (cancelled) return;
         console.error('Error loading audio URL:', error);
         toast.error('Failed to load audio');
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [audioInfo]);
 
   // Update duration when audio loads
