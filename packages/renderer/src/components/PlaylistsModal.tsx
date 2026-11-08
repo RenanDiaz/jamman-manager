@@ -1,19 +1,4 @@
 import { FC, useState, useEffect, useCallback } from 'react';
-import {
-  Button,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Input,
-  ListGroup,
-  ListGroupItem,
-  Badge,
-  FormGroup,
-  Label,
-  Alert,
-  Spinner,
-} from 'reactstrap';
 import { toast } from 'react-toastify';
 import {
   DndContext,
@@ -33,6 +18,19 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Patch } from '../types';
+import {
+  cx,
+  Dialog,
+  DisplayWindow,
+  Field,
+  Grip,
+  Input,
+  Led,
+  Notice,
+  PanelKey,
+  SevenSegment,
+} from '../ui';
+import s from './PlaylistsModal.module.css';
 
 interface Playlist {
   id: string;
@@ -68,52 +66,35 @@ const SortablePatchItem: FC<SortablePatchItemProps> = ({
     id: patchDir,
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    padding: '12px',
-    backgroundColor: isDragging ? '#2c3e50' : '#212529',
-    border: '1px solid #495057',
-    borderRadius: '4px',
-    marginBottom: '8px',
-    cursor: isDragging ? 'grabbing' : 'grab',
-  };
-
   return (
-    <div
+    <li
       ref={setNodeRef}
-      className="d-flex justify-content-between align-items-center"
-      style={style}
+      className={cx(s.entry, isDragging && s.entryLifted)}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
+      aria-label={`${index + 1}. ${patchDir}${patchName ? ` ${patchName}` : ''}`}
     >
-      <div className="d-flex align-items-center gap-2 flex-grow-1">
-        <span
-          className="text-muted"
-          style={{ userSelect: 'none', padding: '0 8px', fontSize: '18px' }}
-        >
-          ⋮⋮
-        </span>
-        <Badge color="secondary">{index + 1}</Badge>
-        <div>
-          <strong>{patchDir}</strong>
-          {patchName && <small className="ms-2 text-muted">{patchName}</small>}
-        </div>
-      </div>
-      <Button
-        color="danger"
+      <Grip />
+      <DisplayWindow className={s.order}>
+        <SevenSegment value={String(index + 1).padStart(2, '0')} height={18} />
+      </DisplayWindow>
+      <span className={s.entryText}>
+        <span className={s.entryName}>{patchName || 'Untitled'}</span>
+        <span className={s.muted}>{patchDir}</span>
+      </span>
+      <PanelKey
+        label="Remove"
         size="sm"
-        outline
+        aria-label={`Remove ${patchDir} from the playlist`}
         onClick={e => {
           e.stopPropagation();
           onRemove(patchDir);
         }}
         onPointerDown={e => e.stopPropagation()}
-      >
-        Remove
-      </Button>
-    </div>
+        onKeyDown={e => e.stopPropagation()}
+      />
+    </li>
   );
 };
 
@@ -132,6 +113,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
   const [editing, setEditing] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [editPlaylistName, setEditPlaylistName] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Drag-and-drop sensors
   const sensors = useSensors(
@@ -220,7 +202,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
 
   const handleDeletePlaylist = async (playlistId: string, playlistName: string) => {
     if (!currentFolder) return;
-    if (!confirm(`Are you sure you want to delete "${playlistName}"?`)) return;
+    setConfirmingDelete(false);
 
     try {
       setLoading(true);
@@ -371,246 +353,250 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
     }
   };
 
+  const selectPlaylist = (playlist: Playlist) => {
+    setSelectedPlaylist(playlist);
+    setEditing(false);
+    setConfirmingDelete(false);
+  };
+
   return (
-    <Modal isOpen={isOpen} toggle={onClose} size="xl">
-      <ModalHeader toggle={onClose}>Playlists</ModalHeader>
-      <ModalBody>
-        {!currentFolder && (
-          <Alert color="warning">Please load a folder first to use playlists.</Alert>
-        )}
-
-        {currentFolder && (
-          <div className="d-flex" style={{ minHeight: '500px' }}>
-            {/* Left Panel: Playlist List */}
-            <div
-              className="border-end pe-3"
-              style={{ width: '300px', overflowY: 'auto', maxHeight: '500px' }}
-            >
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h6 className="mb-0">Your Playlists</h6>
-                <Button color="primary" size="sm" onClick={() => setCreating(true)}>
-                  + New
-                </Button>
-              </div>
-
-              {creating && (
-                <div className="mb-3 p-2 border rounded bg-dark">
-                  <FormGroup>
-                    <Label size="sm">Playlist Name</Label>
-                    <Input
-                      type="text"
-                      bsSize="sm"
-                      value={newPlaylistName}
-                      onChange={e => setNewPlaylistName(e.target.value)}
-                      placeholder="My Playlist"
-                      onKeyDown={e => e.key === 'Enter' && handleCreatePlaylist()}
-                    />
-                  </FormGroup>
-                  <div className="d-flex gap-1">
-                    <Button
-                      color="primary"
-                      size="sm"
-                      onClick={handleCreatePlaylist}
-                      disabled={!newPlaylistName.trim()}
-                    >
-                      Create
-                    </Button>
-                    <Button color="secondary" size="sm" outline onClick={() => setCreating(false)}>
-                      Cancel
-                    </Button>
-                  </div>
-                  {selectedPatchDirs.length > 0 && (
-                    <small className="text-muted d-block mt-1">
-                      Will include {selectedPatchDirs.length} selected patches
-                    </small>
-                  )}
-                </div>
-              )}
-
-              {busy && playlists.length === 0 ? (
-                <div className="text-center py-4">
-                  <Spinner size="sm" />
-                  <p className="text-muted mt-2 mb-0">Loading...</p>
-                </div>
-              ) : playlists.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-muted mb-0">No playlists yet</p>
-                  <small className="text-muted">Create one to get started</small>
-                </div>
-              ) : (
-                <ListGroup>
-                  {playlists.map(playlist => (
-                    <ListGroupItem
-                      key={playlist.id}
-                      action
-                      active={selectedPlaylist?.id === playlist.id}
-                      onClick={() => setSelectedPlaylist(playlist)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div>
-                          <strong>{playlist.name}</strong>
-                          <br />
-                          <small className="text-muted">{playlist.patches.length} patches</small>
-                        </div>
-                        <Badge color="primary" pill>
-                          {playlist.patches.length}
-                        </Badge>
-                      </div>
-                    </ListGroupItem>
-                  ))}
-                </ListGroup>
-              )}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      dismissible={!busy}
+      size="xl"
+      title="Playlists"
+      subtitle="Group patches into setlists, then move a setlist to the first slots of the card."
+      footer={<PanelKey label="Close" onClick={onClose} disabled={busy} />}
+    >
+      {!currentFolder ? (
+        <Notice tone="warning">
+          <p>Load a card first to use playlists.</p>
+        </Notice>
+      ) : (
+        <div className={s.layout}>
+          <section className={s.side} aria-labelledby="playlists-heading">
+            <div className={s.sideHead}>
+              <h3 id="playlists-heading" className={s.heading}>
+                Your playlists
+              </h3>
+              {!creating && <PanelKey label="New" size="sm" onClick={() => setCreating(true)} />}
             </div>
 
-            {/* Right Panel: Playlist Details */}
-            <div className="flex-grow-1 ps-3" style={{ overflowY: 'auto', maxHeight: '500px' }}>
-              {selectedPlaylist ? (
-                <>
-                  <div className="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                      {editing ? (
-                        <div className="d-flex gap-2 align-items-center">
-                          <Input
-                            type="text"
-                            value={editPlaylistName}
-                            onChange={e => setEditPlaylistName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleRenamePlaylist()}
-                            style={{ width: '250px' }}
-                          />
-                          <Button color="primary" size="sm" onClick={handleRenamePlaylist}>
-                            Save
-                          </Button>
-                          <Button
-                            color="secondary"
-                            size="sm"
-                            outline
-                            onClick={() => {
-                              setEditing(false);
-                              setEditPlaylistName('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          <h5>{selectedPlaylist.name}</h5>
-                          <small className="text-muted">
-                            {selectedPlaylist.patches.length} patches •{' '}
-                            {new Date(selectedPlaylist.updatedAt).toLocaleDateString()}
-                          </small>
-                        </>
-                      )}
+            {creating && (
+              <div className={s.create}>
+                <Field
+                  label="Name"
+                  htmlFor="new-playlist-name"
+                  hint={
+                    selectedPatchDirs.length > 0
+                      ? `Starts with the ${selectedPatchDirs.length} selected patches.`
+                      : undefined
+                  }
+                >
+                  <Input
+                    id="new-playlist-name"
+                    type="text"
+                    value={newPlaylistName}
+                    onChange={e => setNewPlaylistName(e.target.value)}
+                    placeholder="Friday set"
+                    autoFocus
+                    autoComplete="off"
+                    onKeyDown={e => e.key === 'Enter' && handleCreatePlaylist()}
+                  />
+                </Field>
+                <div className={s.keys}>
+                  <PanelKey label="Cancel" size="sm" onClick={() => setCreating(false)} />
+                  <PanelKey
+                    label="Create"
+                    size="sm"
+                    led
+                    onClick={handleCreatePlaylist}
+                    disabled={!newPlaylistName.trim()}
+                  />
+                </div>
+              </div>
+            )}
+
+            {busy && playlists.length === 0 ? (
+              <p className={s.status} role="status">
+                <Led color="red" on blinkSeconds={0.4} />
+                Loading playlists…
+              </p>
+            ) : playlists.length === 0 ? (
+              <p className={s.muted}>No playlists yet. Use New to start one.</p>
+            ) : (
+              <ul className={s.playlists}>
+                {playlists.map(playlist => {
+                  const current = selectedPlaylist?.id === playlist.id;
+                  return (
+                    <li key={playlist.id}>
+                      <button
+                        type="button"
+                        className={cx(s.playlist, current && s.playlistCurrent)}
+                        aria-pressed={current}
+                        onClick={() => selectPlaylist(playlist)}
+                      >
+                        <Led color="red" on={current} />
+                        <span className={s.playlistName}>{playlist.name}</span>
+                        <span className={s.muted}>
+                          {playlist.patches.length}{' '}
+                          {playlist.patches.length === 1 ? 'patch' : 'patches'}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className={s.detail} aria-label="Playlist">
+            {selectedPlaylist ? (
+              <>
+                <div className={s.detailHead}>
+                  {editing ? (
+                    <div className={s.rename}>
+                      <Field label="Name" htmlFor="rename-playlist" className={s.grow}>
+                        <Input
+                          id="rename-playlist"
+                          type="text"
+                          value={editPlaylistName}
+                          onChange={e => setEditPlaylistName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleRenamePlaylist()}
+                          autoFocus
+                          autoComplete="off"
+                        />
+                      </Field>
+                      <PanelKey
+                        label="Cancel"
+                        size="sm"
+                        onClick={() => {
+                          setEditing(false);
+                          setEditPlaylistName('');
+                        }}
+                      />
+                      <PanelKey label="Save" size="sm" led onClick={handleRenamePlaylist} />
                     </div>
-                    {!editing && (
-                      <div className="d-flex gap-1">
-                        <Button
-                          color="secondary"
+                  ) : (
+                    <>
+                      <div className={s.title}>
+                        <h3 className={s.name}>{selectedPlaylist.name}</h3>
+                        <span className={s.muted}>
+                          {selectedPlaylist.patches.length}{' '}
+                          {selectedPlaylist.patches.length === 1 ? 'patch' : 'patches'}, updated{' '}
+                          {new Date(selectedPlaylist.updatedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className={s.keys}>
+                        <PanelKey
+                          label="Rename"
                           size="sm"
-                          outline
                           onClick={() => {
+                            setConfirmingDelete(false);
                             setEditing(true);
                             setEditPlaylistName(selectedPlaylist.name);
                           }}
-                        >
-                          Rename
-                        </Button>
-                        <Button
-                          color="danger"
+                        />
+                        <PanelKey
+                          label="Delete"
                           size="sm"
-                          outline
-                          onClick={() =>
-                            handleDeletePlaylist(selectedPlaylist.id, selectedPlaylist.name)
-                          }
-                        >
-                          Delete
-                        </Button>
+                          tone="danger"
+                          aria-expanded={confirmingDelete}
+                          onClick={() => setConfirmingDelete(true)}
+                        />
                       </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="mb-3 d-flex gap-2 flex-wrap">
-                    {selectedPatchDirs.length > 0 && (
-                      <Button color="primary" size="sm" onClick={handleAddSelectedPatches}>
-                        + Add Selected ({selectedPatchDirs.length})
-                      </Button>
-                    )}
-                    {selectedPlaylist.patches.length > 0 && (
-                      <>
-                        <Button color="secondary" size="sm" outline onClick={handleExportPlaylist}>
-                          ⤓ Export Setlist
-                        </Button>
-                        <Button color="primary" size="sm" onClick={handleMoveToTop}>
-                          ⬆️ Move to Top
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Patches in Playlist */}
-                  <div>
-                    <h6 className="mb-2">Patches in this Playlist</h6>
-                    {selectedPlaylist.patches.length === 0 ? (
-                      <Alert color="info">
-                        <small>
-                          This playlist is empty. Select patches in the main view and click "Add
-                          Selected" to add them.
-                        </small>
-                      </Alert>
-                    ) : (
-                      <div>
-                        <small className="text-muted d-block mb-2">
-                          💡 Drag patches to reorder them within the playlist
-                        </small>
-                        <DndContext
-                          sensors={sensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={handleDragEnd}
-                        >
-                          <SortableContext
-                            items={selectedPlaylist.patches}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <div style={{ minHeight: '50px' }}>
-                              {selectedPlaylist.patches.map((patchDir, index) => {
-                                const patchName = getPatchName(patchDir);
-                                return (
-                                  <SortablePatchItem
-                                    key={patchDir}
-                                    patchDir={patchDir}
-                                    index={index}
-                                    patchName={patchName}
-                                    onRemove={handleRemovePatch}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </SortableContext>
-                        </DndContext>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="d-flex align-items-center justify-content-center h-100">
-                  <div className="text-center text-muted">
-                    <p>Select a playlist to view details</p>
-                    <small>or create a new one</small>
-                  </div>
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-      </ModalBody>
-      <ModalFooter>
-        <Button color="secondary" onClick={onClose} disabled={busy}>
-          Close
-        </Button>
-      </ModalFooter>
-    </Modal>
+
+                {confirmingDelete && (
+                  <Notice tone="warning" title={`Delete the playlist “${selectedPlaylist.name}”?`}>
+                    <p>Its patches stay on the card.</p>
+                    <div className={s.keys}>
+                      <PanelKey
+                        label="Keep it"
+                        size="sm"
+                        onClick={() => setConfirmingDelete(false)}
+                      />
+                      <PanelKey
+                        label="Delete playlist"
+                        size="sm"
+                        tone="danger"
+                        onClick={() =>
+                          handleDeletePlaylist(selectedPlaylist.id, selectedPlaylist.name)
+                        }
+                      />
+                    </div>
+                  </Notice>
+                )}
+
+                <div className={s.actions}>
+                  {selectedPatchDirs.length > 0 && (
+                    <PanelKey
+                      label={`Add selected (${selectedPatchDirs.length})`}
+                      onClick={handleAddSelectedPatches}
+                    />
+                  )}
+                  {selectedPlaylist.patches.length > 0 && (
+                    <>
+                      <PanelKey label="Export setlist" onClick={handleExportPlaylist} />
+                      <PanelKey
+                        label="Move to top"
+                        hint="Renumbers the card"
+                        led
+                        onClick={handleMoveToTop}
+                      />
+                    </>
+                  )}
+                </div>
+
+                {selectedPlaylist.patches.length === 0 ? (
+                  <Notice>
+                    <p>
+                      This playlist is empty. Select patches in the main list, then use Add
+                      selected.
+                    </p>
+                  </Notice>
+                ) : (
+                  <div className={s.setlist}>
+                    <p className={s.muted} id="setlist-help">
+                      Drag to change the order, or focus a row and use Space and the arrow keys.
+                    </p>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={selectedPlaylist.patches}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <ol className={s.entries}>
+                          {selectedPlaylist.patches.map((patchDir, index) => (
+                            <SortablePatchItem
+                              key={patchDir}
+                              patchDir={patchDir}
+                              index={index}
+                              patchName={getPatchName(patchDir)}
+                              onRemove={handleRemovePatch}
+                            />
+                          ))}
+                        </ol>
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className={cx(s.muted, s.placeholder)}>
+                Pick a playlist to see its patches, or start a new one.
+              </p>
+            )}
+          </section>
+        </div>
+      )}
+    </Dialog>
   );
 };
 

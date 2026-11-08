@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
-import {
-  Button,
-  ButtonDropdown,
-  Col,
-  Container,
-  DropdownItem,
-  DropdownMenu,
-  DropdownToggle,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Row,
-  Spinner,
-  UncontrolledAccordion,
-} from 'reactstrap';
+import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Tooltip } from 'react-tooltip';
-import 'react-tooltip/dist/react-tooltip.css';
-import PatchListItem from './components/PatchListItem';
+import AppHeader from './components/AppHeader';
+import MemoryMap from './components/MemoryMap';
+import PatchDetail from './components/PatchDetail';
+import PatchListItem, { EmptySlotItem } from './components/PatchListItem';
+import {
+  Dialog,
+  DisplayWindow,
+  Led,
+  LedToggle,
+  Legend,
+  Panel,
+  PanelKey,
+  SevenSegment,
+  TopLayer,
+} from './ui';
+import { patchDirForSlot, shortcut, slotNumber } from './utils/format';
+import s from './App.module.css';
 import { usePatchStore } from './store/usePatchStore';
 import { useUndoStore } from './store/useUndoStore';
 import { executeUndo, executeRedo, canUndo, canRedo } from './utils/undoHandler';
@@ -60,9 +58,12 @@ function App() {
   const [deleteModalIsOpen, setDeleteModalIsOpen] = useState<boolean>(false);
   const [patchToDelete, setPatchToDelete] = useState<string | null>(null);
   const [patchesToDelete, setPatchesToDelete] = useState<string[]>([]);
-  const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
   const [backupRestoreModalIsOpen, setBackupRestoreModalIsOpen] = useState<boolean>(false);
   const [playlistsModalIsOpen, setPlaylistsModalIsOpen] = useState<boolean>(false);
+  // Main-screen view state (presentation only)
+  const [focusedDir, setFocusedDir] = useState<string | null>(null);
+  const [showEmptySlots, setShowEmptySlots] = useState<boolean>(false);
+  const [createInDir, setCreateInDir] = useState<string | undefined>(undefined);
 
   // Undo/Redo state
   const undoAvailable = useUndoStore(state => state.undoStack.length > 0);
@@ -139,12 +140,19 @@ function App() {
     setPatchFormModalIsOpen(prev => !prev);
   };
 
+  const openNewPatch = (directory?: string) => {
+    setSelectedPatch(undefined);
+    setCreateInDir(directory);
+    setPatchFormModalIsOpen(true);
+  };
+
   const handleCreateEditPatchSuccess = () => {
     setPatchFormModalIsOpen(false);
   };
 
   const handleModalClose = () => {
     setSelectedPatch(undefined);
+    setCreateInDir(undefined);
   };
 
   const handleEditPatch = useCallback(
@@ -240,10 +248,6 @@ function App() {
     }
   };
 
-  const toggleExportDropdown = () => {
-    setExportDropdownOpen(prev => !prev);
-  };
-
   const handleExportTXT = async () => {
     if (!currentFolder || patches.length === 0) {
       toast.warning('No patches to export');
@@ -282,317 +286,180 @@ function App() {
     }
   };
 
+  const usedDirs = useMemo(() => patches.map(p => p.dir), [patches]);
+  const patchesByDir = useMemo(() => new Map(patches.map(p => [p.dir, p])), [patches]);
+
   // If in sort mode, show only the sort view
   if (sortModeActive) {
     return (
-      <Suspense
-        fallback={
-          <div
-            className="d-flex align-items-center justify-content-center"
-            style={{ minHeight: '100vh' }}
-          >
-            <Spinner color="primary" />
-          </div>
-        }
-      >
+      <Suspense fallback={<div className={s.app} />}>
         <SortView patches={patches} onApply={handleApplySort} onCancel={exitSortMode} />
       </Suspense>
     );
   }
 
+  const focusedPatch = patches.find(p => p.dir === focusedDir) ?? patches[0];
+  const listSlots = showEmptySlots
+    ? Array.from({ length: 99 }, (_, i) => patchDirForSlot(i + 1))
+    : patches.map(p => p.dir);
+
   return (
-    <Container fluid>
-      <Row className="align-items-center" style={{ minHeight: '100vh' }}>
-        <Col>
-          {/* Header / Toolbar */}
-          <div
-            className="sticky-top bg-dark border-bottom"
-            style={{
-              top: 0,
-              zIndex: 100,
-              marginLeft: '-12px',
-              marginRight: '-12px',
-              padding: '1rem 1.5rem',
-            }}
-          >
-            <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
-              {/* Left: Title */}
-              <div>
-                <h3 className="mb-0">JamMan Manager</h3>
-                {currentFolder && (
-                  <div className="d-flex align-items-center gap-2">
-                    <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                      {currentFolder}
-                    </small>
-                    {folderSizeBytes !== null && (
-                      <span className="badge bg-secondary" style={{ fontSize: '0.7rem' }}>
-                        📦{' '}
-                        {folderSizeBytes < 1024 * 1024
-                          ? `${(folderSizeBytes / 1024).toFixed(1)} KB`
-                          : folderSizeBytes < 1024 * 1024 * 1024
-                            ? `${(folderSizeBytes / 1024 / 1024).toFixed(1)} MB`
-                            : `${(folderSizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB`}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+    <div className={s.app}>
+      <AppHeader
+        currentFolder={currentFolder}
+        folderSizeBytes={folderSizeBytes}
+        loading={loading}
+        focusedSlot={focusedPatch ? slotNumber(focusedPatch.dir) : null}
+        patchCount={patches.length}
+        canUndo={undoAvailable}
+        canRedo={redoAvailable}
+        onLoad={handleLoad}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onClose={clearPatches}
+        onSort={enterSortMode}
+        onExportTXT={handleExportTXT}
+        onExportPDF={handleExportPDF}
+        onBackup={() => setBackupRestoreModalIsOpen(true)}
+        onPlaylists={() => setPlaylistsModalIsOpen(true)}
+        onNewPatch={() => openNewPatch()}
+      />
 
-              {/* Right: Actions */}
-              <div className="d-flex align-items-center flex-wrap gap-2">
-                {/* Load Patches - Always visible */}
-                <Button
+      {loading ? (
+        <main className={s.center}>
+          <Panel screws="top" className={s.message} role="status">
+            <DisplayWindow>
+              <SevenSegment value="--" height={40} />
+            </DisplayWindow>
+            <p className={s.messageTitle}>
+              <Led color="yellow" shape="round" on blinkSeconds={0.5} /> Reading the card
+            </p>
+          </Panel>
+        </main>
+      ) : patches.length > 0 && focusedPatch ? (
+        <main className={s.main}>
+          <section className={s.listColumn} aria-label="Patches">
+            <MemoryMap
+              usedDirs={usedDirs}
+              focusedDir={focusedPatch.dir}
+              onFocus={setFocusedDir}
+              onCreateAt={openNewPatch}
+            />
+            <div className={s.listbar}>
+              <Legend>
+                {selectedPatchDirs.length > 0
+                  ? `${selectedPatchDirs.length} selected`
+                  : `${patches.length} patches`}
+              </Legend>
+              <div className={s.listActions}>
+                {selectedPatchDirs.length > 0 && (
+                  <PanelKey
+                    label={`Delete ${selectedPatchDirs.length}`}
+                    tone="danger"
+                    title="Delete the selected patches"
+                    onClick={handleBatchDelete}
+                  />
+                )}
+                <LedToggle pressed={showEmptySlots} onChange={setShowEmptySlots}>
+                  Show empty slots
+                </LedToggle>
+                <button
                   type="button"
-                  color="success"
-                  onClick={handleLoad}
-                  disabled={loading}
-                  size="sm"
+                  className={s.link}
+                  onClick={selectedPatchDirs.length > 0 ? clearSelection : selectAll}
                 >
-                  📁 Load Patches
-                </Button>
-
-                {/* Undo/Redo - Always visible but disabled when not available */}
-                <div className="d-flex gap-1">
-                  <Button
-                    type="button"
-                    color="secondary"
-                    outline
-                    onClick={handleUndo}
-                    disabled={!undoAvailable || loading}
-                    size="sm"
-                    data-tooltip-id="undo-tooltip"
-                    data-tooltip-content="Undo last action (Ctrl+Z / Cmd+Z)"
-                  >
-                    ↶
-                  </Button>
-                  <Button
-                    type="button"
-                    color="secondary"
-                    outline
-                    onClick={handleRedo}
-                    disabled={!redoAvailable || loading}
-                    size="sm"
-                    data-tooltip-id="redo-tooltip"
-                    data-tooltip-content="Redo action (Ctrl+Shift+Z / Cmd+Shift+Z)"
-                  >
-                    ↷
-                  </Button>
-                </div>
-
-                {currentFolder && (
-                  <>
-                    {/* Patch Management Actions */}
-                    <div className="d-flex gap-1" style={{ marginLeft: '0.5rem' }}>
-                      <Button
-                        type="button"
-                        color="secondary"
-                        outline
-                        onClick={clearPatches}
-                        size="sm"
-                        title="Clear loaded folder"
-                      >
-                        ✕ Clear
-                      </Button>
-                      <Button
-                        type="button"
-                        color="secondary"
-                        outline
-                        onClick={enterSortMode}
-                        size="sm"
-                        disabled={patches.length === 0}
-                        data-tooltip-id="sort-tooltip"
-                        data-tooltip-content="Drag and drop to reorder patches. Changes sync to SD card. Supports multi-select!"
-                      >
-                        ⇅ Sort
-                      </Button>
-                      <ButtonDropdown
-                        isOpen={exportDropdownOpen}
-                        toggle={toggleExportDropdown}
-                        size="sm"
-                        disabled={patches.length === 0}
-                      >
-                        <DropdownToggle
-                          color="secondary"
-                          outline
-                          caret
-                          disabled={patches.length === 0}
-                        >
-                          ⤓ Export
-                        </DropdownToggle>
-                        <DropdownMenu>
-                          <DropdownItem onClick={handleExportTXT}>Export as TXT</DropdownItem>
-                          <DropdownItem onClick={handleExportPDF}>Export as PDF</DropdownItem>
-                        </DropdownMenu>
-                      </ButtonDropdown>
-                      <Button
-                        type="button"
-                        color="secondary"
-                        outline
-                        onClick={() => setBackupRestoreModalIsOpen(true)}
-                        size="sm"
-                        data-tooltip-id="backup-tooltip"
-                        data-tooltip-content="Create ZIP backups of patches. Restore with merge or replace modes. Great for sharing collections!"
-                      >
-                        💾 Backup
-                      </Button>
-                      <Button
-                        type="button"
-                        color="secondary"
-                        outline
-                        onClick={() => setPlaylistsModalIsOpen(true)}
-                        size="sm"
-                        data-tooltip-id="playlists-tooltip"
-                        data-tooltip-content="Organize patches into setlists. Use 'Move to Top' to reorder patches on SD card for live performance!"
-                      >
-                        📋 Playlists
-                      </Button>
-                    </div>
-
-                    {/* Selection Actions */}
-                    {selectedPatchDirs.length > 0 && (
-                      <div className="d-flex gap-1" style={{ marginLeft: '0.5rem' }}>
-                        <Button
-                          type="button"
-                          color="danger"
-                          outline
-                          onClick={handleBatchDelete}
-                          size="sm"
-                          data-tooltip-id="batch-delete-tooltip"
-                          data-tooltip-content={`Delete ${selectedPatchDirs.length} selected patches. Hold Shift to select ranges, Cmd/Ctrl to select multiple.`}
-                        >
-                          🗑️ Delete ({selectedPatchDirs.length})
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Primary Action */}
-                    <div style={{ marginLeft: '0.5rem' }}>
-                      <Button type="button" color="primary" onClick={togglePatchModal} size="sm">
-                        + Create Patch
-                      </Button>
-                    </div>
-                  </>
-                )}
+                  {selectedPatchDirs.length > 0 ? 'Clear selection' : 'Select all'}
+                </button>
               </div>
             </div>
-          </div>
+            <ul className={s.list}>
+              {listSlots.map(dir => {
+                const patch = patchesByDir.get(dir);
+                return patch ? (
+                  <PatchListItem
+                    key={dir}
+                    patch={patch}
+                    isSelected={selectedPatchDirs.includes(dir)}
+                    isFocused={dir === focusedPatch.dir}
+                    onFocus={setFocusedDir}
+                    onToggleSelection={toggleSelection}
+                  />
+                ) : (
+                  <EmptySlotItem key={dir} dir={dir} onCreate={openNewPatch} />
+                );
+              })}
+            </ul>
+          </section>
 
-          {/* Content Area */}
-          <div style={{ paddingTop: '1rem' }}>
-            {loading ? (
-              <div
-                className="d-flex flex-column align-items-center justify-content-center"
-                style={{ minHeight: '60vh' }}
-              >
-                <Spinner color="primary" style={{ width: '3rem', height: '3rem' }} />
-                <p className="mt-3">Loading patches...</p>
-              </div>
-            ) : patches.length > 0 ? (
-              <>
-                {/* Patch List Header */}
-                <div
-                  className="d-flex align-items-center justify-content-between mb-3 px-2"
-                  style={{ paddingTop: '0.5rem' }}
-                >
-                  <div>
-                    <strong>Patches</strong>
-                    <span className="text-muted ms-2">({patches.length} total)</span>
-                  </div>
-                  <div className="d-flex align-items-center gap-2">
-                    {selectedPatchDirs.length > 0 ? (
-                      <>
-                        <span className="text-primary">
-                          <strong>{selectedPatchDirs.length} selected</strong>
-                        </span>
-                        <Button color="link" size="sm" onClick={clearSelection}>
-                          Clear Selection
-                        </Button>
-                      </>
-                    ) : (
-                      <Button color="link" size="sm" onClick={selectAll}>
-                        Select All
-                      </Button>
-                    )}
-                  </div>
-                </div>
+          <PatchDetail patch={focusedPatch} onEdit={handleEditPatch} onDelete={handleDeletePatch} />
+        </main>
+      ) : currentFolder ? (
+        <main className={s.center}>
+          <Panel screws="top" className={s.message}>
+            <DisplayWindow>
+              <SevenSegment value="00" height={40} />
+            </DisplayWindow>
+            <h2 className={s.messageTitle}>This card has no patches yet</h2>
+            <p className={s.messageText}>
+              Store a new patch in any of its 99 slots, or restore patches from a backup.
+            </p>
+            <div className={s.messageActions}>
+              <PanelKey label="Restore backup" onClick={() => setBackupRestoreModalIsOpen(true)} />
+              <PanelKey label="New patch" led onClick={() => openNewPatch()} />
+            </div>
+          </Panel>
+        </main>
+      ) : (
+        <main className={s.center}>
+          <Panel screws="top" className={s.message}>
+            <DisplayWindow>
+              <SevenSegment value="--" height={40} />
+            </DisplayWindow>
+            <h2 className={s.messageTitle}>Load your JamMan SD card</h2>
+            <p className={s.messageText}>
+              Choose the card's folder to see, play and edit its patches.
+            </p>
+            <div className={s.messageActions}>
+              <PanelKey label="Load patches" hint={shortcut('O')} led onClick={handleLoad} />
+            </div>
+          </Panel>
+        </main>
+      )}
 
-                {/* Patch List */}
-                <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
-                  <UncontrolledAccordion defaultOpen={[]} stayOpen toggle={() => {}}>
-                    {patches.map(patch => (
-                      <PatchListItem
-                        key={patch.dir}
-                        patch={patch}
-                        isSelected={selectedPatchDirs.includes(patch.dir)}
-                        onEdit={handleEditPatch}
-                        onDelete={handleDeletePatch}
-                        onToggleSelection={toggleSelection}
-                      />
-                    ))}
-                  </UncontrolledAccordion>
-                </div>
-              </>
-            ) : currentFolder ? (
-              <div
-                className="d-flex flex-column align-items-center justify-content-center text-center"
-                style={{ minHeight: '60vh' }}
-              >
-                <p className="text-muted mb-2">No patches found in this folder</p>
-                <p className="text-muted mb-3">
-                  You can create a new patch or restore from a backup.
-                </p>
-                <div className="d-flex gap-2">
-                  <Button color="primary" onClick={togglePatchModal}>
-                    Create Patch
-                  </Button>
-                  <Button
-                    color="secondary"
-                    outline
-                    onClick={() => setBackupRestoreModalIsOpen(true)}
-                  >
-                    Restore Backup
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="d-flex flex-column align-items-center justify-content-center text-center"
-                style={{ minHeight: '60vh' }}
-              >
-                <p className="text-muted mb-2">No folder loaded</p>
-                <p className="text-muted">
-                  Click "Load Patches" or press <kbd>Ctrl+O</kbd> (or <kbd>Cmd+O</kbd> on Mac) to
-                  select your JamMan SD card.
-                </p>
-              </div>
-            )}
-          </div>
-        </Col>
-      </Row>
+      {/* Footer Player */}
+      <Suspense fallback={null}>
+        <FooterPlayer />
+      </Suspense>
+
       <Suspense fallback={<div />}>
-        <Modal isOpen={patchFormModalIsOpen} toggle={togglePatchModal} onClosed={handleModalClose}>
-          <ModalHeader toggle={togglePatchModal}>
-            {!selectedPatch ? 'Create Patch' : 'Edit Patch'}
-          </ModalHeader>
-          <ModalBody>
-            <PatchForm
-              key={selectedPatch?.dir ?? 'new'}
-              formId={PATCH_FORM_ID}
-              basePath={currentFolder || ''}
-              busyPatches={patches.map(p => p.dir)}
-              initialData={selectedPatch}
-              onSuccess={handleCreateEditPatchSuccess}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button color="secondary" onClick={togglePatchModal}>
-              Cancel
-            </Button>
-            <Button type="submit" form={PATCH_FORM_ID} color="primary">
-              {!selectedPatch ? 'Create' : 'Save'}
-            </Button>
-          </ModalFooter>
-        </Modal>
+        <Dialog
+          isOpen={patchFormModalIsOpen}
+          onClose={togglePatchModal}
+          onClosed={handleModalClose}
+          size="lg"
+          title={selectedPatch ? `Edit ${selectedPatch.dir}` : 'New patch'}
+          footer={
+            <>
+              <PanelKey label="Cancel" onClick={togglePatchModal} />
+              <PanelKey
+                type="submit"
+                form={PATCH_FORM_ID}
+                led
+                label={selectedPatch ? 'Save' : 'Store patch'}
+              />
+            </>
+          }
+        >
+          <PatchForm
+            key={selectedPatch?.dir ?? createInDir ?? 'new'}
+            formId={PATCH_FORM_ID}
+            basePath={currentFolder || ''}
+            busyPatches={patches.map(p => p.dir)}
+            initialData={selectedPatch}
+            defaultDirectory={createInDir}
+            onSuccess={handleCreateEditPatchSuccess}
+          />
+        </Dialog>
       </Suspense>
 
       <Suspense fallback={<div />}>
@@ -635,32 +502,21 @@ function App() {
         />
       </Suspense>
 
-      <ToastContainer
-        position="bottom-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
-
-      {/* Tooltips */}
-      <Tooltip id="undo-tooltip" place="bottom" />
-      <Tooltip id="redo-tooltip" place="bottom" />
-      <Tooltip id="sort-tooltip" place="bottom" />
-      <Tooltip id="backup-tooltip" place="bottom" />
-      <Tooltip id="playlists-tooltip" place="bottom" />
-      <Tooltip id="batch-delete-tooltip" place="bottom" />
-
-      {/* Footer Player */}
-      <Suspense fallback={null}>
-        <FooterPlayer />
-      </Suspense>
-    </Container>
+      <TopLayer>
+        <ToastContainer
+          position="bottom-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="dark"
+        />
+      </TopLayer>
+    </div>
   );
 }
 

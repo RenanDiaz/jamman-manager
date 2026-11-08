@@ -1,0 +1,195 @@
+/*
+ * Form controls. Text fields are recessed like the display window; choices are LEDs with
+ * printed labels, as on the pedal's stop-mode column. Tokens: src/styles/tokens.css.
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-3);
+  min-width: 0;
+}
+.label {
+  font: var(--jm-text-legend);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jm-legend-on-panel);
+}
+.hint {
+  margin: 0;
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--jm-space-5);
+  border: 0;
+  border-radius: var(--jm-radius-window);
+  background: var(--jm-seg-window);
+  box-shadow: var(--jm-shadow-window);
+  color: var(--jm-legend);
+  caret-color: var(--jm-seg);
+  font: 500 15px/1 var(--jm-font-body);
+}
+.input::placeholder {
+  color: #5c6068;
+}
+.input:focus-visible {
+  outline: var(--jm-focus-ring);
+  outline-offset: 2px;
+}
+.input:disabled {
+  color: var(--jm-legend-on-panel);
+  cursor: not-allowed;
+}
+.input[type='number'] {
+  font: 700 18px/1 var(--jm-font-legend);
+  font-variant-numeric: tabular-nums;
+  color: var(--jm-seg);
+}
+.select {
+  appearance: none;
+  padding-right: var(--jm-space-9);
+  background:
+    linear-gradient(45deg, transparent 50%, var(--jm-legend-on-panel) 50%) right 17px top 50% / 5px
+      5px no-repeat,
+    linear-gradient(-45deg, transparent 50%, var(--jm-legend-on-panel) 50%) right 12px top 50% / 5px
+      5px no-repeat,
+    var(--jm-seg-window);
+  cursor: pointer;
+}
+.select option {
+  background: var(--jm-panel);
+  color: var(--jm-legend);
+}
+
+/* ---------- LED choices (radio group) ---------- */
+.choices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.choiceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-2);
+  margin-top: var(--jm-space-4);
+}
+.choiceListRow {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--jm-space-4);
+}
+.choice {
+  position: relative;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  column-gap: var(--jm-space-5);
+  align-items: baseline;
+  padding: var(--jm-space-4) var(--jm-space-5);
+  border-radius: var(--jm-radius-key);
+  box-shadow: inset 0 0 0 1px var(--jm-panel-line);
+  cursor: pointer;
+}
+.choice > :first-child {
+  align-self: center;
+}
+.choice:hover {
+  background: var(--jm-panel-strip);
+}
+.choiceChecked {
+  box-shadow: inset 0 0 0 1px var(--jm-legend-on-panel);
+  background: var(--jm-panel-strip);
+}
+.choice:has(input:focus-visible) {
+  outline: var(--jm-focus-ring);
+  outline-offset: 2px;
+}
+.choiceDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.choiceDisabled:hover {
+  background: none;
+}
+.choiceLabel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--jm-space-4);
+  font: 600 15px/1.3 var(--jm-font-body);
+}
+.choiceDescription {
+  grid-column: 2;
+  margin-top: var(--jm-space-1);
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+}
+
+.choiceHint {
+  margin-top: var(--jm-space-4);
+}
+
+/* ---------- Notice ---------- */
+.notice {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  column-gap: var(--jm-space-5);
+  padding: var(--jm-space-5) var(--jm-space-6);
+  border-radius: var(--jm-radius-key);
+  background: var(--jm-panel-sunk);
+  box-shadow: inset 0 0 0 1px var(--jm-panel-line);
+  font: var(--jm-text-body);
+}
+.notice > :first-child {
+  margin-top: 6px;
+}
+.noticeTitle {
+  display: block;
+  font: 700 15px/1.3 var(--jm-font-body);
+}
+.noticeBody > * {
+  margin: 0;
+}
+.noticeBody > * + * {
+  margin-top: var(--jm-space-3);
+}
+.warning {
+  box-shadow: inset 0 0 0 1px rgba(243, 225, 43, 0.45);
+}
+.danger {
+  box-shadow: inset 0 0 0 1px rgba(255, 52, 52, 0.5);
+}
+.success {
+  box-shadow: inset 0 0 0 1px rgba(143, 228, 60, 0.4);
+}
+
+/* ---------- Well: recessed scroll area for lists of names ---------- */
+.well {
+  margin: 0;
+  padding: var(--jm-space-4) var(--jm-space-5);
+  list-style: none;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--jm-radius-window);
+  background: var(--jm-seg-window);
+  box-shadow: var(--jm-shadow-window);
+  font: var(--jm-text-meta);
+}
+.well > li {
+  display: flex;
+  gap: var(--jm-space-4);
+  padding: var(--jm-space-2) 0;
+}
+.well > li + li {
+  border-top: 1px solid #1b1d20;
+}
+
+/* ---------- Mode keys (tabs) ---------- */
+.modeKeys {
+  display: flex;
+  gap: var(--jm-space-5);
+}

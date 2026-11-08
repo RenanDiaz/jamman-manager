@@ -130,10 +130,18 @@ export const test = base.extend<{ jamman: Launched }>({
 
 export { expect };
 
-/** Clicks "Load Patches" and waits until the fixture patches are listed. */
+/** The patch row's main button (it focuses the patch in the detail panel). */
+export const patchRow = (page: Page, dir: string) =>
+  page.locator(`button[data-patch-dir="${dir}"]`);
+
+/** Clicks "Load patches" and waits until the fixture patches are listed. */
 export async function loadSd(page: Page, patchDirs: readonly string[]): Promise<void> {
-  await page.getByRole('button', { name: /Load Patches/ }).click();
+  // The header and the empty state both offer it before a card is loaded.
+  await page
+    .getByRole('button', { name: /Load patches/i })
+    .first()
+    .click();
   for (const dir of patchDirs) {
-    await expect(page.locator('button.accordion-button', { hasText: dir })).toBeVisible();
+    await expect(patchRow(page, dir)).toBeVisible();
   }
 }

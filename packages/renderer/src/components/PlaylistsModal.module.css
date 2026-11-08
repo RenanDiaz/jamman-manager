@@ -1,0 +1,207 @@
+.layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--jm-space-8);
+  min-height: 440px;
+}
+.muted {
+  color: var(--jm-legend-on-panel);
+  font: var(--jm-text-meta);
+}
+.heading {
+  margin: 0;
+  font: var(--jm-text-legend);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jm-legend-on-panel);
+}
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--jm-space-4);
+}
+.grow {
+  flex: 1;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-4);
+  margin: 0;
+  font: var(--jm-text-meta);
+}
+
+/* ---------- Left column: the list of playlists ---------- */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-6);
+  min-width: 0;
+  padding-right: var(--jm-space-8);
+  border-right: 1px solid var(--jm-panel-line);
+}
+.sideHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+.create {
+  display: grid;
+  gap: var(--jm-space-5);
+  padding: var(--jm-space-5);
+  border-radius: var(--jm-radius-key);
+  background: var(--jm-panel-strip);
+  box-shadow: inset 0 0 0 1px var(--jm-panel-line);
+}
+.create .keys {
+  justify-content: flex-end;
+}
+.playlists {
+  display: grid;
+  gap: var(--jm-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.playlist {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--jm-space-5);
+  width: 100%;
+  padding: var(--jm-space-4) var(--jm-space-5);
+  border: 0;
+  border-radius: var(--jm-radius-key);
+  background: none;
+  box-shadow: inset 0 0 0 1px transparent;
+  color: var(--jm-legend);
+  text-align: left;
+  cursor: pointer;
+}
+.playlist:hover {
+  background: var(--jm-panel-strip);
+}
+.playlist:focus-visible {
+  outline: var(--jm-focus-ring);
+  outline-offset: 2px;
+}
+.playlistCurrent {
+  background: var(--jm-panel-strip);
+  box-shadow: inset 0 0 0 1px var(--jm-legend-on-panel);
+}
+.playlistName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 17px/1.2 var(--jm-font-legend);
+}
+
+/* ---------- Right column: the chosen playlist ---------- */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-7);
+  min-width: 0;
+}
+.detailHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--jm-space-6);
+}
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-2);
+  min-width: 0;
+}
+.name {
+  margin: 0;
+  font: var(--jm-text-title);
+}
+.rename {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--jm-space-4);
+  width: 100%;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--jm-space-5);
+}
+.setlist {
+  display: grid;
+  gap: var(--jm-space-4);
+}
+.setlist > p {
+  margin: 0;
+}
+.entries {
+  display: grid;
+  gap: var(--jm-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.entry {
+  display: grid;
+  grid-template-columns: 8px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--jm-space-5);
+  padding: var(--jm-space-3) var(--jm-space-5);
+  border-radius: var(--jm-radius-key);
+  background: var(--jm-panel-raised);
+  box-shadow: var(--jm-shadow-key);
+  color: var(--jm-legend-on-panel);
+  cursor: grab;
+  touch-action: none;
+}
+.entry:focus-visible {
+  outline: var(--jm-focus-ring);
+  outline-offset: 2px;
+}
+.entryLifted {
+  position: relative;
+  z-index: 10;
+  cursor: grabbing;
+  background: var(--jm-panel-raised-hover);
+  box-shadow:
+    0 0 0 1px var(--jm-legend-on-panel),
+    0 10px 20px rgba(0, 0, 0, 0.55);
+}
+.order {
+  padding: var(--jm-space-2) var(--jm-space-3);
+}
+.entryText {
+  display: flex;
+  align-items: baseline;
+  gap: var(--jm-space-4);
+  min-width: 0;
+}
+.entryName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jm-legend);
+  font: 700 17px/1.2 var(--jm-font-legend);
+}
+.placeholder {
+  margin: auto;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .side {
+    padding-right: 0;
+    padding-bottom: var(--jm-space-7);
+    border-right: 0;
+    border-bottom: 1px solid var(--jm-panel-line);
+  }
+}

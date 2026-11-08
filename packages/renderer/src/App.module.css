@@ -1,0 +1,110 @@
+/* Main screen: the blue chassis with its panels. */
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* minmax(0, 1fr): a long folder path must not widen the window past the viewport */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--jm-chassis-bg);
+  color: var(--jm-legend);
+  font: var(--jm-text-body);
+}
+.main {
+  display: grid;
+  grid-template-columns: minmax(340px, 1fr) 430px;
+  gap: var(--jm-space-7);
+  min-height: 0;
+  padding: var(--jm-space-7) var(--jm-space-6) var(--jm-space-6);
+}
+.listColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-5);
+  min-height: 0;
+}
+.listbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--jm-space-6);
+  padding: 0 var(--jm-space-3);
+  min-height: 34px;
+}
+.listActions {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-7);
+  color: var(--jm-legend-on-blue);
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--jm-legend);
+  font: 600 13px var(--jm-font-body);
+  text-decoration: underline;
+  text-decoration-color: var(--jm-legend-on-blue);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link:focus-visible {
+  outline: var(--jm-focus-ring);
+  outline-offset: 3px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--jm-space-4);
+  min-height: 0;
+  margin: 0;
+  padding: var(--jm-space-1) var(--jm-space-2) var(--jm-space-5);
+  overflow-y: auto;
+}
+
+/* Loading and empty states */
+.center {
+  display: grid;
+  place-items: center;
+  padding: var(--jm-space-8) var(--jm-space-6);
+  min-height: 0;
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--jm-space-6);
+  max-width: 440px;
+  padding: var(--jm-space-9) var(--jm-space-9) var(--jm-space-8);
+  text-align: center;
+}
+.messageTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-4);
+  margin: 0;
+  font: var(--jm-text-display);
+}
+.messageText {
+  margin: 0;
+  color: var(--jm-legend-on-panel);
+}
+.messageActions {
+  display: flex;
+  gap: var(--jm-space-5);
+  margin-top: var(--jm-space-2);
+}
+
+@media (max-width: 900px) {
+  .app {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .listbar {
+    flex-wrap: wrap;
+  }
+}

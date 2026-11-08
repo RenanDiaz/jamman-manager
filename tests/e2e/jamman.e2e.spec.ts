@@ -4,7 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SD_FIXTURE_PATCHES } from '../fixtures/index.js';
-import { expect, loadSd, test } from './app.js';
+import { expect, loadSd, patchRow, test } from './app.js';
 
 const PATCH_DIRS = SD_FIXTURE_PATCHES.map(p => p.dir);
 const listPatchDirs = (sd: string) =>
@@ -41,7 +41,7 @@ test('starts sandboxed, with context isolation and no CSP violations', async ({ 
   expect(renderer).toEqual({ process: 'undefined', require: 'undefined', api: 'object' });
 
   // The UI rendered (not a blank page caused by a blocked script/style).
-  await expect(page.getByRole('button', { name: /Load Patches/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Load patches/i }).first()).toBeVisible();
 
   expect(jamman.cspMessages, 'CSP violations at startup').toEqual([]);
   expect(jamman.pageErrors, 'uncaught page errors').toEqual([]);
@@ -61,7 +61,7 @@ test('plays a phrase through the jamman:// protocol', async ({ jamman }) => {
   const { page } = jamman;
   await loadSd(page, PATCH_DIRS);
 
-  await page.locator('button.accordion-button', { hasText: 'Patch01' }).click();
+  await patchRow(page, 'Patch01').click();
   await page.getByRole('button', { name: 'Play PhraseA' }).first().click();
 
   await expect(page.getByText('Now Playing')).toBeVisible();
@@ -96,9 +96,9 @@ test('deletes a patch and restores it with undo', async ({ jamman }) => {
   const originalXml = fs.readFileSync(path.join(targetDir, 'patch.xml'));
   const originalWav = fs.readFileSync(path.join(targetDir, 'PhraseA', 'phrase.wav'));
 
-  await page.locator('button.accordion-button', { hasText: target.dir }).click();
+  await patchRow(page, target.dir).click();
   await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
-  await page.locator('.modal').getByRole('button', { name: 'Delete' }).last().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
 
   await expect.poll(() => listPatchDirs(sd.path)).toEqual(['Patch01', 'Patch03']);
 

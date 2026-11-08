@@ -1,26 +1,20 @@
 import { FC, useState } from 'react';
-import {
-  Button,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Nav,
-  NavItem,
-  NavLink,
-  TabContent,
-  TabPane,
-  FormGroup,
-  Label,
-  Input,
-  Alert,
-  Spinner,
-  ListGroup,
-  ListGroupItem,
-} from 'reactstrap';
 import { toast } from 'react-toastify';
 import type { Patch } from '../types';
 import { usePatchStore } from '../store/usePatchStore';
+import {
+  ChoiceGroup,
+  Dialog,
+  Led,
+  ModeKeys,
+  modePanelId,
+  modeTabId,
+  Notice,
+  PanelKey,
+  Well,
+} from '../ui';
+import { fileName } from '../utils/format';
+import s from './BackupRestoreModal.module.css';
 
 interface BackupInfo {
   valid: boolean;
@@ -158,245 +152,176 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
     }
   };
 
+  const tabPrefix = 'backup-restore';
+  const patchName = (dir: string) =>
+    patches.find(p => p.dir === dir)?.data?.JamManPatch?.PatchName?.[0] || '';
+
   return (
-    <Modal isOpen={isOpen} toggle={onClose} size="lg">
-      <ModalHeader toggle={onClose}>Backup & Restore</ModalHeader>
-      <ModalBody>
-        {!currentFolder && (
-          <Alert color="warning">Please load a folder first to use backup/restore features.</Alert>
-        )}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      dismissible={!loading}
+      size="lg"
+      title="Backup & restore"
+      subtitle="Backups are ZIP files you can restore later or share."
+      footer={
+        <>
+          <PanelKey label="Cancel" onClick={onClose} disabled={loading} />
+          {activeTab === 'backup' ? (
+            <PanelKey
+              led
+              label={loading ? 'Creating…' : 'Create backup'}
+              onClick={handleCreateBackup}
+              disabled={loading || !currentFolder}
+            />
+          ) : (
+            <PanelKey
+              led
+              label={loading ? 'Restoring…' : 'Restore'}
+              onClick={handleRestoreBackup}
+              disabled={loading || !currentFolder || !backupInfo?.valid}
+            />
+          )}
+        </>
+      }
+    >
+      {!currentFolder && (
+        <Notice tone="warning">
+          <p>Load a card first to back it up or restore onto it.</p>
+        </Notice>
+      )}
 
-        <Nav tabs>
-          <NavItem>
-            <NavLink
-              className={activeTab === 'backup' ? 'active' : ''}
-              onClick={() => handleToggleTab('backup')}
-              style={{ cursor: 'pointer' }}
-            >
-              Create Backup
-            </NavLink>
-          </NavItem>
-          <NavItem>
-            <NavLink
-              className={activeTab === 'restore' ? 'active' : ''}
-              onClick={() => handleToggleTab('restore')}
-              style={{ cursor: 'pointer' }}
-            >
-              Restore Backup
-            </NavLink>
-          </NavItem>
-        </Nav>
+      <ModeKeys
+        label="Mode"
+        idPrefix={tabPrefix}
+        value={activeTab}
+        onChange={handleToggleTab}
+        options={[
+          { value: 'backup', label: 'Back up' },
+          { value: 'restore', label: 'Restore' },
+        ]}
+      />
 
-        <TabContent activeTab={activeTab} className="mt-3">
-          {/* Backup Tab */}
-          <TabPane tabId="backup">
-            <div className="mb-3">
-              <p className="text-muted">
-                Create a ZIP backup of your patches. Backups can be restored later or shared with
-                other users.
-              </p>
-            </div>
+      {activeTab === 'backup' ? (
+        <div
+          role="tabpanel"
+          id={modePanelId(tabPrefix, 'backup')}
+          aria-labelledby={modeTabId(tabPrefix, 'backup')}
+          className={s.panel}
+        >
+          <ChoiceGroup
+            legend="What to back up"
+            name="backupType"
+            value={backupType}
+            onChange={setBackupType}
+            disabled={!currentFolder}
+            options={[
+              {
+                value: 'full',
+                label: 'The whole card',
+                description: `${patches.length} patches`,
+              },
+              {
+                value: 'selected',
+                label: 'Selected patches only',
+                description:
+                  selectedPatchDirs.length === 0
+                    ? 'Select patches in the list first.'
+                    : `${selectedPatchDirs.length} selected`,
+                disabled: selectedPatchDirs.length === 0,
+              },
+            ]}
+          />
 
-            <FormGroup>
-              <Label>Backup Type</Label>
-              <div>
-                <FormGroup check>
-                  <Input
-                    type="radio"
-                    name="backupType"
-                    checked={backupType === 'full'}
-                    onChange={() => setBackupType('full')}
-                    disabled={!currentFolder}
-                  />
-                  <Label check>
-                    Full Backup <span className="text-muted">({patches.length} patches)</span>
-                  </Label>
-                </FormGroup>
-                <FormGroup check>
-                  <Input
-                    type="radio"
-                    name="backupType"
-                    checked={backupType === 'selected'}
-                    onChange={() => setBackupType('selected')}
-                    disabled={!currentFolder || selectedPatchDirs.length === 0}
-                  />
-                  <Label check>
-                    Selected Patches Only{' '}
-                    <span className="text-muted">
-                      ({selectedPatchDirs.length} selected)
-                      {selectedPatchDirs.length === 0 && ' - Select patches first'}
-                    </span>
-                  </Label>
-                </FormGroup>
-              </div>
-            </FormGroup>
-
-            {backupType === 'selected' && selectedPatchDirs.length > 0 && (
-              <div className="mb-3">
-                <Label>Patches to backup:</Label>
-                <div
-                  style={{
-                    maxHeight: '150px',
-                    overflowY: 'auto',
-                    backgroundColor: '#212529',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    border: '1px solid #495057',
-                  }}
-                >
-                  <ListGroup flush>
-                    {selectedPatchDirs.map(dir => {
-                      const patch = patches.find(p => p.dir === dir);
-                      const patchName = patch?.data?.JamManPatch?.PatchName?.[0] || '';
-                      return (
-                        <ListGroupItem
-                          key={dir}
-                          style={{ padding: '0.25rem 0', backgroundColor: 'transparent' }}
-                        >
-                          <strong>{dir}</strong>
-                          {patchName && <small className="ms-2 text-muted">{patchName}</small>}
-                        </ListGroupItem>
-                      );
-                    })}
-                  </ListGroup>
-                </div>
-              </div>
+          {backupType === 'selected' && selectedPatchDirs.length > 0 && (
+            <Well aria-label="Patches to back up">
+              {selectedPatchDirs.map(dir => (
+                <li key={dir}>
+                  <strong>{dir}</strong>
+                  <span className={s.muted}>{patchName(dir)}</span>
+                </li>
+              ))}
+            </Well>
+          )}
+        </div>
+      ) : (
+        <div
+          role="tabpanel"
+          id={modePanelId(tabPrefix, 'restore')}
+          aria-labelledby={modeTabId(tabPrefix, 'restore')}
+          className={s.panel}
+        >
+          <div className={s.file}>
+            <PanelKey
+              label={backupFilePath ? 'Choose another file' : 'Choose backup file'}
+              onClick={handleSelectBackupFile}
+              disabled={!currentFolder}
+            />
+            {validatingBackup ? (
+              <span className={s.status} role="status">
+                <Led color="red" on blinkSeconds={0.4} />
+                Checking the file…
+              </span>
+            ) : (
+              backupFilePath && (
+                <span className={s.path} title={backupFilePath}>
+                  {fileName(backupFilePath)}
+                </span>
+              )
             )}
-          </TabPane>
+          </div>
 
-          {/* Restore Tab */}
-          <TabPane tabId="restore">
-            <div className="mb-3">
-              <p className="text-muted">
-                Restore patches from a backup file. You can replace all existing patches or merge
-                with them.
-              </p>
-            </div>
-
-            <FormGroup>
-              <Label>Backup File</Label>
-              <div className="d-flex gap-2 align-items-center">
-                <Button
-                  color="secondary"
-                  size="sm"
-                  onClick={handleSelectBackupFile}
-                  disabled={!currentFolder}
-                >
-                  Select Backup File
-                </Button>
-                {backupFilePath && (
-                  <small className="text-truncate" style={{ maxWidth: '300px' }}>
-                    {backupFilePath}
-                  </small>
-                )}
-                {validatingBackup && <Spinner size="sm" />}
-              </div>
-            </FormGroup>
-
-            {backupInfo && (
+          {backupInfo &&
+            (backupInfo.valid ? (
               <>
-                {backupInfo.valid ? (
-                  <Alert color="success">
-                    <strong>Valid Backup</strong>
-                    <ul className="mb-0 mt-2">
-                      <li>Patches: {backupInfo.manifest?.patchCount}</li>
-                      <li>
-                        Created: {new Date(backupInfo.manifest?.createdAt || '').toLocaleString()}
-                      </li>
-                      <li>App Version: {backupInfo.manifest?.appVersion}</li>
-                    </ul>
-                  </Alert>
-                ) : (
-                  <Alert color="danger">
-                    <strong>Invalid Backup:</strong> {backupInfo.error}
-                  </Alert>
-                )}
+                <Notice tone="success" title="This backup can be restored.">
+                  <dl className={s.facts}>
+                    <dt>Patches</dt>
+                    <dd>{backupInfo.manifest?.patchCount}</dd>
+                    <dt>Created</dt>
+                    <dd>{new Date(backupInfo.manifest?.createdAt || '').toLocaleString()}</dd>
+                    <dt>App version</dt>
+                    <dd>{backupInfo.manifest?.appVersion}</dd>
+                  </dl>
+                </Notice>
 
-                {backupInfo.valid && (
-                  <>
-                    <FormGroup>
-                      <Label>Restore Mode</Label>
-                      <div>
-                        <FormGroup check>
-                          <Input
-                            type="radio"
-                            name="restoreMode"
-                            checked={restoreMode === 'merge'}
-                            onChange={() => setRestoreMode('merge')}
-                          />
-                          <Label check>
-                            <strong>Merge</strong> - Add backup patches to existing ones
-                            <br />
-                            <small className="text-muted">
-                              Existing patches are kept. If patch numbers conflict, backup patches
-                              will be renumbered.
-                            </small>
-                          </Label>
-                        </FormGroup>
-                        <FormGroup check>
-                          <Input
-                            type="radio"
-                            name="restoreMode"
-                            checked={restoreMode === 'replace'}
-                            onChange={() => setRestoreMode('replace')}
-                          />
-                          <Label check>
-                            <strong>Replace All</strong> - Remove existing patches first
-                            <br />
-                            <small className="text-muted">
-                              ⚠️ All current patches will be deleted before restoring the backup.
-                            </small>
-                          </Label>
-                        </FormGroup>
-                      </div>
-                    </FormGroup>
+                <ChoiceGroup
+                  legend="How to restore"
+                  name="restoreMode"
+                  value={restoreMode}
+                  onChange={setRestoreMode}
+                  options={[
+                    {
+                      value: 'merge',
+                      label: 'Merge',
+                      description:
+                        'Keeps the patches on the card. Backup patches whose slot is taken get a new number.',
+                    },
+                    {
+                      value: 'replace',
+                      label: 'Replace all',
+                      description: 'Deletes every patch on the card, then restores the backup.',
+                    },
+                  ]}
+                />
 
-                    {restoreMode === 'replace' && (
-                      <Alert color="warning">
-                        <strong>Warning:</strong> Replace mode will delete all {patches.length}{' '}
-                        existing patches before restoring the backup. This action cannot be undone.
-                      </Alert>
-                    )}
-                  </>
+                {restoreMode === 'replace' && (
+                  <Notice
+                    tone="warning"
+                    title={`The ${patches.length} patches on the card are deleted first.`}
+                  >
+                    <p>Undo can bring them back while this card stays open.</p>
+                  </Notice>
                 )}
-              </>
-            )}
-          </TabPane>
-        </TabContent>
-      </ModalBody>
-      <ModalFooter>
-        <Button color="secondary" onClick={onClose} disabled={loading}>
-          Cancel
-        </Button>
-        {activeTab === 'backup' ? (
-          <Button color="primary" onClick={handleCreateBackup} disabled={loading || !currentFolder}>
-            {loading ? (
-              <>
-                <Spinner size="sm" className="me-2" />
-                Creating...
               </>
             ) : (
-              'Create Backup'
-            )}
-          </Button>
-        ) : (
-          <Button
-            color="primary"
-            onClick={handleRestoreBackup}
-            disabled={loading || !currentFolder || !backupInfo?.valid}
-          >
-            {loading ? (
-              <>
-                <Spinner size="sm" className="me-2" />
-                Restoring...
-              </>
-            ) : (
-              'Restore Backup'
-            )}
-          </Button>
-        )}
-      </ModalFooter>
-    </Modal>
+              <Notice tone="danger" title="This file can't be restored.">
+                <p>{backupInfo.error}</p>
+              </Notice>
+            ))}
+        </div>
+      )}
+    </Dialog>
   );
 };
 

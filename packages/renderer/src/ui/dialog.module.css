@@ -1,0 +1,106 @@
+/*
+ * Dialog: a control panel lifted over the chassis. Tokens from src/styles/tokens.css,
+ * rules in design/DESIGN.md.
+ */
+.dialog {
+  width: calc(100% - var(--jm-space-9));
+  max-height: calc(100vh - var(--jm-space-9) * 2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--jm-legend);
+  overflow: visible;
+}
+.dialog[open] {
+  display: flex;
+  animation: jm-lift 140ms ease-out;
+}
+.dialog::backdrop {
+  background: rgba(12, 24, 66, 0.72);
+  backdrop-filter: blur(2px);
+}
+.sm {
+  max-width: 440px;
+}
+.md {
+  max-width: 560px;
+}
+.lg {
+  max-width: 720px;
+}
+.xl {
+  max-width: 1040px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  max-height: inherit;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px var(--jm-panel-edge),
+    0 18px 40px rgba(3, 8, 30, 0.6);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--jm-space-6);
+  padding: var(--jm-space-8) var(--jm-space-8) var(--jm-space-6);
+}
+.heading {
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  font: var(--jm-text-title);
+  letter-spacing: 0.01em;
+}
+.subtitle {
+  margin: var(--jm-space-3) 0 0;
+  font: var(--jm-text-meta);
+  color: var(--jm-legend-on-panel);
+}
+
+.close > span:first-child {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.body {
+  display: grid;
+  align-content: start;
+  gap: var(--jm-space-7);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--jm-space-8) var(--jm-space-8);
+  font: var(--jm-text-body);
+}
+
+/* The hairline marks where the panel's keys start, like the print on the pedal. */
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: var(--jm-space-5);
+  padding: var(--jm-space-6) var(--jm-space-8) var(--jm-space-7);
+  border-top: 1px solid var(--jm-panel-line);
+}
+
+@keyframes jm-lift {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog[open] {
+    animation: none;
+  }
+}
