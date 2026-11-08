@@ -25,12 +25,22 @@ export type AudioChannel = 'phrase:getAudioURL' | 'audio:validateWav' | 'audio:r
 /**
  * Registers `jamman://` as a privileged scheme. Must run before `app.ready`.
  * No `bypassCSP`: the CSP allows `media-src jamman:` explicitly.
+ *
+ * `standard` is required for playback of long WAVs that carry chunks after the
+ * audio data (Logic Pro adds `LGWV`, `cue ` and `LIST`). To read them the media
+ * stack makes a second range request near the end of the file. With a
+ * non-standard scheme every response has an opaque origin, Chromium refuses to
+ * mix them in one media resource, and the `<audio>` fails with
+ * MEDIA_ERR_SRC_NOT_SUPPORTED. `secure` keeps the app page, a secure context in
+ * production (`file://`), from treating the audio as mixed content.
  */
 export function registerJammanScheme(protocol: Pick<Protocol, 'registerSchemesAsPrivileged'>) {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: JAMMAN_SCHEME,
       privileges: {
+        standard: true,
+        secure: true,
         supportFetchAPI: true,
         stream: true,
       },

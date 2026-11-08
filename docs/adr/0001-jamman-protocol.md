@@ -52,7 +52,8 @@ Los handlers de exportación (`patches:exportTXT|PDF`) solo usan `basePath` como
 
 ### Otras restricciones que rodean al protocolo
 
-- **Sin `bypassCSP`.** El esquema se registra con `supportFetchAPI` y `stream` solamente. La CSP (`packages/main/src/security/contentSecurityPolicy.ts`, enviada por cabecera desde el main en desarrollo y en producción) permite el audio con `media-src 'self' jamman:`. Se comprobó que con esa CSP el `<audio>` carga `jamman://` sin `bypassCSP`.
+- **Esquema `standard` y `secure`.** Las URLs tienen la forma `jamman://audio/<ruta codificada>`: el host es fijo y la ruta absoluta va codificada con `encodeURIComponent` como un único segmento. Con un esquema no estándar, cada respuesta tiene un origen opaco y Chromium no acepta mezclar dos respuestas en el mismo recurso de medios. Eso rompe los WAV largos que traen chunks después de los datos de audio (Logic Pro añade `LGWV`, `cue ` y `LIST`): para leerlos, el `<audio>` hace una segunda petición de rango cerca del final, y la carga termina en `MEDIA_ERR_SRC_NOT_SUPPORTED`. Se comprobó en Electron 45 con los WAV de una tarjeta real. `secure` evita que la página empaquetada (`file://`, contexto seguro) trate el audio como contenido mixto.
+- **Sin `bypassCSP`.** El esquema se registra con `standard`, `secure`, `supportFetchAPI` y `stream`. La CSP (`packages/main/src/security/contentSecurityPolicy.ts`, enviada por cabecera desde el main en desarrollo y en producción) permite el audio con `media-src 'self' jamman:`. Se comprobó que con esa CSP el `<audio>` carga `jamman://` sin `bypassCSP`.
 - **Solo la página de la app puede pedir URLs.** `phrase:getAudioURL` y el resto de handlers IPC pasan por `assertTrustedSender` (`packages/main/src/security/trustedSender.ts`): la llamada tiene que venir del frame principal con el origen del dev server (desarrollo) o del `index.html` empaquetado (producción).
 - **El renderer no navega ni abre ventanas.** La navegación y `window.open` se deniegan por defecto, así que no puede cargarse en la ventana una página ajena que use el protocolo.
 
@@ -63,4 +64,4 @@ Los handlers de exportación (`patches:exportTXT|PDF`) solo usan `basePath` como
 - Elegir otra carpeta reemplaza la raíz: la anterior deja de ser accesible.
 - Si la tarjeta SD se monta en otra ruta (por ejemplo `/Volumes/JAMMAN 1`), hay que volver a elegirla.
 - Queda una ventana TOCTOU entre `realpath` y la apertura del archivo: alguien que pueda escribir en el SD podría cambiar un archivo por un symlink en ese intervalo. Se acepta, porque requiere escribir en la tarjeta, y quien puede hacerlo ya tiene acceso a esos archivos.
-- Los cambios en el handler deben mantener los tests de `packages/main/src/security/jammanProtocol.test.ts` (ruta válida, rangos, `..`, extensión, symlinks, ruta vacía, sin raíz).
+- Los cambios en el handler deben mantener los tests de `packages/main/src/security/jammanProtocol.test.ts` (ruta válida, rangos, `..`, extensión, symlinks, ruta vacía, sin raíz) y el e2e que reproduce un WAV largo con chunks al final (`tests/e2e/jamman.e2e.spec.ts`).
