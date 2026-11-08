@@ -17,8 +17,10 @@ import s from './PatchDetail.module.css';
 
 interface Props {
   patch: Patch;
-  onEdit: (directory: string) => void;
-  onDelete: (directory: string) => void;
+  /** Without it (read-only source, e.g. a pedal over USB) the Edit key is hidden. */
+  onEdit?: (directory: string) => void;
+  /** Without it the Delete key is hidden. */
+  onDelete?: (directory: string) => void;
 }
 
 /** The focused patch on its own control panel: display, rhythm knob, stop mode, phrases. */
@@ -81,7 +83,9 @@ export const PatchDetail: FC<Props> = ({ patch, onEdit, onDelete }) => {
       <section aria-label="Phrases">
         <Legend className={s.sectionLegend}>Phrases</Legend>
         {view.phrases.length === 0 ? (
-          <p className={s.noPhrases}>This patch has no phrases. Edit it to add one.</p>
+          <p className={s.noPhrases}>
+            This patch has no phrases.{onEdit ? ' Edit it to add one.' : ''}
+          </p>
         ) : (
           <ul className={s.phrases}>
             {view.phrases.map(phrase => (
@@ -123,10 +127,12 @@ export const PatchDetail: FC<Props> = ({ patch, onEdit, onDelete }) => {
         <dd>{view.settingsVersion ?? 'Not set'}</dd>
       </dl>
 
-      <div className={s.actions}>
-        <PanelKey label="Delete" tone="danger" onClick={() => onDelete(view.dir)} />
-        <PanelKey label="Edit patch" led onClick={() => onEdit(view.dir)} />
-      </div>
+      {(onDelete || onEdit) && (
+        <div className={s.actions}>
+          {onDelete && <PanelKey label="Delete" tone="danger" onClick={() => onDelete(view.dir)} />}
+          {onEdit && <PanelKey label="Edit patch" led onClick={() => onEdit(view.dir)} />}
+        </div>
+      )}
     </Panel>
   );
 };

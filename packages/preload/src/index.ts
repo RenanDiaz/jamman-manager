@@ -17,7 +17,7 @@
 import { sha256sum } from './sha256.js';
 import { versions } from './versions.js';
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ElectronAPI, IpcArgs, IpcChannel, IpcReturn } from './ipc-contract.js';
+import type { ElectronAPI, IpcArgs, IpcChannel, IpcEvents, IpcReturn } from './ipc-contract.js';
 
 /**
  * Invokes an IPC channel with the arguments and result the contract declares.
@@ -81,6 +81,19 @@ const electronAPI: ElectronAPI = {
   reorderPlaylistPatches: (basePath, playlistId, newOrder) =>
     send('playlists:reorderPatches', basePath, playlistId, newOrder),
   exportPlaylist: (basePath, playlistId) => send('playlists:export', basePath, playlistId),
+
+  // Pedal over USB
+  connectPedal: () => send('pedal:connect'),
+  disconnectPedal: () => send('pedal:disconnect'),
+  getPedalStatus: () => send('pedal:status'),
+  onPedalChanged: listener => {
+    // Only the payload crosses the bridge, never the Electron event.
+    const handler = (_event: unknown, info: IpcEvents['pedal:changed']) => listener(info);
+    ipcRenderer.on('pedal:changed', handler);
+    return () => {
+      ipcRenderer.removeListener('pedal:changed', handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

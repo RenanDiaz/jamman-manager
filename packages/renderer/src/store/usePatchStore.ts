@@ -20,6 +20,7 @@ import { toast } from 'react-toastify';
 import { performanceMonitor } from '../utils/performance';
 import { useUndoStore } from './useUndoStore';
 import { discardSnapshots, snapshotOrWarn } from '../utils/undoSnapshots';
+import { isPedalPath } from '../utils/pedal';
 
 /** LocalStorage key for persisting last folder */
 const LAST_FOLDER_KEY = 'jamman-manager-last-folder';
@@ -281,7 +282,8 @@ export const usePatchStore = create<PatchStore>((set, get) => ({
       }
 
       // Save to localStorage for auto-load on next launch
-      saveLastFolder(folder);
+      // A pedal bank only exists while the pedal is connected: never auto-load it.
+      if (!isPedalPath(folder)) saveLastFolder(folder);
 
       if (!update) {
         toast.success(`Successfully loaded ${result.length} patches`);

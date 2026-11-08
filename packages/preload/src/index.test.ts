@@ -7,11 +7,24 @@ import type { ElectronAPI } from './ipc-contract.js';
 
 const exposed = new Map<string, unknown>();
 const invoke = vi.fn(async (...args: unknown[]) => args);
+const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
 
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (key: string, value: unknown) => exposed.set(key, value) },
-  ipcRenderer: { invoke: (...args: unknown[]) => invoke(...args) },
+  ipcRenderer: {
+    invoke: (...args: unknown[]) => invoke(...args),
+    on: (channel: string, listener: (...args: unknown[]) => void) => {
+      if (!listeners.has(channel)) listeners.set(channel, new Set());
+      listeners.get(channel)!.add(listener);
+    },
+    removeListener: (channel: string, listener: (...args: unknown[]) => void) => {
+      listeners.get(channel)?.delete(listener);
+    },
+  },
 }));
+
+/** Methods that subscribe to a main → renderer event instead of invoking a channel. */
+const EVENT_METHODS = ['onPedalChanged'] as const;
 
 let api: ElectronAPI;
 
@@ -20,8 +33,8 @@ beforeAll(async () => {
   api = exposed.get('electronAPI') as ElectronAPI;
 });
 
-/** method → channel. Every ElectronAPI method must appear here. */
-const CHANNEL_OF: Record<keyof ElectronAPI, string> = {
+/** method → channel. Every ElectronAPI method that invokes a channel must appear here. */
+const CHANNEL_OF: Record<Exclude<keyof ElectronAPI, (typeof EVENT_METHODS)[number]>, string> = {
   selectFolder: 'dialog:selectFolder',
   selectFile: 'dialog:selectFile',
   readPatches: 'patches:read',
@@ -51,11 +64,26 @@ const CHANNEL_OF: Record<keyof ElectronAPI, string> = {
   removePatchesFromPlaylist: 'playlists:removePatches',
   reorderPlaylistPatches: 'playlists:reorderPatches',
   exportPlaylist: 'playlists:export',
+  connectPedal: 'pedal:connect',
+  disconnectPedal: 'pedal:disconnect',
+  getPedalStatus: 'pedal:status',
 };
 
 describe('window.electronAPI', () => {
   it('exposes exactly the methods of the contract', () => {
-    expect(Object.keys(api).sort()).toEqual(Object.keys(CHANNEL_OF).sort());
+    expect(Object.keys(api).sort()).toEqual([...Object.keys(CHANNEL_OF), ...EVENT_METHODS].sort());
+  });
+
+  it('onPedalChanged passes only the payload and unsubscribes', () => {
+    const received: unknown[] = [];
+    const unsubscribe = api.onPedalChanged(info => received.push(info));
+    const [handler] = listeners.get('pedal:changed') ?? [];
+
+    handler({ sender: 'electron event' }, null);
+    expect(received).toEqual([null]);
+
+    unsubscribe();
+    expect(listeners.get('pedal:changed')?.size).toBe(0);
   });
 
   it.each(Object.entries(CHANNEL_OF))(

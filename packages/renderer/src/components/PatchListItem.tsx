@@ -100,19 +100,26 @@ PatchListItem.displayName = 'PatchListItem';
 
 interface EmptySlotProps {
   dir: string;
-  onCreate: (directory: string) => void;
+  /** Without it (read-only source) the slot is shown but cannot be clicked. */
+  onCreate?: (directory: string) => void;
 }
 
 /** A free slot on the card. Clicking it starts a new patch there. */
 export const EmptySlotItem: FC<EmptySlotProps> = memo(({ dir, onCreate }) => (
   <li className={s.empty}>
-    <button type="button" className={s.emptyMain} onClick={() => onCreate(dir)}>
+    <button
+      type="button"
+      className={s.emptyMain}
+      disabled={!onCreate}
+      onClick={() => onCreate?.(dir)}
+    >
       <span />
       <DisplayWindow className={s.emptyWindow}>
         <SevenSegment value={slotNumber(dir)} height={18} />
       </DisplayWindow>
       <span>
-        <VisuallyHidden>{dir}: </VisuallyHidden>Empty. Click to store a new patch here.
+        <VisuallyHidden>{dir}: </VisuallyHidden>
+        {onCreate ? 'Empty. Click to store a new patch here.' : 'Empty.'}
       </span>
     </button>
   </li>

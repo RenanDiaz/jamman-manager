@@ -4,9 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   createJammanProtocolHandler,
+  parseJammanPedalUrl,
   parseJammanUrl,
   parseRange,
+  toJammanPedalUrl,
   toJammanUrl,
+  type JammanPedalAudio,
 } from './jammanProtocol.js';
 
 const silentLog = { warn: () => {}, error: () => {} };
@@ -186,5 +189,105 @@ describe('jamman:// handler', () => {
   it('returns 405 for methods other than GET and HEAD', async () => {
     const res = await handlerWithRoot()(new Request(toJammanUrl(validWav), { method: 'POST' }));
     expect(res.status).toBe(405);
+  });
+});
+
+describe('jamman://pedal/ handler', () => {
+  const WAV = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 256));
+  const PEDAL_WAV = 'jamman-pedal://sd/Patch01/PhraseA/phrase.wav';
+
+  /** A pedal that serves WAV from memory and records what it was asked for. */
+  function fakePedal() {
+    const calls: unknown[] = [];
+    const pedal: JammanPedalAudio = {
+      openWavStream: async (ref, pickRange) => {
+        calls.push(ref);
+        const range = pickRange(WAV.length);
+        if (range === 'unsatisfiable') return { size: WAV.length, range };
+        const { start, end } = range ?? { start: 0, end: WAV.length - 1 };
+        return {
+          size: WAV.length,
+          range,
+          stream: new Response(WAV.subarray(start, end + 1)).body as ReadableStream<Uint8Array>,
+        };
+      },
+    };
+    return { pedal, calls };
+  }
+
+  function handler(pedal?: JammanPedalAudio) {
+    return createJammanProtocolHandler({ getAllowedRoot: () => null, pedal, log: silentLog });
+  }
+
+  it('builds and parses pedal URLs', () => {
+    const url = toJammanPedalUrl(PEDAL_WAV);
+    expect(url.startsWith('jamman://pedal/')).toBe(true);
+    expect(parseJammanPedalUrl(url)).toEqual({ bank: 'sd', patch: 'Patch01', phrase: 'PhraseA' });
+    expect(parseJammanPedalUrl(toJammanPedalUrl('jamman-pedal://sd/../usr/x.wav'))).toBeNull();
+  });
+
+  it('serves the whole WAV without needing an approved folder', async () => {
+    const { pedal, calls } = fakePedal();
+    const res = await handler(pedal)(new Request(toJammanPedalUrl(PEDAL_WAV)));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Length')).toBe('1000');
+    expect(Buffer.from(await res.arrayBuffer()).equals(WAV)).toBe(true);
+    expect(calls).toEqual([{ bank: 'sd', patch: 'Patch01', phrase: 'PhraseA' }]);
+  });
+
+  it('answers ranges with 206', async () => {
+    const { pedal } = fakePedal();
+    const res = await handler(pedal)(
+      new Request(toJammanPedalUrl(PEDAL_WAV), { headers: { Range: 'bytes=10-19' } }),
+    );
+    expect(res.status).toBe(206);
+    expect(res.headers.get('Content-Range')).toBe('bytes 10-19/1000');
+    expect(Buffer.from(await res.arrayBuffer()).equals(WAV.subarray(10, 20))).toBe(true);
+  });
+
+  it('answers 416 for a range past the end', async () => {
+    const { pedal } = fakePedal();
+    const res = await handler(pedal)(
+      new Request(toJammanPedalUrl(PEDAL_WAV), { headers: { Range: 'bytes=5000-' } }),
+    );
+    expect(res.status).toBe(416);
+    expect(res.headers.get('Content-Range')).toBe('bytes */1000');
+  });
+
+  it('refuses any path that is not a phrase WAV', async () => {
+    const { pedal, calls } = fakePedal();
+    for (const bad of ['jamman-pedal://sd/../usr/app.wav', '/etc/passwd', 'jamman-pedal://sd']) {
+      const res = await handler(pedal)(new Request(toJammanPedalUrl(bad)));
+      expect(res.status).toBe(403);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('answers 404 when no pedal is available or the file is missing', async () => {
+    expect((await handler()(new Request(toJammanPedalUrl(PEDAL_WAV)))).status).toBe(404);
+
+    const missing: JammanPedalAudio = {
+      openWavStream: async () => {
+        throw Object.assign(new Error('No such file or directory'), {
+          name: 'GreenglassRequestError',
+        });
+      },
+    };
+    expect((await handler(missing)(new Request(toJammanPedalUrl(PEDAL_WAV)))).status).toBe(404);
+  });
+
+  it('releases the pedal stream on HEAD', async () => {
+    let cancelled = false;
+    const pedal: JammanPedalAudio = {
+      openWavStream: async () => ({
+        size: 10,
+        range: null,
+        stream: new ReadableStream({ cancel: () => void (cancelled = true) }),
+      }),
+    };
+    const res = await handler(pedal)(new Request(toJammanPedalUrl(PEDAL_WAV), { method: 'HEAD' }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Length')).toBe('10');
+    expect(cancelled).toBe(true);
   });
 });

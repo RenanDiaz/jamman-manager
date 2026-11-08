@@ -8,14 +8,17 @@
  */
 import * as mm from 'music-metadata';
 import type { Protocol } from 'electron';
-import type { IpcHandlers } from '@app/preload/ipc-contract';
+import type { AudioValidationResult, IpcHandlers } from '@app/preload/ipc-contract';
 import { PathValidator } from '../PathValidator.js';
 import {
   createJammanProtocolHandler,
   JAMMAN_SCHEME,
+  toJammanPedalUrl,
   toJammanUrl,
+  type JammanPedalAudio,
   type JammanProtocolLogger,
 } from '../security/jammanProtocol.js';
+import { isPedalPath, parseWavPath } from '../usb/pedalPaths.js';
 import type { FolderAccess } from '../security/folderAccess.js';
 import type { IpcDeps } from './deps.js';
 import { errorMessage } from './errors.js';
@@ -54,21 +57,88 @@ export function registerJammanScheme(protocol: Pick<Protocol, 'registerSchemesAs
  */
 export function handleJammanProtocol(
   protocol: Pick<Protocol, 'handle'>,
-  { folderAccess, log }: { folderAccess: FolderAccess; log: JammanProtocolLogger },
+  {
+    folderAccess,
+    log,
+    pedal,
+  }: { folderAccess: FolderAccess; log: JammanProtocolLogger; pedal?: JammanPedalAudio },
 ) {
   protocol.handle(
     JAMMAN_SCHEME,
-    createJammanProtocolHandler({ getAllowedRoot: () => folderAccess.getRoot(), log }),
+    createJammanProtocolHandler({ getAllowedRoot: () => folderAccess.getRoot(), log, pedal }),
   );
 }
+
+/** Bytes of a pedal WAV read to validate its format: the header, with room for extra chunks. */
+const PEDAL_WAV_HEAD_BYTES = 64 * 1024;
+
+/**
+ * Seconds of audio from the `fmt ` and `data` chunks of a WAV header. Used for
+ * pedal WAVs, where only the head of the file is read (music-metadata would
+ * measure the buffer instead of the file).
+ */
+export function wavDurationFromHeader(head: Buffer): number | undefined {
+  if (head.length < 12 || head.toString('ascii', 0, 4) !== 'RIFF') return undefined;
+  let offset = 12;
+  let byteRate: number | undefined;
+  while (offset + 8 <= head.length) {
+    const id = head.toString('ascii', offset, offset + 4);
+    const size = head.readUInt32LE(offset + 4);
+    if (id === 'fmt ' && offset + 16 <= head.length) {
+      byteRate = head.readUInt32LE(offset + 16);
+    } else if (id === 'data') {
+      return byteRate ? size / byteRate : undefined;
+    }
+    offset += 8 + size + (size % 2);
+  }
+  return undefined;
+}
+
+type WavFormat = Pick<
+  mm.IFormat,
+  'container' | 'sampleRate' | 'numberOfChannels' | 'bitsPerSample' | 'duration'
+>;
+
+/** Whether a WAV has the format the pedal expects, as the renderer receives it. */
+function validationResult(format: WavFormat, fileSizeBytes: number): AudioValidationResult {
+  const { sampleRate, numberOfChannels, bitsPerSample, duration, container } = format;
+  const isValid =
+    container === 'WAVE' &&
+    sampleRate === 44100 &&
+    bitsPerSample === 16 &&
+    (numberOfChannels === 1 || numberOfChannels === 2);
+
+  return {
+    valid: isValid,
+    sampleRate,
+    bitsPerSample,
+    numberOfChannels,
+    duration,
+    fileSizeBytes,
+    error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
+    canAttemptPlayback: true, // Even if format is unexpected, let browser try
+  };
+}
+
+const UNPARSEABLE_WAV: AudioValidationResult = {
+  valid: false,
+  error: 'Unable to parse WAV file metadata.',
+  warning: 'File format could not be validated, but playback will be attempted.',
+  canAttemptPlayback: true,
+};
 
 export function createAudioHandlers({
   fs,
   log,
   folderAccess,
-}: Pick<IpcDeps, 'fs' | 'log' | 'folderAccess'>): IpcHandlers<AudioChannel> {
+  pedal,
+}: Pick<IpcDeps, 'fs' | 'log' | 'folderAccess' | 'pedal'>): IpcHandlers<AudioChannel> {
   return {
     'phrase:getAudioURL': async filePath => {
+      if (isPedalPath(filePath)) {
+        // Only the exact phrase WAV shape; the protocol checks it again per request.
+        return parseWavPath(filePath) && pedal.status() ? toJammanPedalUrl(filePath) : null;
+      }
       try {
         log.info(`getAudioURL called with filePath: ${filePath}`);
 
@@ -104,6 +174,27 @@ export function createAudioHandlers({
     },
 
     'audio:validateWav': async filePath => {
+      if (isPedalPath(filePath)) {
+        const ref = parseWavPath(filePath);
+        if (!ref) {
+          return { valid: false, error: 'Invalid file path', canAttemptPlayback: false };
+        }
+        try {
+          const { head, size } = await pedal.readWavHead(ref, PEDAL_WAV_HEAD_BYTES);
+          const { format } = await mm.parseBuffer(
+            head,
+            { mimeType: 'audio/wav', size },
+            { skipPostHeaders: true },
+          );
+          return validationResult({ ...format, duration: wavDurationFromHeader(head) }, size);
+        } catch (error) {
+          log.warn(`Unable to validate pedal WAV ${filePath}:`, error);
+          return pedal.status()
+            ? UNPARSEABLE_WAV
+            : { valid: false, error: 'The pedal is not connected', canAttemptPlayback: false };
+        }
+      }
+
       // Security: Validate file path
       if (!filePath || typeof filePath !== 'string') {
         return { valid: false, error: 'Invalid file path', canAttemptPlayback: false };
@@ -126,44 +217,26 @@ export function createAudioHandlers({
 
       try {
         const metadata = await mm.parseFile(filePath);
-        const { sampleRate, numberOfChannels, bitsPerSample, duration, container } =
-          metadata.format;
-
         const fileSizeBytes = (await fs.promises.stat(filePath)).size;
-
+        const { sampleRate, numberOfChannels, bitsPerSample, container } = metadata.format;
         log.info(
           `WAV metadata for ${filePath}: ${container}, ${sampleRate}Hz, ${bitsPerSample}bit, ${numberOfChannels}ch, ${(fileSizeBytes / 1024 / 1024).toFixed(2)}MB`,
         );
-
-        const isValid =
-          container === 'WAVE' &&
-          sampleRate === 44100 &&
-          bitsPerSample === 16 &&
-          (numberOfChannels === 1 || numberOfChannels === 2);
-
-        return {
-          valid: isValid,
-          sampleRate,
-          bitsPerSample,
-          numberOfChannels,
-          duration,
-          fileSizeBytes,
-          error: isValid ? null : 'Unsupported WAV format. Expected 44.1kHz, 16-bit, mono/stereo.',
-          canAttemptPlayback: true, // Even if format is unexpected, let browser try
-        };
+        return validationResult(metadata.format, fileSizeBytes);
       } catch (error) {
         // Can't parse metadata, but file might still be playable
         log.warn(`Unable to parse WAV metadata for ${filePath}:`, error);
-        return {
-          valid: false,
-          error: 'Unable to parse WAV file metadata.',
-          warning: 'File format could not be validated, but playback will be attempted.',
-          canAttemptPlayback: true,
-        };
+        return UNPARSEABLE_WAV;
       }
     },
 
     'audio:readFile': async filePath => {
+      if (isPedalPath(filePath)) {
+        const ref = parseWavPath(filePath);
+        if (!ref) throw new Error('Invalid file path');
+        return pedal.readWav(ref);
+      }
+
       // Security: Validate file path
       if (!filePath || typeof filePath !== 'string') {
         throw new Error('Invalid file path');

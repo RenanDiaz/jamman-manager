@@ -19,13 +19,44 @@ import { createDialogHandlers } from './dialogs.js';
 import { toError } from './errors.js';
 import { createExportHandlers } from './export.js';
 import { createPatchHandlers } from './patches.js';
+import { createPedalHandlers } from './pedal.js';
+import { isPedalPath, PedalNotSupportedError } from '../usb/pedalPaths.js';
 import { createPlaylistHandlers } from './playlists.js';
 import { createQueueHandlers } from './queue.js';
 import { createUndoHandlers } from './undo.js';
 
+/**
+ * Channels that understand `jamman-pedal://` paths. Every other channel is
+ * local-folder only: a pedal path anywhere in its arguments is refused before
+ * the handler runs, with an error that says the action is not available over
+ * USB yet (instead of an "access denied" from the folder checks).
+ */
+export const PEDAL_AWARE_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>([
+  'patches:read',
+  'folder:getSize',
+  'phrase:getAudioURL',
+  'audio:validateWav',
+  'audio:readFile',
+  'playlists:load',
+  // The export handlers never touch the folder: basePath is unused.
+  'patches:exportTXT',
+  'patches:exportPDF',
+  'pedal:connect',
+  'pedal:disconnect',
+  'pedal:status',
+]);
+
+/** Whether a pedal path appears anywhere in the arguments (forms nest paths). */
+function containsPedalPath(value: unknown, depth = 0): boolean {
+  if (isPedalPath(value)) return true;
+  if (depth > 4 || value === null || typeof value !== 'object') return false;
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return children.some(child => containsPedalPath(child, depth + 1));
+}
+
 /** The handler of every channel, built from its dependencies. */
 export function createIpcHandlers(deps: IpcDeps): IpcHandlers<IpcChannel> {
-  return {
+  const handlers: IpcHandlers<IpcChannel> = {
     ...createDialogHandlers(deps),
     ...createPatchHandlers(deps),
     ...createAudioHandlers(deps),
@@ -34,7 +65,20 @@ export function createIpcHandlers(deps: IpcDeps): IpcHandlers<IpcChannel> {
     ...createUndoHandlers(deps),
     ...createPlaylistHandlers(deps),
     ...createQueueHandlers(deps),
+    ...createPedalHandlers(deps),
   };
+
+  for (const channel of Object.keys(handlers) as IpcChannel[]) {
+    if (PEDAL_AWARE_CHANNELS.has(channel)) continue;
+    const handler = handlers[channel] as (...args: unknown[]) => unknown;
+    (handlers as Record<string, unknown>)[channel] = (...args: unknown[]) => {
+      if (containsPedalPath(args)) {
+        throw new PedalNotSupportedError(`"${channel}"`);
+      }
+      return handler(...args);
+    };
+  }
+  return handlers;
 }
 
 export type RegisterIpcDeps<E extends SenderEvent> = IpcDeps & {

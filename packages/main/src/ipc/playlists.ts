@@ -15,6 +15,7 @@ import type {
 import { SecureXMLParser } from '../SecureXMLParser.js';
 import type { IpcDeps } from './deps.js';
 import { ipcError } from './errors.js';
+import { isPedalPath } from '../usb/pedalPaths.js';
 
 export type PlaylistChannel =
   | 'playlists:load'
@@ -63,6 +64,10 @@ export function createPlaylistHandlers({
 
   return {
     'playlists:load': async basePath => {
+      if (isPedalPath(basePath)) {
+        // Playlists on a pedal connected over USB are not read yet (a later stage).
+        return { version: '2.0', playlists: [], patches: [] };
+      }
       // Security: approved folder only
       folderAccess.assertRoot(basePath);
       try {

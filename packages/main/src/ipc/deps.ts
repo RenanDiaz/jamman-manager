@@ -17,6 +17,7 @@ import type { OperationQueue } from '../OperationQueue.js';
 import type { PatchRestore } from '../PatchRestore.js';
 import type { PlaylistManager } from '../PlaylistManager.js';
 import type { PatchCache } from './patches.js';
+import type { PedalManager } from '../usb/PedalManager.js';
 
 export type IpcLogger = {
   info(...args: unknown[]): void;
@@ -59,6 +60,12 @@ export type Snapshots = Pick<
   'createSnapshot' | 'restoreSnapshot' | 'discardSnapshot'
 >;
 
+/** The pedal connected over USB. */
+export type Pedal = Pick<
+  PedalManager,
+  'connect' | 'disconnect' | 'status' | 'readPatches' | 'bankSize' | 'readWavHead' | 'readWav'
+>;
+
 /** Everything `registerIpcHandlers` needs. Each domain module takes the subset it uses. */
 export interface IpcDeps {
   fs: FileSystem;
@@ -73,4 +80,5 @@ export interface IpcDeps {
   backupManager: Backups;
   playlistManager: Playlists;
   patchRestore: Snapshots;
+  pedal: Pedal;
 }

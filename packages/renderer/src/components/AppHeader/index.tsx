@@ -5,6 +5,12 @@ import s from './AppHeader.module.css';
 
 interface Props {
   currentFolder: string | null;
+  /** How to show the open source when it is not a plain folder (a pedal bank over USB). */
+  sourceLabel: string | null;
+  /** The open source cannot be edited (a pedal over USB): only browse, play and export. */
+  readOnly: boolean;
+  pedalConnected: boolean;
+  pedalBusy: boolean;
   folderSizeBytes: number | null;
   loading: boolean;
   /** Two-digit slot of the focused patch, shown on the display. */
@@ -13,6 +19,7 @@ interface Props {
   canUndo: boolean;
   canRedo: boolean;
   onLoad: () => void;
+  onPedal: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onClose: () => void;
@@ -27,6 +34,10 @@ interface Props {
 /** The app's control panel: slot display, card status and every top-level action. */
 export const AppHeader: FC<Props> = ({
   currentFolder,
+  sourceLabel,
+  readOnly,
+  pedalConnected,
+  pedalBusy,
   folderSizeBytes,
   loading,
   focusedSlot,
@@ -34,6 +45,7 @@ export const AppHeader: FC<Props> = ({
   canUndo,
   canRedo,
   onLoad,
+  onPedal,
   onUndo,
   onRedo,
   onClose,
@@ -64,41 +76,51 @@ export const AppHeader: FC<Props> = ({
       <h1 className={s.title}>
         JamMan <span>Manager</span>
       </h1>
-      <p className={s.folder} title={currentFolder ?? undefined}>
+      <p className={s.folder} title={sourceLabel ?? currentFolder ?? undefined}>
         {currentFolder
-          ? `${currentFolder}${folderSizeBytes !== null ? `, ${formatBytes(folderSizeBytes)} on card` : ''}`
+          ? `${sourceLabel ?? currentFolder}${folderSizeBytes !== null ? `, ${formatBytes(folderSizeBytes)} ${sourceLabel ? 'used' : 'on card'}` : ''}`
           : 'No card loaded'}
       </p>
     </div>
 
     <nav className={s.toolbar} aria-label="Actions">
       <PanelKey label="Load patches" hint={shortcut('O')} onClick={onLoad} disabled={loading} />
+      <PanelKey
+        label="Pedal"
+        hint="USB"
+        title={pedalConnected ? 'Pedal connected over USB' : 'Connect to a JamMan over USB'}
+        led={pedalConnected}
+        onClick={onPedal}
+        disabled={loading || pedalBusy}
+      />
       <span className={s.divider} />
       <PanelKey
         label="Undo"
         hint={shortcut('Z')}
         title="Undo last action"
         onClick={onUndo}
-        disabled={!canUndo || loading}
+        disabled={!canUndo || loading || readOnly}
       />
       <PanelKey
         label="Redo"
         hint={shortcut('Z', { shift: true })}
         title="Redo action"
         onClick={onRedo}
-        disabled={!canRedo || loading}
+        disabled={!canRedo || loading || readOnly}
       />
       {currentFolder && (
         <>
           <span className={s.divider} />
           <PanelKey label="Close" hint="Folder" title="Close the loaded folder" onClick={onClose} />
-          <PanelKey
-            label="Sort"
-            hint="Reorder"
-            title="Drag and drop to reorder patches. Changes sync to the SD card."
-            onClick={onSort}
-            disabled={patchCount === 0}
-          />
+          {!readOnly && (
+            <PanelKey
+              label="Sort"
+              hint="Reorder"
+              title="Drag and drop to reorder patches. Changes sync to the SD card."
+              onClick={onSort}
+              disabled={patchCount === 0}
+            />
+          )}
           <MenuKey
             label="Export"
             hint="TXT / PDF"
@@ -108,20 +130,24 @@ export const AppHeader: FC<Props> = ({
               { label: 'Export as PDF', onSelect: onExportPDF },
             ]}
           />
-          <PanelKey
-            label="Backup"
-            hint="Restore"
-            title="Create ZIP backups of patches, or restore one"
-            onClick={onBackup}
-          />
-          <PanelKey
-            label="Playlists"
-            hint="Move to top"
-            title="Organize patches into setlists for live performance"
-            onClick={onPlaylists}
-          />
-          <span className={s.divider} />
-          <PanelKey label="New patch" hint="Store" led onClick={onNewPatch} />
+          {!readOnly && (
+            <>
+              <PanelKey
+                label="Backup"
+                hint="Restore"
+                title="Create ZIP backups of patches, or restore one"
+                onClick={onBackup}
+              />
+              <PanelKey
+                label="Playlists"
+                hint="Move to top"
+                title="Organize patches into setlists for live performance"
+                onClick={onPlaylists}
+              />
+              <span className={s.divider} />
+              <PanelKey label="New patch" hint="Store" led onClick={onNewPatch} />
+            </>
+          )}
         </>
       )}
     </nav>

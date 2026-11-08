@@ -17,6 +17,7 @@ import { PathValidator } from '../PathValidator.js';
 import { SecureXMLParser } from '../SecureXMLParser.js';
 import type { IpcDeps } from './deps.js';
 import { errorMessage, ipcError } from './errors.js';
+import { isPedalPath, parseBankPath } from '../usb/pedalPaths.js';
 
 export type PatchChannel =
   | 'folder:getSize'
@@ -127,10 +128,18 @@ export function createPatchHandlers({
   operationQueue,
   lockManager,
   patchCache,
+  pedal,
 }: Pick<
   IpcDeps,
-  'fs' | 'fse' | 'log' | 'folderAccess' | 'operationQueue' | 'lockManager' | 'patchCache'
+  'fs' | 'fse' | 'log' | 'folderAccess' | 'operationQueue' | 'lockManager' | 'patchCache' | 'pedal'
 >): IpcHandlers<PatchChannel> {
+  /** The pedal bank a `jamman-pedal://` folder path names; throws on a malformed one. */
+  const pedalBank = (folderPath: string) => {
+    const bank = parseBankPath(folderPath);
+    if (!bank) throw new Error('Invalid pedal folder path');
+    return bank;
+  };
+
   /** Phrase folders of a patch that contain a phrase.xml. */
   const listPhraseDirs = (patchDirPath: string) =>
     fs
@@ -223,6 +232,14 @@ export function createPatchHandlers({
 
   return {
     'folder:getSize': async folderPath => {
+      if (isPedalPath(folderPath)) {
+        const sizeBytes = await pedal.bankSize(pedalBank(folderPath));
+        return {
+          sizeBytes,
+          sizeMB: sizeBytes / 1024 / 1024,
+          sizeGB: sizeBytes / 1024 / 1024 / 1024,
+        };
+      }
       try {
         // Security: Validate folder path
         if (!folderPath || typeof folderPath !== 'string') {
@@ -253,6 +270,9 @@ export function createPatchHandlers({
     },
 
     'patches:read': async folderPath => {
+      if (isPedalPath(folderPath)) {
+        return pedal.readPatches(pedalBank(folderPath));
+      }
       try {
         // Security: Validate folder path
         if (!folderPath || typeof folderPath !== 'string') {

@@ -1,0 +1,28 @@
+.banks {
+  display: grid;
+  gap: var(--jm-space-5);
+  margin: 0 0 var(--jm-space-6);
+  padding: 0;
+  list-style: none;
+}
+
+.bank {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--jm-space-5);
+}
+
+.bankName {
+  display: flex;
+  align-items: center;
+  gap: var(--jm-space-3);
+  font: var(--jm-text-legend);
+}
+
+.bankMeta {
+  display: block;
+  margin-top: var(--jm-space-2);
+  font: var(--jm-text-meta);
+  opacity: 0.75;
+}

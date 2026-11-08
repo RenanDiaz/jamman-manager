@@ -44,6 +44,16 @@ JamManStereo/
 
 The app only reads and writes inside the folder you pick, plus any WAV or backup file you choose in a file dialog.
 
+### Over USB (read only for now)
+
+You can also leave the card in the pedal and connect the pedal to the computer with a USB cable. The pedal does not show up as a drive; the app talks to it directly.
+
+1. Turn the pedal on and connect it with a USB cable.
+2. Click **Pedal** and choose **Internal memory** or **SD card**.
+3. Browse and play the patches. Audio streams from the pedal, so playback starts right away; a WAV that was played to the end is kept in a local cache and not downloaded again until it changes on the pedal.
+
+Editing, sorting, backups and playlists are not available over USB yet: for those, put the card in a card reader. The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
+
 ### WAV files
 
 When you add a phrase, the app copies your WAV file to the card as it is. It does not convert it. Use 16-bit, 44.1 kHz WAV files (mono or stereo). Before playback the app checks that format and warns you if a file doesn't match.
@@ -121,6 +131,7 @@ The app follows Electron's three-process model. The renderer has no Node.js acce
 - **Recovering from failures**: a deleted patch is kept aside for 5 seconds before it's removed, a reorder that fails part-way renames the folders back, and edits, deletes and restores take a snapshot that Undo can bring back.
 - **`BackupManager`** and **`PlaylistManager`**: ZIP backups and the playlists stored in `.jamman-playlists.json` on the card.
 - **`modules/`**: window management, single instance, auto-updates and other app-level behaviour.
+- **`usb/`**: the pedal over USB. `greenglassCodec` and `GreenglassClient` speak the pedal's protocol over the serial port (`serialport`), and `PedalManager` connects, reads patches live and serves phrase audio with a cache of downloaded WAVs. Handlers that take a folder path accept `jamman-pedal://<bank>` for a pedal bank; the ones that cannot work on a pedal yet refuse it in `ipc/register.ts`.
 
 ### Preload (`packages/preload`)
 

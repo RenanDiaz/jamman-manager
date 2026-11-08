@@ -9,6 +9,12 @@ so everything so far is listed under "Unreleased".
 
 ### Added
 
+- Browse and play the patches of a JamMan Stereo connected over USB, without removing the SD card
+  (read only for now). The **Pedal** key connects and lets you open the internal memory or the SD
+  card. Phrase audio streams from the pedal and is cached locally once played to the end. Editing,
+  sorting, backups and playlists still need the card in a card reader.
+- `docs/usb-protocol.md`: the pedal's USB protocol, and `tools/greenglass.py`, a small client to
+  try it from a terminal.
 - `npm run verify` (typecheck + lint + unit tests) and a Husky `pre-push` hook that runs it.
 - `.nvmrc` pinning Node 24.
 - `publish` configuration in `electron-builder.mjs` so tagged releases upload installers and

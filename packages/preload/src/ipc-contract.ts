@@ -233,6 +233,33 @@ export interface PlaylistUpdate {
   patches?: string[];
 }
 
+// ==================== Pedal over USB ====================
+
+/** `internal` is the pedal's own memory, `sd` the card in its slot. */
+export type PedalBankId = 'internal' | 'sd';
+
+export interface PedalBankInfo {
+  id: PedalBankId;
+  /**
+   * The folder path the renderer uses for this bank (`jamman-pedal://<id>`).
+   * Every handler that takes a folder path accepts it and works on the pedal.
+   */
+  path: string;
+  /** False for the SD bank when no card is inserted. */
+  available: boolean;
+  capacityBytes: number;
+  freeBytes: number;
+}
+
+/** A JamMan connected over USB. */
+export interface PedalInfo {
+  /** As the pedal reports it, e.g. "JamMan Stereo". */
+  name: string;
+  firmwareVersion: string;
+  guid: string;
+  banks: PedalBankInfo[];
+}
+
 // ==================== Operation queue ====================
 
 export interface QueuedOperationInfo {
@@ -352,6 +379,12 @@ export interface IpcChannels {
   };
   'playlists:export': { args: [basePath: string, playlistId: string]; result: SaveFileResult };
 
+  // Pedal over USB
+  /** Finds a JamMan on USB and connects to it (or returns the current connection). */
+  'pedal:connect': { args: []; result: PedalInfo };
+  'pedal:disconnect': { args: []; result: void };
+  'pedal:status': { args: []; result: PedalInfo | null };
+
   // Operation queue
   'operation-queue:status': { args: []; result: OperationQueueStatus };
   'operation-queue:statistics': { args: []; result: OperationQueueStatistics };
@@ -371,6 +404,16 @@ export type IpcHandlers<C extends IpcChannel> = { [K in C]: IpcHandler<K> };
 
 /** What the renderer calls for channel `C`. */
 export type IpcInvoker<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>>;
+
+// ==================== Events (main → renderer) ====================
+
+/** Events the main process pushes to the renderer, with their payload. */
+export interface IpcEvents {
+  /** The pedal connected, disconnected or changed (e.g. SD card inserted or removed). */
+  'pedal:changed': PedalInfo | null;
+}
+
+export type IpcEventChannel = keyof IpcEvents;
 
 // ==================== window.electronAPI ====================
 
@@ -421,4 +464,10 @@ export interface ElectronAPI {
   removePatchesFromPlaylist: IpcInvoker<'playlists:removePatches'>;
   reorderPlaylistPatches: IpcInvoker<'playlists:reorderPatches'>;
   exportPlaylist: IpcInvoker<'playlists:export'>;
+
+  connectPedal: IpcInvoker<'pedal:connect'>;
+  disconnectPedal: IpcInvoker<'pedal:disconnect'>;
+  getPedalStatus: IpcInvoker<'pedal:status'>;
+  /** Calls `listener` whenever the pedal connects, disconnects or changes. Returns an unsubscribe function. */
+  onPedalChanged: (listener: (info: IpcEvents['pedal:changed']) => void) => () => void;
 }

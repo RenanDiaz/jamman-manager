@@ -7,7 +7,7 @@ import { hardwareAccelerationMode } from './modules/HardwareAccelerationModule.j
 import { autoUpdater } from './modules/AutoUpdater.js';
 import { allowInternalOrigins } from './modules/BlockNotAllowdOrigins.js';
 import { allowExternalUrls } from './modules/ExternalUrls.js';
-import { app, dialog, ipcMain, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, session } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import fse from 'fs-extra';
@@ -22,6 +22,8 @@ import { installContentSecurityPolicy } from './security/contentSecurityPolicy.j
 import { handleJammanProtocol, registerJammanScheme } from './ipc/audio.js';
 import { PatchCache } from './ipc/patches.js';
 import { registerIpcHandlers } from './ipc/register.js';
+import { PedalManager } from './usb/PedalManager.js';
+import { findJamManPorts, openSerialTransport } from './usb/serialTransport.js';
 
 export async function initApp(initConfig: AppInitConfig) {
   // CRITICAL: the custom scheme must be registered before app.ready fires.
@@ -36,6 +38,22 @@ export async function initApp(initConfig: AppInitConfig) {
   });
   folderAccess.load();
 
+  // The pedal over USB. Its only local state is the cache of downloaded WAVs.
+  const pedal = new PedalManager({
+    findPorts: () => findJamManPorts(),
+    openTransport: portPath => openSerialTransport(portPath),
+    cacheRoot: path.join(app.getPath('userData'), 'pedal-cache'),
+    log,
+  });
+  pedal.on('change', info => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send('pedal:changed', info);
+    }
+  });
+  app.on('will-quit', () => {
+    pedal.disconnect().catch(error => log.warn('Failed to disconnect the pedal:', error));
+  });
+
   // Registered before the window module so the CSP and the protocol handler
   // exist before the first page request.
   app.whenReady().then(() => {
@@ -48,7 +66,7 @@ export async function initApp(initConfig: AppInitConfig) {
       callback(false),
     );
 
-    handleJammanProtocol(protocol, { folderAccess, log });
+    handleJammanProtocol(protocol, { folderAccess, log, pedal });
     log.info('Protocol handler "jamman" registered successfully');
   });
 
@@ -102,6 +120,7 @@ export async function initApp(initConfig: AppInitConfig) {
     backupManager: BackupManager,
     playlistManager: PlaylistManager,
     patchRestore,
+    pedal,
   });
 
   await moduleRunner;
