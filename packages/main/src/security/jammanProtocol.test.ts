@@ -64,9 +64,18 @@ describe('toJammanUrl / parseJammanUrl', () => {
     expect(parseJammanUrl(`${url}?t=1#x`)).toBe('/a/b.wav');
   });
 
-  it('rejects other schemes and malformed encodings', () => {
+  it('puts the encoded path under the fixed host of the standard scheme', () => {
+    expect(toJammanUrl('/Volumes/JAMMAN/a b.wav')).toBe(
+      'jamman://audio/%2FVolumes%2FJAMMAN%2Fa%20b.wav',
+    );
+  });
+
+  it('rejects other schemes, other hosts, extra segments and malformed encodings', () => {
     expect(parseJammanUrl('file:///etc/passwd')).toBeNull();
-    expect(parseJammanUrl('jamman://%E0%A4%A')).toBeNull();
+    expect(parseJammanUrl('jamman://%2Fetc%2Fpasswd.wav')).toBeNull();
+    expect(parseJammanUrl('jamman://other/%2Fa.wav')).toBeNull();
+    expect(parseJammanUrl('jamman://audio/%2Fa/..%2Fb.wav')).toBeNull();
+    expect(parseJammanUrl('jamman://audio/%E0%A4%A')).toBeNull();
   });
 });
 
@@ -127,7 +136,7 @@ describe('jamman:// handler', () => {
 
     // Same, written directly in the URL with encoded dots
     const res2 = await handlerWithRoot()(
-      get(`jamman://${encodeURIComponent(root)}%2F%2E%2E%2Foutside%2Fsecret.wav`),
+      get(`jamman://audio/${encodeURIComponent(root)}%2F%2E%2E%2Foutside%2Fsecret.wav`),
     );
     expect(res2.status).toBe(403);
   });

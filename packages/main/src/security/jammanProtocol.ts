@@ -25,7 +25,12 @@ import { Readable } from 'node:stream';
 import { PathValidator } from '../PathValidator.js';
 
 export const JAMMAN_SCHEME = 'jamman';
-const URL_PREFIX = `${JAMMAN_SCHEME}://`;
+/**
+ * The scheme is registered as `standard`, so Chromium parses what follows `//` as a host.
+ * The file path goes in the URL path, percent-encoded as one segment, under a fixed host.
+ */
+export const JAMMAN_HOST = 'audio';
+const URL_PREFIX = `${JAMMAN_SCHEME}://${JAMMAN_HOST}/`;
 const ALLOWED_EXTENSIONS = ['.wav'];
 
 /**
@@ -74,12 +79,15 @@ export function parseJammanUrl(url: string): string | null {
   }
 
   // `toJammanUrl` encodes the whole path with encodeURIComponent, so a raw
-  // `?` or `#` can only be a query/fragment added by Chromium. Drop them, and
-  // the trailing slash Chromium may append to host-like URLs.
+  // `?` or `#` can only be a query/fragment added by Chromium, and a raw `/`
+  // can only be a trailing slash. Drop them.
   let encoded = url.slice(URL_PREFIX.length);
   encoded = encoded.split(/[?#]/, 1)[0];
   if (encoded.endsWith('/')) {
     encoded = encoded.slice(0, -1);
+  }
+  if (encoded.includes('/')) {
+    return null;
   }
 
   try {

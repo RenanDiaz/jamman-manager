@@ -64,7 +64,10 @@ describe('initApp', () => {
   it('registers the jamman scheme as privileged before the app is ready', async () => {
     app = await startApp();
     expect(protocol.registerSchemesAsPrivileged).toHaveBeenCalledWith([
-      { scheme: 'jamman', privileges: { supportFetchAPI: true, stream: true } },
+      {
+        scheme: 'jamman',
+        privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+      },
     ]);
     expect(protocol.handle).not.toHaveBeenCalled();
   });
