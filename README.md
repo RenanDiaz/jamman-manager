@@ -1,6 +1,6 @@
 # JamMan Manager
 
-A desktop app for managing the loops on a Digitech JamMan Stereo looper pedal. Put the pedal's SD card in your computer, open its folder, and you can play, create, edit, reorder, back up and delete patches without touching the pedal.
+A desktop app for managing the loops on a Digitech JamMan Stereo looper pedal. Play, create, edit, reorder, back up and delete patches, and keep setlists, either from the pedal's SD card in a card reader or with the pedal itself connected over USB, card and internal memory included. Over USB the app also follows the pedal live: it shows which patch you are on as you step through them with your foot.
 
 Built with Electron, React and TypeScript. Runs on macOS, Windows and Linux.
 
@@ -10,20 +10,23 @@ Built with Electron, React and TypeScript. Runs on macOS, Windows and Linux.
 
 ## What it does
 
-- **See the whole card.** A memory map of the 99 slots, the patch list with tempo, loop and reverse at a glance, and a detail panel for the selected patch.
-- **Play phrases** from the card or from any patch row, with a player for seek and volume.
+- **See a whole card or bank.** A memory map of the 99 slots, the patch list with tempo, loop and reverse at a glance, and a detail panel for the selected patch.
+- **Play phrases** from any patch row or the detail panel, with a player for seek and volume.
 - **Create and edit patches.** Name, rhythm (the pedal's 10 rhythms, from Off to Tambourine), stop mode (Stop, Finish or Fade) and phrases. Each phrase has a WAV file, BPM, beats per bar, loop and reverse.
 - **Delete** one patch or a selection.
 - **Undo and redo** deletes, edits, reorders and restores with ⌘Z and ⇧⌘Z (Ctrl+Z and Ctrl+Shift+Z on Windows and Linux).
 - **Reorder** patches by dragging them, or sort by name, slot, tempo or in reverse. Applying the order renumbers the folders from Patch01.
-- **Playlists**: group patches into setlists, reorder them, export a setlist as text, and move a setlist to the first slots of the card.
-- **Back up and restore** the whole card or only the selected patches as a ZIP file. Restore can merge with the patches on the card or replace them.
+- **Playlists**: group patches into setlists, reorder them, export a setlist as text, and move a setlist to the first slots.
+- **Back up and restore** everything or only the selected patches as a ZIP file. Restore can merge with the patches already there or replace them.
 - **Export** the patch list as TXT or PDF.
-- **Reopen** the last card you used when the app starts.
+- **Work with the pedal over USB**, without taking the card out: its internal memory and its SD card, with everything above.
+- **Follow the pedal live** over USB: the patch loaded on the pedal, whether it is loading, and whether the SD card is in. Before changing the patch the pedal is using, the app asks, and the pedal then reloads it so it plays the new version.
+- **Set the footswitch buttons** of the pedal (undo/redo, reverse, tempo).
+- **Reopen** the last card folder you used when the app starts.
 
 ## Using it with the pedal
 
-The JamMan Stereo stores each patch as a folder with an XML file and one folder per phrase:
+The JamMan Stereo stores each patch as a folder with an XML file and one folder per phrase, both in its internal memory and on the SD card:
 
 ```
 JamManStereo/
@@ -38,6 +41,10 @@ JamManStereo/
 └── ...
 ```
 
+There are two ways to reach them. Use a card reader for large transfers (a whole 4 GB card), and USB for everything else, without moving the card.
+
+### With a card reader
+
 1. Put the SD card in your computer.
 2. Click **Load patches** and pick the folder that contains `Patch01`, `Patch02`, and so on.
 3. When you're done, eject the card before putting it back in the pedal.
@@ -46,21 +53,25 @@ The app only reads and writes inside the folder you pick, plus any WAV or backup
 
 ### Over USB
 
-You can also leave the card in the pedal and connect the pedal to the computer with a USB cable. The pedal does not show up as a drive; the app talks to it directly.
+Leave the card in the pedal and connect the pedal to the computer with a USB cable. The pedal does not show up as a drive; the app talks to it directly.
 
 1. Turn the pedal on and connect it with a USB cable.
-2. Click **Pedal** and choose **Internal memory** or **SD card**.
-3. Browse and play the patches. Audio streams from the pedal, so playback starts right away; a WAV that was played to the end is kept in a local cache and not downloaded again until it changes on the pedal.
-4. Create, edit, delete and sort patches, including adding phrases and replacing their WAV files. New WAVs are uploaded at about 1.5 MB per second, with a progress bar. Undo and redo work as with a card: audio that an undo may need is kept on the pedal itself, so it never crosses the cable twice.
+2. Click **Pedal** and open **Internal memory** or **SD card**.
+3. Everything works as with a card: play, create, edit, sort, delete, playlists, backups and restores, with undo and redo.
 
-5. Back up the bank to a ZIP file or restore one onto it. Audio that is not on this computer yet is downloaded first; the **Audio** key in the pedal dialog downloads a whole bank ahead of time. Both can be stopped and resumed. A large bank takes a long time over USB (about 50 minutes for 4 GB), so the app recommends a card reader for those.
-6. Playlists work as with a card: they are kept in the same file, in the bank's folder on the pedal.
+What is different over USB:
 
-The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
+- **Audio moves at about 1.3 MB per second** from the pedal and 1.5 MB per second to it. Playback streams, so it starts right away; a WAV played to the end is cached on this computer until it changes on the pedal. Uploads and downloads show progress and can be stopped.
+- **Backups download the audio first**, and the **Audio** key in the pedal dialog downloads a whole bank ahead of time; both resume where they stopped. A full card takes about 50 minutes, so for that the app recommends a card reader.
+- **Undo never moves audio twice**: audio an undo may need is kept on the pedal itself until it can no longer be undone, and is freed when you disconnect.
+- **The app follows the pedal**: the patch loaded on the pedal is marked "On pedal" and changes as you step through patches with your foot, and the header shows it. Before changing that patch, or while the pedal holds an unsaved recording, the app asks first; afterwards the pedal reloads the patch, so it plays the new version without switching patches.
+- **The pedal dialog** shows both banks with their free space, downloads a bank's audio, sets what each footswitch button does (the pedal keeps it when turned off), and disconnects.
+
+The USB protocol, and what was learned about the pedal while testing it, is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
 
 ### WAV files
 
-When you add a phrase, the app copies your WAV file to the card as it is. It does not convert it. Use 16-bit, 44.1 kHz WAV files (mono or stereo). Before playback the app checks that format and warns you if a file doesn't match.
+When you add a phrase, the app copies your WAV file to the card (or uploads it to the pedal) as it is. It does not convert it. Use 16-bit, 44.1 kHz WAV files (mono or stereo). Before playback the app checks that format and warns you if a file doesn't match.
 
 ## Development
 
@@ -96,14 +107,15 @@ This builds the app and packages it for the current platform into `dist/`:
 
 ### Checks
 
-| Command                                   | What it does                                             |
-| ----------------------------------------- | -------------------------------------------------------- |
-| `npm run verify`                          | Typecheck, lint and unit tests                           |
-| `npm test`                                | Unit tests (Vitest)                                      |
-| `npm run test:e2e`                        | End-to-end tests (Playwright) against the app in `dist/` |
-| `npm run format` / `npm run format:check` | Format the repository with Prettier, or only check it    |
+| Command                                                                                      | What it does                                                |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `npm run verify`                                                                             | Typecheck, lint and unit tests                              |
+| `npm test`                                                                                   | Unit tests (Vitest)                                         |
+| `npm run test:e2e`                                                                           | End-to-end tests (Playwright) against the app in `dist/`    |
+| `npm run format` / `npm run format:check`                                                    | Format the repository with Prettier, or only check it       |
+| `JAMMAN_USB=1 npx vitest run --no-file-parallelism packages/main/src/usb/*.hardware.test.ts` | Hardware tests against a JamMan connected over USB (opt-in) |
 
-The end-to-end tests launch the packaged app, so run `npm run compile` first. They use a small synthetic SD card in [`tests/fixtures`](tests/fixtures/README.md) and never touch a real card.
+The end-to-end tests launch the packaged app, so run `npm run compile` first. They use a small synthetic SD card in [`tests/fixtures`](tests/fixtures/README.md) and never touch a real card. The unit tests drive the USB code against an in-memory fake pedal that reproduces the real one's limits; the hardware tests only read from a real pedal, or write in a sandbox folder they delete afterwards.
 
 Husky runs `lint-staged` (Prettier) before each commit and `npm run verify` before each push. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds the app and runs the unit tests on macOS, Windows and Linux. It also runs the typecheck, lint, a format check and a production dependency audit, and runs the end-to-end tests on Linux. All of it must pass before merging into `main`.
 
@@ -111,7 +123,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and [CHANG
 
 ## Architecture
 
-The app follows Electron's three-process model. The renderer has no Node.js access: everything it does on disk goes through a typed IPC contract.
+The app follows Electron's three-process model. The renderer has no Node.js access: everything it does on disk or with the pedal goes through a typed IPC contract.
 
 ```
 ┌──────────────────────┐
@@ -123,7 +135,7 @@ The app follows Electron's three-process model. The renderer has no Node.js acce
 └──────────┬───────────┘
            │  ipcRenderer.invoke / ipcMain.handle
 ┌──────────▼───────────┐
-│  Main                │  File system, dialogs, backups, audio
+│  Main                │  File system, pedal over USB, dialogs, backups, audio
 └──────────────────────┘
 ```
 
@@ -135,7 +147,12 @@ The app follows Electron's three-process model. The renderer has no Node.js acce
 - **Recovering from failures**: a deleted patch is kept aside for 5 seconds before it's removed, a reorder that fails part-way renames the folders back, and edits, deletes and restores take a snapshot that Undo can bring back.
 - **`BackupManager`** and **`PlaylistManager`**: ZIP backups and the playlists stored in `.jamman-playlists.json` on the card.
 - **`modules/`**: window management, single instance, auto-updates and other app-level behaviour.
-- **`usb/`**: the pedal over USB. `greenglassCodec` and `GreenglassClient` speak the pedal's protocol over the serial port (`serialport`), and `PedalManager` connects, reads patches live and serves phrase audio with a cache of downloaded WAVs. Handlers that take a folder path accept `jamman-pedal://<bank>` for a pedal bank; the ones that cannot work on a pedal yet refuse it in `ipc/register.ts`.
+- **`usb/`**: the pedal over USB, live (nothing is mirrored; the only local state is a cache of downloaded WAVs).
+  - `greenglassCodec` and `GreenglassClient` speak the pedal's protocol over the serial port (`serialport`): one request at a time, notifications passed on as events, and a resync for a pedal left mid-frame.
+  - `PedalFiles` builds file operations from the protocol's primitives, behind a guard that only allows patch folders, the playlists file and the app's work folder.
+  - `PedalEditor` creates, edits, deletes and reorders patches and keeps the undo data on the pedal.
+  - `PedalManager` connects, reads patches, streams audio, downloads, backs up and restores banks, follows the pedal's live state and makes it reload a patch it is using.
+  - Handlers that take a folder path accept `jamman-pedal://<bank>` for a pedal bank; any channel that does not know about pedals refuses such a path in `ipc/register.ts`.
 
 ### Preload (`packages/preload`)
 
@@ -147,18 +164,20 @@ The app follows Electron's three-process model. The renderer has no Node.js acce
 - **Backups**: create, validate and restore.
 - **Undo**: create, restore and discard snapshots.
 - **Playlists**: load, create, update, delete, add and remove patches, reorder, export.
+- **Pedal**: connect, disconnect, status, how much audio is cached, download a bank's audio, stop a long operation, set a footswitch button; events when the pedal changes and for transfer progress.
 
 ### Renderer (`packages/renderer`)
 
 - **`components/`**: the screens (header, memory map, patch list and detail, player, dialogs, sort view).
 - **`ui/`**: the reusable components of the "Pedal" design system: panels, keys, LEDs, the seven-segment display, form controls, dialogs. The tokens and rules are in [design/DESIGN.md](design/DESIGN.md).
-- **`store/`**: Zustand stores for the patches, the audio player and the undo history.
+- **`store/`**: Zustand stores for the patches, the audio player, the undo history, the pedal and the question asked before changing a patch the pedal is using.
 
 ### Security
 
 - The renderer runs sandboxed, with context isolation and a strict Content Security Policy.
 - The main process only accepts IPC calls from the app's own window.
 - File access is limited to the folder you picked and to the files you chose in a dialog.
+- On the pedal, writes are limited to patch folders, the playlists file and the app's own work folder. Its internal memory also holds the pedal's software and settings, which the app never touches.
 - Audio plays through a custom `jamman://` protocol instead of `file://` URLs. See [ADR 0001](docs/adr/0001-jamman-protocol.md).
 - Patch and phrase XML is parsed with external entities and DTDs disabled.
 
@@ -172,6 +191,7 @@ jamman-manager/
 │   │       ├── ipc/        # IPC handlers by area
 │   │       ├── modules/    # Window, updates, single instance…
 │   │       ├── security/   # CSP, folder access, jamman:// protocol
+│   │       ├── usb/        # The pedal over USB
 │   │       └── index.ts
 │   ├── preload/            # contextBridge and the IPC contract
 │   ├── renderer/           # React UI
@@ -183,6 +203,7 @@ jamman-manager/
 │   ├── electron-versions/  # Shared Electron/Chrome/Node targets
 │   └── dev-mode.js         # `npm start`
 ├── tests/                  # E2E tests (Playwright) and the synthetic SD card
+├── tools/                  # greenglass.py: talk to the pedal from a terminal
 ├── design/                 # DESIGN.md, mockups and icon options
 ├── docs/                   # ADRs, specs and policies
 ├── buildResources/         # App icon and macOS entitlements
@@ -195,6 +216,7 @@ jamman-manager/
 - **UI:** CSS Modules with design tokens, Barlow and Barlow Condensed (bundled with @fontsource), dnd-kit for drag and drop, React Toastify
 - **State:** Zustand
 - **Files:** fs-extra, xml2js, adm-zip (backups), pdfkit (PDF export), music-metadata (WAV checks)
+- **Pedal:** serialport (USB serial)
 - **App services:** electron-log, electron-updater
 - **Tooling:** Vitest, Playwright, ESLint, Prettier, Husky, lint-staged
 
@@ -202,7 +224,7 @@ Dependencies follow [docs/dependency-policy.md](docs/dependency-policy.md).
 
 ## Why?
 
-Digitech discontinued official support for managing loops on the JamMan Stereo. This app helps you keep control of your loop library with a modern interface: no MIDI, no syncing, just drag, drop and play.
+Digitech discontinued official support for managing loops on the JamMan Stereo, and its JamManager software no longer runs on current systems. This app helps you keep control of your loop library with a modern interface, from a card reader or straight over USB: no MIDI, just drag, drop and play.
 
 ## License
 
