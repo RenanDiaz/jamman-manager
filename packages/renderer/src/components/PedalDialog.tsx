@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { toast } from 'react-toastify';
 import type {
+  PedalButton,
   PedalAudioStatus,
   PedalBankId,
   PedalBankInfo,
   PedalInfo,
 } from '@app/preload/ipc-contract';
-import { Dialog, Led, Notice, PanelKey } from '../ui';
+import { Dialog, Field, Led, Notice, PanelKey, Select } from '../ui';
 import { formatBytes } from '../utils/format';
 import { BANK_LABELS, isCanceled, transferTime } from '../utils/pedal';
 import PedalTransfer from './PedalTransfer';
@@ -21,6 +22,19 @@ interface Props {
   onDisconnect: () => void;
   onClose: () => void;
 }
+
+const BUTTONS: Array<{ id: PedalButton; label: string }> = [
+  { id: 'left', label: 'Left' },
+  { id: 'middle', label: 'Middle' },
+  { id: 'right', label: 'Right' },
+];
+
+/** How the pedal's button commands read in the app. Unknown ones show as the pedal names them. */
+const BUTTON_COMMAND_LABELS: Record<string, string> = {
+  UndoRedo: 'Undo / redo',
+  Reverse: 'Reverse',
+  Tempo: 'Tempo',
+};
 
 /** Where the "download all audio" flow of one bank stands. */
 type AudioStep =
@@ -39,6 +53,19 @@ export default function PedalDialog({
 }: Props) {
   const [audio, setAudio] = useState<AudioStep | null>(null);
   const busy = audio?.step === 'downloading';
+  const [settingButton, setSettingButton] = useState(false);
+
+  const setButton = async (button: PedalButton, command: string) => {
+    setSettingButton(true);
+    try {
+      await window.electronAPI.setPedalButton(button, command);
+    } catch (error) {
+      console.error('Error setting a pedal button:', error);
+      toast.error('The pedal did not take the new button setting');
+    } finally {
+      setSettingButton(false);
+    }
+  };
 
   const checkAudio = async (bank: PedalBankInfo) => {
     setAudio({ bank: bank.id, step: 'checking' });
@@ -141,6 +168,31 @@ export default function PedalDialog({
               );
             })}
           </ul>
+          <section aria-labelledby="pedal-buttons" className={s.buttons}>
+            <h3 id="pedal-buttons" className={s.sectionTitle}>
+              Footswitch buttons
+            </h3>
+            <div className={s.buttonRow}>
+              {BUTTONS.map(({ id, label }) => (
+                <Field key={id} label={label} htmlFor={`pedal-button-${id}`}>
+                  <Select
+                    id={`pedal-button-${id}`}
+                    value={pedal.buttons[id]}
+                    disabled={busy || settingButton}
+                    onChange={e => setButton(id, e.target.value)}
+                  >
+                    {pedal.buttonCommands.map(command => (
+                      <option key={command} value={command}>
+                        {BUTTON_COMMAND_LABELS[command] ?? command}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ))}
+            </div>
+            <p className={s.bankMeta}>The pedal keeps these when it is turned off.</p>
+          </section>
+
           <Notice title="What works over USB">
             <p>
               Everything the app does with a card. Audio moves at about 1.3 MB per second from the

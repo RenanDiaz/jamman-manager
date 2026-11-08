@@ -17,6 +17,7 @@ import {
 import { fileName, formatBytes } from '../utils/format';
 import { isCanceled, isPedalPath, transferTime } from '../utils/pedal';
 import PedalTransfer from './PedalTransfer';
+import { PedalWriteCanceled } from '../store/usePedalGuardStore';
 import s from './BackupRestoreModal.module.css';
 
 interface BackupInfo {
@@ -178,6 +179,7 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
         onClose();
       }
     } catch (error) {
+      if (error instanceof PedalWriteCanceled) return;
       if (isCanceled(error)) {
         toast.info('Restore stopped. Undo brings the bank back as it was.');
         if (onRestoreComplete) onRestoreComplete();

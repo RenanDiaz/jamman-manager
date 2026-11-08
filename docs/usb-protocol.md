@@ -152,14 +152,14 @@ Ojo: JamManager calculaba el campo de longitud con `string.Length` (caracteres, 
 
 La app trabaja en vivo sobre el pedal. No hay copia local: lo único que guarda es una caché de los WAV ya descargados. El código está en `packages/main/src/usb/`.
 
-| Etapa | Alcance                                               | Estado    |
-| ----- | ----------------------------------------------------- | --------- |
-| 1     | Conectar, listar patches y reproducir                 | Hecha     |
-| 2     | Editar metadatos, borrar y reordenar                  | Hecha     |
-| 3     | Agregar, reemplazar y quitar frases; crear patches    | Hecha     |
-| 4     | Backup, restore y "Descargar todo el banco"           | Hecha     |
-| 4b    | Playlists                                             | Hecha     |
-| 5     | Control en vivo del pedal (fase adicional, ver abajo) | Pendiente |
+| Etapa | Alcance                                               | Estado |
+| ----- | ----------------------------------------------------- | ------ |
+| 1     | Conectar, listar patches y reproducir                 | Hecha  |
+| 2     | Editar metadatos, borrar y reordenar                  | Hecha  |
+| 3     | Agregar, reemplazar y quitar frases; crear patches    | Hecha  |
+| 4     | Backup, restore y "Descargar todo el banco"           | Hecha  |
+| 4b    | Playlists                                             | Hecha  |
+| 5     | Control en vivo del pedal (fase adicional, ver abajo) | Hecha  |
 
 Decisiones de la etapa 1:
 
@@ -259,11 +259,33 @@ Se hace después de la fase de escritura. Además de archivos, Greenglass ofrece
 - Al editar el patch activo, la app pide confirmación y después el pedal suena con los cambios sin tener que cambiar de patch.
 - Si se implementa la configuración global: al cambiar un botón desde la app, el cambio persiste tras reiniciar el pedal.
 
-### Lo que ya existe hoy (de las etapas 1 a 4b)
+### Validación con el pedal (antes de implementar)
 
-- **Lector de notificaciones.** `GreenglassClient` ya separa las notificaciones de las respuestas, también cuando llegan en medio de una, y emite cada `PropertyChanged` como evento `property` (punto 1, parte del lector). Hay tests de eso con tramas reales del pedal.
-- **SD y espacio libre.** `PedalManager` ya actualiza la información de los bancos con `RemovableMediaIsPresent` y `KilobytesAvailableOn*`, y la reenvía al renderer como `pedal:changed`. Si se saca la SD con su banco abierto, la app cierra la vista y avisa "The SD card was removed from the pedal" (punto 2, parcial). Esto se probó con el pedal simulado, todavía no sacando la tarjeta del pedal real.
-- **Falta:** reenviar y mostrar `CurrentBankAndPatch`, `AudioIsDirty` y `SettingsAreDirty`, la advertencia al escribir, los comandos del motor de loops y `SetProperty`.
+Con `tools/greenglass.py` (comandos nuevos `getprop`, `setprop`, `command` y `watch`), siempre restaurando lo que se cambiaba:
+
+- **`GetProperty` (msg 26):** devuelve una propiedad sola. Probado con todas las de la tabla.
+- **`SetProperty` (msg 21):** `LeftButtonCommand` pasó de `UndoRedo` a `Reverse`, se leyó de vuelta y siguió en `Reverse` después de apagar y encender el pedal; después se restauró. No se guarda en `jamStereo.xml`. Solo se probaron valores que el propio pedal reporta (`UndoRedo`, `Reverse`, `Tempo`): no hay lista de valores válidos, y JamManager nunca usaba estas propiedades.
+- **`IssueCommand` (msg 22):** `LoopEngineStopImmediately` (0x1002) y `LoopEngineReloadCurrentPatch` (0x1001) responden Success con el pedal en reposo, y el pedal sigue respondiendo con normalidad.
+- **Los avisos (`PropertyChanged`) solo llegan después del saludo** (`WhoAmI` + `GetProperties`). Un oyente que solo escuchaba no recibió nada en 10 minutos de cambios de patch; después del saludo, cada aviso llegó al instante. La app saluda al conectar.
+- **`CurrentBankAndPatch`:** los 16 bits altos son el banco (0 = interna, 1 = SD) y los bajos el número de patch (1–99). Al recorrer los patches hacia abajo desde el 1 de la interna llegó `0x00010063`, que es la SD, patch 99.
+- **`DiskState`** vale 1 mientras el pedal carga un patch y vuelve a 0 al terminar.
+- **Sacar la SD** genera `RemovableMediaIsPresent = 0` y la capacidad y el espacio libre de la SD en 0. Meterla de nuevo restablece los valores.
+- **`AudioIsDirty` y `SettingsAreDirty`** no cambiaron en las pruebas (no hubo una grabación sin guardar mientras se registraba). Se manejan igual que las demás propiedades.
+
+### Implementación
+
+- **Estado en vivo.** `PedalInfo.live` (banco y patch cargados, `busy`, `audioDirty`, `settingsDirty`) sale de las propiedades y de cada aviso. El `PedalManager` reenvía al renderer (`pedal:changed`) los avisos de esas propiedades, de las de espacio y SD, y de las de botones. En la app, la fila del patch cargado muestra "On pedal", el detalle muestra "Loaded on the pedal", el encabezado dice qué tiene cargado el pedal y el LED Busy se enciende mientras el pedal carga.
+- **Protección al escribir** (`confirmPedalWrite`, en el renderer). Antes de crear, editar, borrar, reordenar o restaurar algo que toca el patch cargado, o si el pedal tiene algo sin guardar, la app pregunta: "The pedal has an unsaved loop or is using this patch", con el detalle del caso. Si hay una grabación sin guardar en el patch cargado, avisa que la recarga la descarta. Deshacer y rehacer no vuelven a preguntar.
+- **Recargar después de cambiar.** Cuando un cambio toca el patch cargado (lo sabe `takeTouched`), el `PedalManager` manda `LoopEngineStopImmediately` y después `LoopEngineReloadCurrentPatch`.
+- **Botones del footswitch.** En el diálogo del pedal hay un selector por botón, que solo ofrece los comandos que el pedal reporta. La app lee el valor de vuelta después de escribirlo.
+- **No implementado: el comportamiento de la cola** (`QueueCurrentBehavior` / `QueueEmptyBehavior`). Solo se conocen los valores actuales (`RevertToSaved`, `TransitionIfStopped`); sin una lista de valores válidos, ofrecer un selector sería adivinar.
+
+### Criterios de aceptación: resultado con el pedal real
+
+- **Cambiar de patch con el pie** se reflejó en la app (marca "On pedal" y encabezado) en una secuencia de 01 a 11, con cambios separados por 100–300 ms. El script de la prueba miraba la pantalla cada 100 ms, y cada cambio ya estaba ahí; el aviso del pedal llega en el momento.
+- **Sacar la SD** con la memoria interna abierta no produjo errores. Si la vista abierta es la SD, la app la cierra y avisa (cubierto con el pedal simulado).
+- **Editar el patch cargado** (reemplazar el WAV de un patch de prueba que el pedal tenía cargado) mostró la confirmación. Después el pedal sonó con el audio nuevo sin cambiar de patch: lo confirmaste comparándolo con el patch del que salía ese audio.
+- **Configuración global:** la asignación de un botón persistió tras apagar y encender el pedal (probado con `tools/`, desde la app se usa el mismo `SetProperty`).
 
 ## Uso del cliente de prueba
 

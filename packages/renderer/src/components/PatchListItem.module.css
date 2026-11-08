@@ -122,3 +122,8 @@
     display: none;
   }
 }
+
+.onPedal {
+  margin-left: var(--jm-space-3);
+  vertical-align: middle;
+}

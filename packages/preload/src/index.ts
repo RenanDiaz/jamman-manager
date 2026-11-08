@@ -111,6 +111,7 @@ const electronAPI: ElectronAPI = {
   getPedalAudioStatus: (bankPath, patches) => send('pedal:audioStatus', bankPath, patches),
   downloadPedalAudio: bankPath => send('pedal:downloadAudio', bankPath),
   cancelPedalOperation: () => send('pedal:cancel'),
+  setPedalButton: (button, command) => send('pedal:setButton', button, command),
   onPedalChanged: listener => subscribe('pedal:changed', listener),
   onPedalProgress: listener => subscribe('pedal:progress', listener),
 };

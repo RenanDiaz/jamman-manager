@@ -70,6 +70,7 @@ const CHANNEL_OF: Record<Exclude<keyof ElectronAPI, (typeof EVENT_METHODS)[numbe
   getPedalAudioStatus: 'pedal:audioStatus',
   downloadPedalAudio: 'pedal:downloadAudio',
   cancelPedalOperation: 'pedal:cancel',
+  setPedalButton: 'pedal:setButton',
 };
 
 describe('window.electronAPI', () => {

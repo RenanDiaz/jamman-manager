@@ -37,3 +37,20 @@
   font: var(--jm-text-meta);
   opacity: 0.75;
 }
+
+.buttons {
+  display: grid;
+  gap: var(--jm-space-3);
+  margin: 0 0 var(--jm-space-6);
+}
+
+.sectionTitle {
+  margin: 0;
+  font: var(--jm-text-legend);
+}
+
+.buttonRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--jm-space-4);
+}

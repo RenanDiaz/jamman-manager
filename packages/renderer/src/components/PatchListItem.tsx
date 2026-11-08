@@ -4,7 +4,16 @@ import { useAudioPlayerStore } from '../store/useAudioPlayerStore';
 import type { Patch } from '../types';
 import { slotNumber } from '../utils/format';
 import { toPatchView } from '../utils/patchView';
-import { cx, DisplayWindow, Led, Plate, SevenSegment, StompButton, VisuallyHidden } from '../ui';
+import {
+  DisplayWindow,
+  Led,
+  Pill,
+  Plate,
+  SevenSegment,
+  StompButton,
+  VisuallyHidden,
+  cx,
+} from '../ui';
 import s from './PatchListItem.module.css';
 
 interface Props {
@@ -13,11 +22,20 @@ interface Props {
   isFocused?: boolean;
   onFocus: (directory: string) => void;
   onToggleSelection?: (directory: string) => void;
+  /** The pedal connected over USB has this patch loaded. */
+  onPedal?: boolean;
 }
 
 /** One patch as a footswitch plate: slot display, name, tempo, loop/reverse LEDs, play. */
 export const PatchListItem: FC<Props> = memo(
-  ({ patch, isSelected = false, isFocused = false, onFocus, onToggleSelection }) => {
+  ({
+    patch,
+    isSelected = false,
+    isFocused = false,
+    onFocus,
+    onToggleSelection,
+    onPedal = false,
+  }) => {
     const view = toPatchView(patch);
     const first = view.phrases[0];
     const playPhrase = usePlayPhrase();
@@ -57,7 +75,14 @@ export const PatchListItem: FC<Props> = memo(
           </DisplayWindow>
           <span className={s.text}>
             <VisuallyHidden>{view.dir} </VisuallyHidden>
-            <span className={cx(s.name, !view.name && s.untitled)}>{view.name || 'Untitled'}</span>
+            <span className={cx(s.name, !view.name && s.untitled)}>
+              {view.name || 'Untitled'}
+              {onPedal && (
+                <Pill className={s.onPedal} title="The pedal has this patch loaded">
+                  On pedal
+                </Pill>
+              )}
+            </span>
             <span className={s.meta}>
               {view.rhythmLabel}, {view.stopLabel.toLowerCase()}, {phraseCount}
             </span>

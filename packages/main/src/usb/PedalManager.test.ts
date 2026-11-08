@@ -12,7 +12,8 @@ import {
   phraseXml,
   wavBytes,
 } from '../test-utils/fakePedal.js';
-import { MessageID, PropertyID } from './greenglassCodec.js';
+import { LoopEngineCommand, MessageID, PropertyID } from './greenglassCodec.js';
+import type { PedalInfo } from '@app/preload/ipc-contract';
 import { PedalCanceledError, PedalManager, PedalNotConnectedError } from './PedalManager.js';
 import { BackupManager } from '../BackupManager.js';
 import { PlaylistManager } from '../PlaylistManager.js';
@@ -489,5 +490,82 @@ describe('PedalManager playlists', () => {
     await manager.connect();
     const data = await PlaylistManager.loadPlaylists(manager.playlistStore('internal'));
     expect(data.playlists[0].patches).toEqual(['Patch01']);
+  });
+});
+
+describe('PedalManager live state and settings', () => {
+  const form = (dir: string, name: string) => ({
+    basePath: 'jamman-pedal://internal',
+    directory: dir,
+    patchName: name,
+    rhythmType: 'Silence',
+    stopMode: 'StopInstantly',
+    phrases: [
+      {
+        name: 'PhraseA',
+        wavPath: `jamman-pedal://internal/${dir}/PhraseA/phrase.wav`,
+        beatsPerMinute: 120,
+        beatsPerMeasure: 4,
+        isLoop: true,
+        isReversed: false,
+      },
+    ],
+  });
+
+  it('follows the patch the pedal has loaded and its unsaved state', async () => {
+    const { manager, fake } = setup();
+    const info = await manager.connect();
+    expect(info.live).toEqual({
+      bank: 'internal',
+      patch: 'Patch01',
+      busy: false,
+      audioDirty: false,
+      settingsDirty: false,
+    });
+    expect(info.buttons).toEqual({ left: 'UndoRedo', middle: 'Reverse', right: 'Tempo' });
+
+    const changes: PedalInfo[] = [];
+    manager.on('change', next => next && changes.push(next));
+    fake.notifyProperty(PropertyID.DiskState, 1);
+    fake.notifyProperty(PropertyID.CurrentBankAndPatch, 0x10063); // SD, patch 99
+    fake.notifyProperty(PropertyID.DiskState, 0);
+    fake.notifyProperty(PropertyID.AudioIsDirty, 1);
+    await manager.audioStatus('internal'); // let the notifications arrive
+
+    expect(changes.map(c => c.live.busy)).toEqual([true, true, false, false]);
+    expect(manager.status()?.live).toEqual({
+      bank: 'sd',
+      patch: 'Patch99',
+      busy: false,
+      audioDirty: true,
+      settingsDirty: false,
+    });
+  });
+
+  it('makes the pedal reload its current patch when a change touches it, and only then', async () => {
+    const { manager, fake } = setup();
+    await manager.connect(); // the pedal has internal Patch01 loaded
+
+    await manager.updatePatch('internal', form('Patch02', 'Other'));
+    expect(fake.commands).toEqual([]);
+
+    await manager.updatePatch('internal', form('Patch01', 'Changed'));
+    expect(fake.commands).toEqual([
+      LoopEngineCommand.StopImmediately,
+      LoopEngineCommand.ReloadCurrentPatch,
+    ]);
+  });
+
+  it('assigns footswitch commands the pedal knows, and nothing else', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    const info = await manager.setButton('left', 'Tempo');
+    expect(info.buttons.left).toBe('Tempo');
+    expect(fake.properties.get(PropertyID.LeftButtonCommand)).toBe('Tempo');
+
+    await expect(manager.setButton('left', 'SelfDestruct')).rejects.toThrow(
+      /Unknown button command/,
+    );
+    expect(fake.properties.get(PropertyID.LeftButtonCommand)).toBe('Tempo');
   });
 });

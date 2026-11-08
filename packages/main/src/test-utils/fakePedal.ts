@@ -88,6 +88,8 @@ export class FakePedal {
   readonly requests: number[] = [];
   /** Every file opened for reading, in order. */
   readonly reads: string[] = [];
+  /** Every loop engine command received, in order. */
+  readonly commands: number[] = [];
   /** When true the pedal stops answering (simulates a desynced or hung pedal). */
   silent = false;
   /** Milliseconds to wait before answering, by request ID (a busy pedal). */
@@ -119,6 +121,15 @@ export class FakePedal {
     this.properties.set(PropertyID.Name, 'JamMan Stereo');
     this.properties.set(PropertyID.InternalPatchFolderPath, FAKE_INTERNAL_ROOT);
     this.properties.set(PropertyID.RemovablePatchFolderPath, FAKE_SD_ROOT);
+    this.properties.set(PropertyID.CurrentBankAndPatch, 1); // internal Patch01
+    this.properties.set(PropertyID.DiskState, 0);
+    this.properties.set(PropertyID.AudioIsDirty, 0);
+    this.properties.set(PropertyID.SettingsAreDirty, 0);
+    this.properties.set(PropertyID.LeftButtonCommand, 'UndoRedo');
+    this.properties.set(PropertyID.MiddleButtonCommand, 'Reverse');
+    this.properties.set(PropertyID.RightButtonCommand, 'Tempo');
+    this.properties.set(PropertyID.QueueCurrentBehavior, 'RevertToSaved');
+    this.properties.set(PropertyID.QueueEmptyBehavior, 'TransitionIfStopped');
   }
 
   setFile(path: string, content: Buffer | string, modified = new Date(Date.UTC(2024, 0, 1))) {
@@ -270,6 +281,26 @@ export class FakePedal {
         w.u16(strs.length);
         for (const [k, v] of strs) w.u16(k).str(v as string);
         return encodeFrame(MessageID.GetPropertiesResponse, w.build());
+      }
+      case MessageID.GetPropertyRequest: {
+        for (let n = r.u8(); n > 0; n--) r.u16();
+        const id = r.u16();
+        const value = this.properties.get(id);
+        if (value === undefined) return fail('Unknown property');
+        const w = new PayloadWriter().u32(serial).u16(id);
+        if (typeof value === 'number') w.i32(value);
+        else w.str(value);
+        return encodeFrame(MessageID.GetPropertyResponse, w.build());
+      }
+      case MessageID.SetPropertyRequest: {
+        for (let n = r.u8(); n > 0; n--) r.u16();
+        const id = r.u16();
+        this.properties.set(id, id <= 17 ? r.i32() : r.str());
+        return ok();
+      }
+      case MessageID.IssueCommandRequest: {
+        this.commands.push(r.u16());
+        return ok();
       }
       case MessageID.FolderContentsRequest: {
         const contents = this.#folderContents(r.str());

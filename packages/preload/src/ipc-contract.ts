@@ -267,6 +267,23 @@ export interface PedalProgress {
   total: number;
 }
 
+/** What the pedal is doing right now, as its notifications report it. */
+export interface PedalLiveState {
+  /** The bank of the patch loaded on the pedal. */
+  bank: PedalBankId | null;
+  /** The slot loaded on the pedal, e.g. `Patch07` (it may be an empty slot). */
+  patch: string | null;
+  /** The pedal is loading or saving a patch. */
+  busy: boolean;
+  /** The pedal holds a recording that is not saved yet. */
+  audioDirty: boolean;
+  /** The loaded patch's settings changed on the pedal and are not saved yet. */
+  settingsDirty: boolean;
+}
+
+/** The three buttons of the pedal's optional footswitch. */
+export type PedalButton = 'left' | 'middle' | 'right';
+
 /** A JamMan connected over USB. */
 export interface PedalInfo {
   /** As the pedal reports it, e.g. "JamMan Stereo". */
@@ -274,6 +291,11 @@ export interface PedalInfo {
   firmwareVersion: string;
   guid: string;
   banks: PedalBankInfo[];
+  live: PedalLiveState;
+  /** The command assigned to each footswitch button, e.g. `UndoRedo`. */
+  buttons: Record<PedalButton, string>;
+  /** Commands a button can take (the ones the pedal itself reports). */
+  buttonCommands: string[];
 }
 
 // ==================== Operation queue ====================
@@ -409,6 +431,8 @@ export interface IpcChannels {
   'pedal:downloadAudio': { args: [bankPath: string]; result: PedalAudioStatus };
   /** Stops the download or upload running on the pedal; it fails with "Canceled". */
   'pedal:cancel': { args: []; result: void };
+  /** Assigns a command to a footswitch button. The pedal keeps it across power cycles. */
+  'pedal:setButton': { args: [button: PedalButton, command: string]; result: PedalInfo };
 
   // Operation queue
   'operation-queue:status': { args: []; result: OperationQueueStatus };
@@ -498,6 +522,7 @@ export interface ElectronAPI {
   getPedalAudioStatus: IpcInvoker<'pedal:audioStatus'>;
   downloadPedalAudio: IpcInvoker<'pedal:downloadAudio'>;
   cancelPedalOperation: IpcInvoker<'pedal:cancel'>;
+  setPedalButton: IpcInvoker<'pedal:setButton'>;
   /** Calls `listener` whenever the pedal connects, disconnects or changes. Returns an unsubscribe function. */
   onPedalChanged: (listener: (info: IpcEvents['pedal:changed']) => void) => () => void;
   /** Calls `listener` with the progress of uploads to the pedal. Returns an unsubscribe function. */

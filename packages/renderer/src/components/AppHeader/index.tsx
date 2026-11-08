@@ -11,6 +11,10 @@ interface Props {
   pedalMode: boolean;
   pedalConnected: boolean;
   pedalBusy: boolean;
+  /** What the pedal has loaded, e.g. "SD card Patch07", while one is connected. */
+  pedalLoaded: string | null;
+  /** The pedal is loading or saving a patch. */
+  pedalWorking: boolean;
   folderSizeBytes: number | null;
   loading: boolean;
   /** Two-digit slot of the focused patch, shown on the display. */
@@ -38,6 +42,8 @@ export const AppHeader: FC<Props> = ({
   pedalMode,
   pedalConnected,
   pedalBusy,
+  pedalLoaded,
+  pedalWorking,
   folderSizeBytes,
   loading,
   focusedSlot,
@@ -67,8 +73,8 @@ export const AppHeader: FC<Props> = ({
         <Legend tone={currentFolder ? 'default' : 'muted'}>Card</Legend>
       </span>
       <span>
-        <Led color="red" on={loading} />
-        <Legend tone={loading ? 'default' : 'muted'}>Busy</Legend>
+        <Led color="red" on={loading || pedalWorking} />
+        <Legend tone={loading || pedalWorking ? 'default' : 'muted'}>Busy</Legend>
       </span>
     </div>
 
@@ -80,6 +86,7 @@ export const AppHeader: FC<Props> = ({
         {currentFolder
           ? `${sourceLabel ?? currentFolder}${folderSizeBytes !== null ? `, ${formatBytes(folderSizeBytes)} ${sourceLabel ? 'used' : 'on card'}` : ''}`
           : 'No card loaded'}
+        {pedalLoaded && <span className={s.pedalLoaded}>Pedal: {pedalLoaded}</span>}
       </p>
     </div>
 

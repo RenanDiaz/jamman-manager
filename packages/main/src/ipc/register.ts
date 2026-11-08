@@ -62,6 +62,7 @@ export const PEDAL_AWARE_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>
   'pedal:audioStatus',
   'pedal:downloadAudio',
   'pedal:cancel',
+  'pedal:setButton',
   'backup:create',
   'backup:restore',
 ]);

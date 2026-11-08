@@ -22,7 +22,8 @@ export type PedalChannel =
   | 'pedal:status'
   | 'pedal:audioStatus'
   | 'pedal:downloadAudio'
-  | 'pedal:cancel';
+  | 'pedal:cancel'
+  | 'pedal:setButton';
 
 function bankOf(bankPath: string) {
   const bank = parseBankPath(bankPath);
@@ -46,5 +47,11 @@ export function createPedalHandlers({ pedal }: Pick<IpcDeps, 'pedal'>): IpcHandl
     },
     'pedal:downloadAudio': bankPath => pedal.downloadAudio(bankOf(bankPath)),
     'pedal:cancel': () => pedal.cancel(),
+    'pedal:setButton': (button, command) => {
+      if (!['left', 'middle', 'right'].includes(button) || typeof command !== 'string') {
+        throw new Error('Invalid button setting');
+      }
+      return pedal.setButton(button, command);
+    },
   };
 }

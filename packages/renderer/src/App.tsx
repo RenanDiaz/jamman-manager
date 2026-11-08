@@ -21,7 +21,7 @@ import s from './App.module.css';
 import { usePatchStore } from './store/usePatchStore';
 import { usePedalStore } from './store/usePedalStore';
 import { useAudioPlayerStore } from './store/useAudioPlayerStore';
-import { isPedalPath, pedalFolderLabel } from './utils/pedal';
+import { BANK_LABELS, isPedalPath, pedalFolderLabel } from './utils/pedal';
 import { useUndoStore } from './store/useUndoStore';
 import { executeUndo, executeRedo, canUndo, canRedo } from './utils/undoHandler';
 import type { Patch, Playlist } from './types';
@@ -33,6 +33,7 @@ const DeleteConfirmModal = lazy(() => import('./components/DeleteConfirmModal'))
 const BackupRestoreModal = lazy(() => import('./components/BackupRestoreModal'));
 const PlaylistsModal = lazy(() => import('./components/PlaylistsModal'));
 const PedalDialog = lazy(() => import('./components/PedalDialog'));
+const PedalWriteConfirm = lazy(() => import('./components/PedalWriteConfirm'));
 const FooterPlayer = lazy(() =>
   import('./components/FooterPlayer').then(m => ({ default: m.FooterPlayer })),
 );
@@ -78,6 +79,13 @@ function App() {
   const [readingPedal, setReadingPedal] = useState<boolean>(false);
   /** A pedal over USB: everything works; some texts and empty states differ. */
   const pedalMode = isPedalPath(currentFolder);
+  /** The slot the pedal has loaded, when it belongs to the bank open now. */
+  const openBank = pedal?.banks.find(b => b.path === currentFolder)?.id ?? null;
+  const pedalSlot = pedal && openBank && pedal.live.bank === openBank ? pedal.live.patch : null;
+  const pedalLoaded =
+    pedal?.live.bank && pedal.live.patch
+      ? `${BANK_LABELS[pedal.live.bank]} ${pedal.live.patch}`
+      : null;
 
   /** Closes the pedal bank, and the player if it is playing audio from the pedal. */
   const closePedalBank = useCallback(() => {
@@ -384,6 +392,8 @@ function App() {
         pedalMode={pedalMode}
         pedalConnected={!!pedal}
         pedalBusy={pedalConnecting}
+        pedalLoaded={pedalLoaded}
+        pedalWorking={!!pedal?.live.busy}
         folderSizeBytes={folderSizeBytes}
         loading={loading}
         focusedSlot={focusedPatch ? slotNumber(focusedPatch.dir) : null}
@@ -468,6 +478,7 @@ function App() {
                     isFocused={dir === focusedPatch.dir}
                     onFocus={setFocusedDir}
                     onToggleSelection={toggleSelection}
+                    onPedal={dir === pedalSlot}
                   />
                 ) : (
                   <EmptySlotItem key={dir} dir={dir} onCreate={openNewPatch} />
@@ -476,7 +487,12 @@ function App() {
             </ul>
           </section>
 
-          <PatchDetail patch={focusedPatch} onEdit={handleEditPatch} onDelete={handleDeletePatch} />
+          <PatchDetail
+            patch={focusedPatch}
+            onEdit={handleEditPatch}
+            onDelete={handleDeletePatch}
+            onPedal={focusedPatch.dir === pedalSlot}
+          />
         </main>
       ) : currentFolder ? (
         <main className={s.center}>
@@ -622,6 +638,10 @@ function App() {
           onDisconnect={handleDisconnectPedal}
           onClose={() => setPedalDialogIsOpen(false)}
         />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <PedalWriteConfirm />
       </Suspense>
 
       <TopLayer>

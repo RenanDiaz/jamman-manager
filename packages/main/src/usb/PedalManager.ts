@@ -16,6 +16,8 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import type {
   PatchForm,
+  PedalButton,
+  PedalLiveState,
   PatchRecord,
   PedalBankId,
   PedalBankInfo,
@@ -36,7 +38,9 @@ import {
   type GreenglassTransport,
 } from './GreenglassClient.js';
 import {
+  decodeBankAndPatch,
   formatBcdVersion,
+  LoopEngineCommand,
   MAX_READ_CHUNK,
   PropertyID,
   type PropertyValue,
@@ -199,7 +203,7 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
       client.on('property', ({ property, value }) => {
         if (this.#connection !== connection) return;
         connection.properties.set(property, value);
-        if (BANK_PROPERTIES.has(property)) {
+        if (INFO_PROPERTIES.has(property)) {
           connection.info = buildInfo(
             connection.info.name,
             connection.info.firmwareVersion,
@@ -363,6 +367,7 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
         const touched = connection.editor.takeTouched();
         for (const entry of touched) this.#patchIndex.delete(entry.split('/')[0] as PedalBankId);
         await this.#forgetCachedAudio(connection, touched);
+        await this.#reloadIfActive(connection, touched);
       }
     };
     const result = this.#exclusive.then(run, run);
@@ -370,6 +375,45 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     return result.finally(() => {
       this.#bankBytes.clear();
       this.emit('progress', null);
+    });
+  }
+
+  /**
+   * When a change touched the patch the pedal has loaded, the pedal would
+   * keep playing what it read before. Stop it and make it load the patch again.
+   */
+  async #reloadIfActive(connection: Connection, touched: string[]): Promise<void> {
+    const { bank, patch } = connection.info.live;
+    if (!bank || !patch || !touched.includes(`${bank}/${patch}`) || !connection.client.isOpen)
+      return;
+    try {
+      await connection.client.issueCommand(LoopEngineCommand.StopImmediately);
+      await connection.client.issueCommand(LoopEngineCommand.ReloadCurrentPatch);
+      this.#deps.log.info(`The pedal reloaded ${patch} of its ${bank} bank after the change`);
+    } catch (error) {
+      this.#deps.log.warn('Could not make the pedal reload its current patch:', error);
+    }
+  }
+
+  /** Assigns a command to a footswitch button (one the pedal reports, see `buttonCommands`). */
+  setButton(button: PedalButton, command: string): Promise<PedalInfo> {
+    return this.#change(async (_editor, connection) => {
+      const property = BUTTON_PROPERTY[button];
+      if (property === undefined) throw new Error(`Unknown button: ${String(button)}`);
+      if (!connection.info.buttonCommands.includes(command)) {
+        throw new Error(`Unknown button command: ${command}`);
+      }
+      await connection.client.setProperty(property, command);
+      // Read it back: that is what the pedal will use.
+      connection.properties.set(property, await connection.client.getProperty(property));
+      connection.info = buildInfo(
+        connection.info.name,
+        connection.info.firmwareVersion,
+        connection.info.guid,
+        connection.properties,
+      );
+      this.emit('change', connection.info);
+      return connection.info;
     });
   }
 
@@ -957,13 +1001,33 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   }
 }
 
-const BANK_PROPERTIES = new Set<number>([
+/** Properties that `PedalInfo` shows: a notification for one of them is passed on. */
+const INFO_PROPERTIES = new Set<number>([
   PropertyID.RemovableMediaIsPresent,
   PropertyID.KilobytesAvailableOnNand,
   PropertyID.KilobytesCapacityOnNand,
   PropertyID.KilobytesAvailableOnSd,
   PropertyID.KilobytesCapacityOnSd,
+  PropertyID.CurrentBankAndPatch,
+  PropertyID.DiskState,
+  PropertyID.AudioIsDirty,
+  PropertyID.SettingsAreDirty,
+  PropertyID.LeftButtonCommand,
+  PropertyID.MiddleButtonCommand,
+  PropertyID.RightButtonCommand,
 ]);
+
+const BUTTON_PROPERTY: Record<PedalButton, number> = {
+  left: PropertyID.LeftButtonCommand,
+  middle: PropertyID.MiddleButtonCommand,
+  right: PropertyID.RightButtonCommand,
+};
+
+/**
+ * Commands a footswitch button can take. The protocol has no list: these are
+ * the values a JamMan Stereo reports, plus whatever the connected one reports.
+ */
+const KNOWN_BUTTON_COMMANDS = ['UndoRedo', 'Reverse', 'Tempo'];
 
 function intProperty(properties: Map<number, PropertyValue>, id: number): number {
   const value = properties.get(id);
@@ -993,7 +1057,30 @@ function buildInfo(
       freeBytes: kb(PropertyID.KilobytesAvailableOnSd),
     },
   ];
-  return { name, firmwareVersion, guid, banks };
+  const stringProperty = (id: number) => {
+    const value = properties.get(id);
+    return typeof value === 'string' ? value : '';
+  };
+  const { bank, patch } = decodeBankAndPatch(
+    intProperty(properties, PropertyID.CurrentBankAndPatch),
+  );
+  const live: PedalLiveState = {
+    bank: patch >= 1 && patch <= 99 ? (bank === 0 ? 'internal' : bank === 1 ? 'sd' : null) : null,
+    patch: patch >= 1 && patch <= 99 ? `Patch${String(patch).padStart(2, '0')}` : null,
+    busy: intProperty(properties, PropertyID.DiskState) !== 0,
+    audioDirty: intProperty(properties, PropertyID.AudioIsDirty) !== 0,
+    settingsDirty: intProperty(properties, PropertyID.SettingsAreDirty) !== 0,
+  };
+  if (!live.patch) live.bank = null;
+  const buttons = {
+    left: stringProperty(PropertyID.LeftButtonCommand),
+    middle: stringProperty(PropertyID.MiddleButtonCommand),
+    right: stringProperty(PropertyID.RightButtonCommand),
+  };
+  const buttonCommands = [
+    ...new Set([...KNOWN_BUTTON_COMMANDS, ...Object.values(buttons).filter(Boolean)]),
+  ];
+  return { name, firmwareVersion, guid, banks, live, buttons, buttonCommands };
 }
 
 /**

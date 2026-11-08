@@ -40,6 +40,10 @@ export const MessageID = {
   FolderContentsResponse: 18,
   GetPropertiesRequest: 19,
   GetPropertiesResponse: 20,
+  SetPropertyRequest: 21,
+  IssueCommandRequest: 22,
+  GetPropertyRequest: 26,
+  GetPropertyResponse: 27,
   PropertyChangedNotification: 0x8006,
 } as const;
 
@@ -67,7 +71,29 @@ export const PropertyID = {
   Guid: 32778,
   InternalPatchFolderPath: 32779,
   RemovablePatchFolderPath: 32780,
+  QueueCurrentBehavior: 32788,
+  QueueEmptyBehavior: 32789,
+  LeftButtonCommand: 32790,
+  MiddleButtonCommand: 32791,
+  RightButtonCommand: 32792,
 } as const;
+
+/** Commands of the pedal's loop engine (IssueCommand). */
+export const LoopEngineCommand = {
+  /** Loads the current patch again from storage, e.g. after its files changed. */
+  ReloadCurrentPatch: 0x1001,
+  /** Stops playback at once. */
+  StopImmediately: 0x1002,
+} as const;
+
+/**
+ * `CurrentBankAndPatch`: the bank in the high 16 bits (0 internal, 1 SD), the
+ * patch number (1-99) in the low 16 bits. Seen on a JamMan Stereo: stepping
+ * down from internal patch 1 gives 0x00010063, SD patch 99.
+ */
+export function decodeBankAndPatch(value: number): { bank: number; patch: number } {
+  return { bank: (value >>> 16) & 0xffff, patch: value & 0xffff };
+}
 
 export const FileAccess = { Read: 1, Write: 2 } as const;
 export const FileMode = { CreateOrTruncate: 0, OpenExisting: 1 } as const;
@@ -321,6 +347,24 @@ export function decodeEntryInfo(r: PayloadReader): EntryInfo {
 }
 
 export type PropertyChange = { property: number; value: PropertyValue };
+
+/** A property request or response body: `<u8 0><u16 id>` and, to set it, the value. */
+export function encodePropertyBody(property: number, value?: PropertyValue): Buffer {
+  const w = new PayloadWriter().u8(0).u16(property);
+  if (value === undefined) return w.build();
+  if (property <= LAST_INT_PROPERTY) {
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+      throw new Error(`Property ${property} takes an integer`);
+    }
+    return w.i32(value).build();
+  }
+  return w.str(String(value)).build();
+}
+
+export function decodeProperty(r: PayloadReader): PropertyChange {
+  const property = r.u16();
+  return { property, value: readPropertyValue(r, property) };
+}
 
 export function decodePropertyChanged(r: PayloadReader): PropertyChange {
   const pathLength = r.u8();

@@ -19,6 +19,9 @@ so everything so far is listed under "Unreleased".
   download a bank's audio ahead of time. Downloads and uploads show progress and can be stopped;
   a download resumes where it stopped.
 - Over USB, playlists: the same `.jamman-playlists.json` as on a card, in the bank's folder.
+- Over USB, the app follows the pedal live (the loaded patch, unsaved state, SD card, free space),
+  asks before changing the patch the pedal is using, makes the pedal reload it afterwards, and sets
+  the footswitch buttons.
 - `docs/usb-protocol.md`: the pedal's USB protocol, and `tools/greenglass.py`, a small client to
   try it from a terminal.
 - `npm run verify` (typecheck + lint + unit tests) and a Husky `pre-push` hook that runs it.

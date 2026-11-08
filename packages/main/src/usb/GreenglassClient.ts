@@ -15,7 +15,9 @@ import {
   decodeEntryInfo,
   decodeFolderContents,
   decodeProperties,
+  decodeProperty,
   decodePropertyChanged,
+  encodePropertyBody,
   decodeWhoAmI,
   encodeRequest,
   FileAccess,
@@ -243,6 +245,31 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
     return decodeProperties(
       await this.#request(MessageID.GetPropertiesRequest, MessageID.GetPropertiesResponse, body),
     );
+  }
+
+  /** Reads one property. */
+  async getProperty(property: number): Promise<PropertyValue> {
+    const r = await this.#request(
+      MessageID.GetPropertyRequest,
+      MessageID.GetPropertyResponse,
+      encodePropertyBody(property),
+    );
+    return decodeProperty(r).value;
+  }
+
+  /** Changes a pedal setting. The pedal keeps it across power cycles. */
+  async setProperty(property: number, value: PropertyValue): Promise<void> {
+    await this.#request(
+      MessageID.SetPropertyRequest,
+      MessageID.SuccessResponse,
+      encodePropertyBody(property, value),
+    );
+  }
+
+  /** Sends a loop engine command (see `LoopEngineCommand`). */
+  async issueCommand(command: number, argument = 0n): Promise<void> {
+    const body = new PayloadWriter().u16(command).i64(argument).build();
+    await this.#request(MessageID.IssueCommandRequest, MessageID.SuccessResponse, body);
   }
 
   async folderContents(path: string): Promise<FolderContents> {

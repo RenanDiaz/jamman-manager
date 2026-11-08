@@ -21,10 +21,12 @@ interface Props {
   onEdit?: (directory: string) => void;
   /** Without it the Delete key is hidden. */
   onDelete?: (directory: string) => void;
+  /** The pedal connected over USB has this patch loaded. */
+  onPedal?: boolean;
 }
 
 /** The focused patch on its own control panel: display, rhythm knob, stop mode, phrases. */
-export const PatchDetail: FC<Props> = ({ patch, onEdit, onDelete }) => {
+export const PatchDetail: FC<Props> = ({ patch, onEdit, onDelete, onPedal = false }) => {
   const view = useMemo(() => toPatchView(patch), [patch]);
   const first = view.phrases[0];
   const rhythmIndex = RHYTHM_ORDER.indexOf(view.rhythm as (typeof RHYTHM_ORDER)[number]);
@@ -50,7 +52,17 @@ export const PatchDetail: FC<Props> = ({ patch, onEdit, onDelete }) => {
 
       <div>
         <h2 className={cx(s.title, !view.name && s.untitled)}>{view.name || 'Untitled'}</h2>
-        <div className={s.dir}>{view.dir}</div>
+        <div className={s.dir}>
+          {view.dir}
+          {onPedal && (
+            <>
+              {' '}
+              <Pill title="Changing it makes the pedal stop and load it again">
+                Loaded on the pedal
+              </Pill>
+            </>
+          )}
+        </div>
       </div>
 
       <div className={s.controls}>

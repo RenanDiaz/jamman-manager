@@ -145,6 +145,29 @@ class Port:
             self.request(16, struct.pack("<q", handle))
         return data
 
+    # --- properties and commands ---
+    def get_property(self, prop):
+        rid, r = self.request(26, struct.pack("<BH", 0, prop))
+        k = r.u16()
+        return PROP_NAMES.get(k, k), (r.i32() if k <= INT_PROPS_MAX else r.s())
+
+    def set_property(self, prop, value):
+        body = struct.pack("<BH", 0, prop) + (struct.pack("<i", int(value)) if prop <= INT_PROPS_MAX else gstr(str(value)))
+        rid, _ = self.request(21, body)
+        if rid != 2: raise RuntimeError(f"expected SuccessResponse, got msg {rid}")
+
+    def issue_command(self, command, argument=0):
+        rid, _ = self.request(22, struct.pack("<Hq", command, argument))
+        if rid != 2: raise RuntimeError(f"expected SuccessResponse, got msg {rid}")
+
+    def watch(self, seconds):
+        """Prints every notification for `seconds` (switch patches, insert or remove the SD...)."""
+        end = time.time() + seconds
+        while time.time() < end:
+            m = self.read_msg(min(0.5, max(end - time.time(), 0.01)))
+            if m and m[0] >= 0x8000:
+                print(time.strftime("%H:%M:%S"), decode_notification(*m), flush=True)
+
     # --- write requests ---
     def _expect_success(self, reply):
         rid, _ = reply
@@ -199,6 +222,18 @@ if __name__ == "__main__":
             data = port.read_file(args[0])
             with open(args[1], "wb") as f: f.write(data)
             out = dict(bytes=len(data), saved=args[1])
+        elif cmd == "getprop":
+            name, value = port.get_property(int(args[0], 0)); out = dict(property=name, value=value)
+        elif cmd == "setprop":
+            prop = int(args[0], 0)
+            before = port.get_property(prop)[1]
+            port.set_property(prop, args[1])
+            out = dict(property=PROP_NAMES.get(prop, prop), before=before, after=port.get_property(prop)[1])
+        elif cmd == "command":
+            port.issue_command(int(args[0], 0), int(args[1], 0) if len(args) > 1 else 0)
+            out = dict(command=args[0], result="success")
+        elif cmd == "watch":
+            port.watch(float(args[0])); out = dict(watched=float(args[0]))
         elif cmd == "put":
             with open(args[0], "rb") as f: data = f.read()
             port.write_file(args[1], data); out = dict(bytes=len(data), written=args[1])
@@ -211,7 +246,8 @@ if __name__ == "__main__":
             port.delete(args[0], args[0].endswith("/"), recursive=args[0].endswith("/")); out = dict(deleted=args[0])
         else:
             raise SystemExit("commands: info | ls PATH | stat PATH file|dir | get PATH OUT"
-                             " | put LOCAL PATH | mkdir PATH | mv SRC DST | rm PATH (trailing / = folder)")
+                             " | put LOCAL PATH | mkdir PATH | mv SRC DST | rm PATH (trailing / = folder)"
+                             " | getprop ID | setprop ID VALUE | command ID [ARG] | watch SECONDS")
         out["notifications"] = port.notifications
         print(json.dumps(out, indent=2, ensure_ascii=False))
     finally:

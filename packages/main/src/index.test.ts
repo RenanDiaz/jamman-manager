@@ -39,6 +39,7 @@ const CHANNELS = [
   'pedal:connect',
   'pedal:disconnect',
   'pedal:downloadAudio',
+  'pedal:setButton',
   'pedal:status',
   'phrase:getAudioURL',
   'playlists:addPatches',
