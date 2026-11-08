@@ -75,7 +75,8 @@ function App() {
   const [pedalDialogIsOpen, setPedalDialogIsOpen] = useState<boolean>(false);
   /** A pedal bank is being read, so the loading panel says where from. */
   const [readingPedal, setReadingPedal] = useState<boolean>(false);
-  const readOnly = isPedalPath(currentFolder);
+  /** Over USB patches can be edited, deleted and sorted, but not created yet. */
+  const pedalMode = isPedalPath(currentFolder);
 
   /** Closes the pedal bank, and the player if it is playing audio from the pedal. */
   const closePedalBank = useCallback(() => {
@@ -379,7 +380,7 @@ function App() {
       <AppHeader
         currentFolder={currentFolder}
         sourceLabel={pedalFolderLabel(currentFolder, pedal)}
-        readOnly={readOnly}
+        pedalMode={pedalMode}
         pedalConnected={!!pedal}
         pedalBusy={pedalConnecting}
         folderSizeBytes={folderSizeBytes}
@@ -409,7 +410,11 @@ function App() {
             </DisplayWindow>
             <p className={s.messageTitle}>
               <Led color="yellow" shape="round" on blinkSeconds={0.5} />{' '}
-              {readingPedal ? 'Reading the pedal over USB' : 'Reading the card'}
+              {readingPedal
+                ? 'Reading the pedal over USB'
+                : pedalMode
+                  ? 'Working on the pedal over USB'
+                  : 'Reading the card'}
             </p>
           </Panel>
         </main>
@@ -420,7 +425,7 @@ function App() {
               usedDirs={usedDirs}
               focusedDir={focusedPatch.dir}
               onFocus={setFocusedDir}
-              onCreateAt={readOnly ? undefined : openNewPatch}
+              onCreateAt={pedalMode ? undefined : openNewPatch}
             />
             <div className={s.listbar}>
               <Legend>
@@ -429,7 +434,7 @@ function App() {
                   : `${patches.length} patches`}
               </Legend>
               <div className={s.listActions}>
-                {selectedPatchDirs.length > 0 && !readOnly && (
+                {selectedPatchDirs.length > 0 && (
                   <PanelKey
                     label={`Delete ${selectedPatchDirs.length}`}
                     tone="danger"
@@ -465,18 +470,14 @@ function App() {
                   <EmptySlotItem
                     key={dir}
                     dir={dir}
-                    onCreate={readOnly ? undefined : openNewPatch}
+                    onCreate={pedalMode ? undefined : openNewPatch}
                   />
                 );
               })}
             </ul>
           </section>
 
-          <PatchDetail
-            patch={focusedPatch}
-            onEdit={readOnly ? undefined : handleEditPatch}
-            onDelete={readOnly ? undefined : handleDeletePatch}
-          />
+          <PatchDetail patch={focusedPatch} onEdit={handleEditPatch} onDelete={handleDeletePatch} />
         </main>
       ) : currentFolder ? (
         <main className={s.center}>
@@ -485,9 +486,9 @@ function App() {
               <SevenSegment value="00" height={40} />
             </DisplayWindow>
             <h2 className={s.messageTitle}>
-              {readOnly ? 'This bank has no patches yet' : 'This card has no patches yet'}
+              {pedalMode ? 'This bank has no patches yet' : 'This card has no patches yet'}
             </h2>
-            {readOnly ? (
+            {pedalMode ? (
               <p className={s.messageText}>Record a loop on the pedal, then reload this bank.</p>
             ) : (
               <>
@@ -558,6 +559,7 @@ function App() {
             formId={PATCH_FORM_ID}
             basePath={currentFolder || ''}
             busyPatches={patches.map(p => p.dir)}
+            audioLocked={pedalMode}
             initialData={selectedPatch}
             defaultDirectory={createInDir}
             onSuccess={handleCreateEditPatchSuccess}

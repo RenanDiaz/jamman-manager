@@ -23,6 +23,7 @@ import {
   FrameParser,
   isNotification,
   MAX_READ_CHUNK,
+  MAX_WRITE_CHUNK,
   MessageID,
   PayloadReader,
   PayloadWriter,
@@ -220,6 +221,62 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
       await this.#closeQuietly(handle);
     }
     return Buffer.concat(chunks, total);
+  }
+
+  // ==================== Writes ====================
+  // The pedal moves files reliably but cannot move a folder that contains
+  // folders ("The folder could not be copied"), so there is no folder move
+  // here: callers move the files and recreate the folders (see PedalFiles).
+
+  /** Creates a folder. Fails when it exists and `overwriteExisting` is false. */
+  async createFolder(path: string, overwriteExisting = false): Promise<void> {
+    const body = new PayloadWriter().bool(true).str(path).bool(overwriteExisting).build();
+    await this.#request(MessageID.FileSystemEntryCreateRequest, MessageID.SuccessResponse, body);
+  }
+
+  /** Deletes a file, or a folder (with everything in it when `recursive`). Never to a trash. */
+  async delete(path: string, isFolder: boolean, recursive = false): Promise<void> {
+    const body = new PayloadWriter()
+      .bool(isFolder)
+      .str(path)
+      .bool(recursive)
+      .bool(false) // move to trash: the pedal has none
+      .build();
+    await this.#request(MessageID.FileSystemEntryDeleteRequest, MessageID.SuccessResponse, body);
+  }
+
+  /** Moves (renames) a file, also across folders of the same medium. Instant: no data is copied. */
+  async moveFile(source: string, target: string, overwriteExisting = false): Promise<void> {
+    const body = new PayloadWriter()
+      .bool(false)
+      .str(source)
+      .str(target)
+      .bool(false) // keep original
+      .bool(overwriteExisting)
+      .build();
+    await this.#request(MessageID.FileSystemEntryMoveRequest, MessageID.SuccessResponse, body);
+  }
+
+  /** Creates or truncates a file and writes `data` to it. Closes the handle even when a write fails. */
+  async writeFile(path: string, data: Uint8Array): Promise<void> {
+    const open = new PayloadWriter()
+      .str(path)
+      .u8(FileAccess.Write)
+      .u8(FileMode.CreateOrTruncate)
+      .build();
+    const r = await this.#request(MessageID.FileOpenRequest, MessageID.FileOpenResponse, open);
+    const handle = r.i64();
+    try {
+      for (let offset = 0; offset < data.length; offset += MAX_WRITE_CHUNK) {
+        const chunk = data.subarray(offset, offset + MAX_WRITE_CHUNK);
+        const body = new PayloadWriter().i64(handle).i32(chunk.length).bytes(chunk).build();
+        await this.#request(MessageID.FileWriteRequest, MessageID.SuccessResponse, body);
+      }
+    } catch (error) {
+      await this.#closeQuietly(handle);
+      throw error;
+    }
+    await this.closeFile(handle);
   }
 
   /** Closes a handle without masking the error that made the caller stop. */

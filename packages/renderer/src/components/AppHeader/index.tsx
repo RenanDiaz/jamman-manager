@@ -7,8 +7,11 @@ interface Props {
   currentFolder: string | null;
   /** How to show the open source when it is not a plain folder (a pedal bank over USB). */
   sourceLabel: string | null;
-  /** The open source cannot be edited (a pedal over USB): only browse, play and export. */
-  readOnly: boolean;
+  /**
+   * The open source is a pedal over USB: patches can be edited, deleted and
+   * sorted, but not created, backed up or put in playlists yet.
+   */
+  pedalMode: boolean;
   pedalConnected: boolean;
   pedalBusy: boolean;
   folderSizeBytes: number | null;
@@ -35,7 +38,7 @@ interface Props {
 export const AppHeader: FC<Props> = ({
   currentFolder,
   sourceLabel,
-  readOnly,
+  pedalMode,
   pedalConnected,
   pedalBusy,
   folderSizeBytes,
@@ -99,28 +102,26 @@ export const AppHeader: FC<Props> = ({
         hint={shortcut('Z')}
         title="Undo last action"
         onClick={onUndo}
-        disabled={!canUndo || loading || readOnly}
+        disabled={!canUndo || loading}
       />
       <PanelKey
         label="Redo"
         hint={shortcut('Z', { shift: true })}
         title="Redo action"
         onClick={onRedo}
-        disabled={!canRedo || loading || readOnly}
+        disabled={!canRedo || loading}
       />
       {currentFolder && (
         <>
           <span className={s.divider} />
           <PanelKey label="Close" hint="Folder" title="Close the loaded folder" onClick={onClose} />
-          {!readOnly && (
-            <PanelKey
-              label="Sort"
-              hint="Reorder"
-              title="Drag and drop to reorder patches. Changes sync to the SD card."
-              onClick={onSort}
-              disabled={patchCount === 0}
-            />
-          )}
+          <PanelKey
+            label="Sort"
+            hint="Reorder"
+            title={`Drag and drop to reorder patches. Changes sync to the ${pedalMode ? 'pedal' : 'SD card'}.`}
+            onClick={onSort}
+            disabled={patchCount === 0}
+          />
           <MenuKey
             label="Export"
             hint="TXT / PDF"
@@ -130,7 +131,7 @@ export const AppHeader: FC<Props> = ({
               { label: 'Export as PDF', onSelect: onExportPDF },
             ]}
           />
-          {!readOnly && (
+          {!pedalMode && (
             <>
               <PanelKey
                 label="Backup"

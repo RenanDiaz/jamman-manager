@@ -271,3 +271,43 @@ describe('PedalManager audio', () => {
     ).rejects.toThrow('No such file or directory');
   });
 });
+
+describe('PedalManager changes', () => {
+  it('purges undo data from an earlier session when it connects', async () => {
+    const { manager, fake } = setup();
+    fake.setFile('/mnt/nandfs/.jamman-manager/undo/pedal-old/Patch04/patch.xml', '<p/>');
+    fake.setFile('/mnt/sdfs/.jamman-manager/undo/pedal-old/Patch04/patch.xml', '<p/>');
+    await manager.connect();
+    expect(fake.folderExists('/mnt/nandfs/.jamman-manager/undo/')).toBe(false);
+    expect(fake.folderExists('/mnt/sdfs/.jamman-manager/undo/')).toBe(false);
+  });
+
+  it('runs changes one after another and re-counts the bank afterwards', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    await manager.readPatches('internal');
+    const before = await manager.bankSize('internal');
+
+    const snapshot = await manager.createSnapshot('internal', {
+      kind: 'patches',
+      patches: ['Patch02'],
+    });
+    await Promise.all([
+      manager.deletePatches('internal', ['Patch02']),
+      manager.reorderPatches('internal', ['Patch01']),
+    ]);
+    expect(fake.folderExists(`${FAKE_INTERNAL_ROOT}Patch02/`)).toBe(false);
+    expect(await manager.bankSize('internal')).toBeLessThan(before);
+
+    await manager.restoreSnapshot(snapshot.id, 'internal', 'add');
+    expect(fake.folderExists(`${FAKE_INTERNAL_ROOT}Patch02/`)).toBe(true);
+  });
+
+  it('discards snapshots quietly when no pedal is connected', async () => {
+    const { manager } = setup();
+    await expect(manager.discardSnapshot('pedal-x')).resolves.toBeUndefined();
+    await expect(manager.deletePatches('internal', ['Patch01'])).rejects.toBeInstanceOf(
+      PedalNotConnectedError,
+    );
+  });
+});

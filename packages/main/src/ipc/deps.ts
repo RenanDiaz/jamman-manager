@@ -63,7 +63,19 @@ export type Snapshots = Pick<
 /** The pedal connected over USB. */
 export type Pedal = Pick<
   PedalManager,
-  'connect' | 'disconnect' | 'status' | 'readPatches' | 'bankSize' | 'readWavHead' | 'readWav'
+  | 'connect'
+  | 'disconnect'
+  | 'status'
+  | 'readPatches'
+  | 'bankSize'
+  | 'readWavHead'
+  | 'readWav'
+  | 'updatePatch'
+  | 'deletePatches'
+  | 'reorderPatches'
+  | 'createSnapshot'
+  | 'restoreSnapshot'
+  | 'discardSnapshot'
 >;
 
 /** Everything `registerIpcHandlers` needs. Each domain module takes the subset it uses. */

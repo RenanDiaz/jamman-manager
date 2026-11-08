@@ -174,4 +174,34 @@ describe('GreenglassClient', () => {
     await expect(reading).rejects.toThrow('Connection closed');
     expect(pedal.requests).toEqual([]);
   });
+
+  it('writes a file in chunks and closes it', async () => {
+    const { client, pedal } = setup();
+    const data = Buffer.from(Array.from({ length: 20_000 }, (_, i) => (i * 7) % 256));
+    await client.createFolder('/mnt/nandfs/new/');
+    await client.writeFile('/mnt/nandfs/new/a.bin', data);
+    expect(pedal.files.get('/mnt/nandfs/new/a.bin')?.equals(data)).toBe(true);
+    expect(pedal.requests.filter(id => id === MessageID.FileWriteRequest)).toHaveLength(3);
+    expect(pedal.openFiles.size).toBe(0);
+  });
+
+  it('closes the handle when a write fails', async () => {
+    const { client, pedal } = setup();
+    pedal.failures.set(MessageID.FileWriteRequest, 'disk full');
+    await expect(client.writeFile(FILE, Buffer.from('x'))).rejects.toThrow('disk full');
+    expect(pedal.openFiles.size).toBe(0);
+  });
+
+  it('moves files, refuses to overwrite unless asked, and deletes', async () => {
+    const { client, pedal } = setup();
+    const other = '/mnt/nandfs/JamManStereo/Patch01/PhraseA/other.wav';
+    await client.moveFile(FILE, other);
+    expect(pedal.files.has(FILE)).toBe(false);
+    pedal.setFile(FILE, 'again');
+    await expect(client.moveFile(other, FILE)).rejects.toThrow(/already exists/);
+    await client.moveFile(other, FILE, true);
+    expect(pedal.files.get(FILE)?.equals(CONTENT)).toBe(true);
+    await client.delete('/mnt/nandfs/JamManStereo/Patch01/', true, true);
+    expect(pedal.folderExists('/mnt/nandfs/JamManStereo/Patch01/')).toBe(false);
+  });
 });

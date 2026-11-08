@@ -15,11 +15,16 @@ import * as nodeFs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import type {
+  PatchForm,
   PatchRecord,
   PedalBankId,
   PedalBankInfo,
   PedalInfo,
   PhraseRecord,
+  SnapshotRestoreMode,
+  SnapshotRestoreResult,
+  SnapshotScope,
+  UndoSnapshotInfo,
 } from '@app/preload/ipc-contract';
 import { SecureXMLParser } from '../SecureXMLParser.js';
 import {
@@ -35,6 +40,8 @@ import {
   PropertyID,
   type PropertyValue,
 } from './greenglassCodec.js';
+import { PedalEditor } from './PedalEditor.js';
+import { createWriteGuard } from './PedalFiles.js';
 import { bankPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath, type PedalWavRef } from './pedalPaths.js';
 
 /** Family ID every JamMan reports in WhoAmI. */
@@ -63,6 +70,7 @@ type Connection = {
   client: GreenglassClient;
   info: PedalInfo;
   properties: Map<number, PropertyValue>;
+  editor: PedalEditor;
 };
 
 type ManagerEvents = { change: [PedalInfo | null] };
@@ -81,6 +89,8 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   #connecting: Promise<PedalInfo> | null = null;
   /** Size in bytes of each bank, from the last time its patches were read. */
   readonly #bankBytes = new Map<PedalBankId, number>();
+  /** Operations that change the pedal run one after another, never interleaved. */
+  #exclusive: Promise<unknown> = Promise.resolve();
 
   constructor(deps: PedalManagerDeps) {
     super();
@@ -122,11 +132,25 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
         throw new Error(`The device on ${portPath} is not a JamMan (family ${who.familyId})`);
       }
       const properties = await client.getProperties();
-      const connection: Connection = {
+      const bankRoots = [PropertyID.InternalPatchFolderPath, PropertyID.RemovablePatchFolderPath]
+        .map(id => properties.get(id))
+        .filter((root): root is string => typeof root === 'string' && root.startsWith('/'))
+        .map(root => (root.endsWith('/') ? root : `${root}/`));
+      const connection = {
         client,
         properties,
         info: buildInfo(who.name, formatBcdVersion(who.softwareVersion), who.guid, properties),
-      };
+      } as Connection;
+      connection.editor = new PedalEditor(
+        client,
+        bank => this.#bankRoot(connection, bank),
+        createWriteGuard(bankRoots),
+        this.#deps.log,
+      );
+      // Undo data from an earlier session can never be used: the history lived in the renderer.
+      await connection.editor
+        .purgeUndoData(connection.info.banks.filter(b => b.available).map(b => b.id))
+        .catch(error => this.#deps.log.warn('Could not purge old undo data on the pedal:', error));
       this.#connection = connection;
       this.#bankBytes.clear();
 
@@ -262,6 +286,47 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     if (known !== undefined) return known;
     await this.readPatches(bank);
     return this.#bankBytes.get(bank) ?? 0;
+  }
+
+  // ==================== Changes ====================
+
+  /** Runs `fn` with the editor, after every earlier change has finished. */
+  #change<T>(fn: (editor: PedalEditor) => Promise<T>): Promise<T> {
+    const run = () => fn(this.#requireConnection().editor);
+    const result = this.#exclusive.then(run, run);
+    this.#exclusive = result.catch(() => undefined);
+    return result.finally(() => this.#bankBytes.clear());
+  }
+
+  updatePatch(bank: PedalBankId, form: PatchForm): Promise<void> {
+    return this.#change(editor => editor.updatePatch(bank, form));
+  }
+
+  deletePatches(bank: PedalBankId, dirs: string[]): Promise<{ deleted: string[]; failed: number }> {
+    return this.#change(editor => editor.deletePatches(bank, dirs));
+  }
+
+  reorderPatches(bank: PedalBankId, newOrder: string[]): Promise<void> {
+    return this.#change(editor => editor.reorderPatches(bank, newOrder));
+  }
+
+  createSnapshot(bank: PedalBankId, scope: SnapshotScope): Promise<UndoSnapshotInfo> {
+    return this.#change(editor => editor.createSnapshot(bank, scope));
+  }
+
+  restoreSnapshot(
+    id: string,
+    bank: PedalBankId,
+    mode: SnapshotRestoreMode,
+    only?: string[],
+  ): Promise<SnapshotRestoreResult> {
+    return this.#change(editor => editor.restoreSnapshot(id, bank, mode, only));
+  }
+
+  /** Never throws: without a connection there is nothing to delete (the next connect purges it). */
+  async discardSnapshot(id: string): Promise<void> {
+    if (!this.#connection) return;
+    await this.#change(editor => editor.discardSnapshot(id)).catch(() => undefined);
   }
 
   // ==================== Audio ====================

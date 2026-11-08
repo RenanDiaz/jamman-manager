@@ -9,10 +9,12 @@ so everything so far is listed under "Unreleased".
 
 ### Added
 
-- Browse and play the patches of a JamMan Stereo connected over USB, without removing the SD card
-  (read only for now). The **Pedal** key connects and lets you open the internal memory or the SD
-  card. Phrase audio streams from the pedal and is cached locally once played to the end. Editing,
-  sorting, backups and playlists still need the card in a card reader.
+- Browse and play the patches of a JamMan Stereo connected over USB, without removing the SD card.
+  The **Pedal** key connects and lets you open the internal memory or the SD card. Phrase audio
+  streams from the pedal and is cached locally once played to the end.
+- Over USB, edit a patch's settings, delete patches and sort them, with undo and redo. A deleted
+  patch is parked on the pedal itself until it can no longer be undone. Creating patches, new or
+  changed WAV files, backups and playlists still need the card in a card reader.
 - `docs/usb-protocol.md`: the pedal's USB protocol, and `tools/greenglass.py`, a small client to
   try it from a terminal.
 - `npm run verify` (typecheck + lint + unit tests) and a Husky `pre-push` hook that runs it.

@@ -28,7 +28,14 @@ export type FakePedalOptions = {
   chunkSize?: number;
 };
 
-type OpenFile = { path: string; position: number };
+type OpenFile = { path: string; position: number; write: boolean };
+
+/** `/a/b/` and `/a/b` name the same folder. */
+const asFolder = (path: string) => (path.endsWith('/') ? path : `${path}/`);
+const parentOf = (path: string) => {
+  const trimmed = path.replace(/\/+$/, '');
+  return trimmed.slice(0, trimmed.lastIndexOf('/') + 1);
+};
 
 export function patchXml(name: string): string {
   return `<?xml version="1.0" encoding="UTF-8" ?>
@@ -73,6 +80,8 @@ export function wavBytes(dataBytes: number): Buffer {
 
 export class FakePedal {
   readonly files = new Map<string, Buffer>();
+  /** Every folder, ending in `/` (the ancestors of each file are added automatically). */
+  readonly folders = new Set<string>();
   readonly modified = new Map<string, Date>();
   readonly properties = new Map<number, PropertyValue>();
   /** Every request message ID received, in order. */
@@ -111,6 +120,25 @@ export class FakePedal {
   setFile(path: string, content: Buffer | string, modified = new Date(Date.UTC(2024, 0, 1))) {
     this.files.set(path, Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'));
     this.modified.set(path, modified);
+    this.#addAncestors(path);
+  }
+
+  #addAncestors(path: string) {
+    for (let parent = parentOf(path); parent.length > 1; parent = parentOf(parent)) {
+      this.folders.add(parent);
+    }
+  }
+
+  folderExists(path: string): boolean {
+    return this.folders.has(asFolder(path));
+  }
+
+  /** Every file and folder path under `folder`, sorted. */
+  tree(folder: string): string[] {
+    const prefix = asFolder(folder);
+    return [...this.files.keys(), ...this.folders]
+      .filter(p => p.startsWith(prefix) && p !== prefix)
+      .sort();
   }
 
   readonly transport: GreenglassTransport = {
@@ -156,16 +184,35 @@ export class FakePedal {
   }
 
   #folderContents(path: string) {
-    const prefix = path.endsWith('/') ? path : `${path}/`;
-    const files = new Set<string>();
-    const folders = new Set<string>();
+    const prefix = asFolder(path);
+    const files: string[] = [];
+    const folders: string[] = [];
     for (const file of this.files.keys()) {
-      if (!file.startsWith(prefix)) continue;
-      const rest = file.slice(prefix.length).split('/');
-      if (rest.length === 1) files.add(rest[0]);
-      else folders.add(rest[0]);
+      if (parentOf(file) === prefix) files.push(file.slice(prefix.length));
     }
-    return { files: [...files], folders: [...folders], exists: files.size + folders.size > 0 };
+    for (const folder of this.folders) {
+      if (folder !== prefix && parentOf(folder) === prefix) {
+        folders.push(folder.slice(prefix.length, -1));
+      }
+    }
+    return { files, folders, exists: this.folders.has(prefix) };
+  }
+
+  #removeUnder(folder: string) {
+    const prefix = asFolder(folder);
+    for (const file of [...this.files.keys()]) if (file.startsWith(prefix)) this.files.delete(file);
+    for (const f of [...this.folders]) if (f.startsWith(prefix)) this.folders.delete(f);
+  }
+
+  #copyFolder(source: string, target: string) {
+    const from = asFolder(source);
+    const to = asFolder(target);
+    for (const f of [...this.folders]) {
+      if (f.startsWith(from)) this.folders.add(to + f.slice(from.length));
+    }
+    for (const [file, data] of [...this.files]) {
+      if (file.startsWith(from)) this.setFile(to + file.slice(from.length), Buffer.from(data));
+    }
   }
 
   #handle(id: number, r: PayloadReader): Buffer | null {
@@ -219,7 +266,7 @@ export class FakePedal {
           .u32(serial)
           .bool(isFolder)
           .str(path)
-          .bool(isFolder ? this.#folderContents(path).exists : !!file)
+          .bool(isFolder ? this.folderExists(path) : !!file)
           .i64(BigInt(file?.length ?? 0))
           .bool(false)
           .bool(false);
@@ -234,10 +281,16 @@ export class FakePedal {
       }
       case MessageID.FileOpenRequest: {
         const path = r.str();
+        const access = r.u8();
+        const mode = r.u8();
+        if (access === 2 && mode === 0) {
+          if (!this.folderExists(parentOf(path))) return fail('No such file or directory');
+          this.setFile(path, Buffer.alloc(0));
+        }
         const file = this.files.get(path);
         if (!file) return fail('No such file or directory');
         const handle = this.#nextHandle++;
-        this.openFiles.set(handle, { path, position: 0 });
+        this.openFiles.set(handle, { path, position: 0, write: access === 2 });
         return encodeFrame(
           MessageID.FileOpenResponse,
           new PayloadWriter().u32(serial).i64(handle).i64(BigInt(file.length)).build(),
@@ -254,6 +307,62 @@ export class FakePedal {
           MessageID.FileReadResponse,
           new PayloadWriter().u32(serial).i64(handle).i32(data.length).bytes(data).build(),
         );
+      }
+      case MessageID.FileWriteRequest: {
+        const handle = r.i64();
+        const data = r.bytes(r.i32());
+        const open = this.openFiles.get(handle);
+        if (!open?.write) return fail('Bad file handle');
+        const current = this.files.get(open.path)!;
+        this.files.set(open.path, Buffer.concat([current.subarray(0, open.position), data]));
+        open.position += data.length;
+        return ok();
+      }
+      case MessageID.FileSystemEntryCreateRequest: {
+        r.bool(); // is folder: only folders are created this way
+        const path = asFolder(r.str());
+        const overwrite = r.bool();
+        if (this.folders.has(path) && !overwrite) return fail('The folder already exists.');
+        if (!this.folderExists(parentOf(path))) return fail('The parent folder does not exist.');
+        this.folders.add(path);
+        return ok();
+      }
+      case MessageID.FileSystemEntryDeleteRequest: {
+        const isFolder = r.bool();
+        const path = r.str();
+        const recursive = r.bool();
+        if (!isFolder) {
+          if (!this.files.delete(path)) return fail('The file does not exist.');
+          return ok();
+        }
+        if (!this.folderExists(path)) return fail('The folder does not exist.');
+        if (!recursive && this.tree(path).length > 0) return fail('The folder is not empty.');
+        this.#removeUnder(path);
+        return ok();
+      }
+      case MessageID.FileSystemEntryMoveRequest: {
+        const isFolder = r.bool();
+        const source = r.str();
+        const target = r.str();
+        const keepOriginal = r.bool();
+        const overwrite = r.bool();
+        if (!isFolder) {
+          const data = this.files.get(source);
+          if (!data) return fail('The file or folder does not exist.');
+          if (this.files.has(target) && !overwrite) return fail('The file already exists.');
+          if (!this.folderExists(parentOf(target))) return fail('The file could not be moved.');
+          this.setFile(target, data, this.modified.get(source));
+          if (!keepOriginal) this.files.delete(source);
+          return ok();
+        }
+        if (!this.folderExists(source)) return fail('The file or folder does not exist.');
+        // Like the real pedal: a folder that contains folders cannot be moved, only copied.
+        const hasSubfolders = this.#folderContents(source).folders.length > 0;
+        if (!keepOriginal && hasSubfolders) return fail('The folder could not be copied.');
+        if (this.folderExists(target) && !overwrite) return fail('The folder already exists.');
+        this.#copyFolder(source, target);
+        if (!keepOriginal) this.#removeUnder(source);
+        return ok();
       }
       case MessageID.FileSeekRequest: {
         const open = this.openFiles.get(r.i64());

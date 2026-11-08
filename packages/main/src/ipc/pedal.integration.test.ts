@@ -45,16 +45,38 @@ describe('pedal paths over IPC', () => {
 
   it.each([
     ['patches:create', [{ basePath: SD, directory: 'Patch01', phrases: [] }]],
-    ['patches:delete', [SD, 'Patch01']],
-    ['patches:reorder', [SD, ['Patch01']]],
     ['backup:create', [SD]],
-    ['undo:createSnapshot', [SD, { kind: 'all' }]],
+    ['backup:restore', ['/tmp/x.zip', SD, 'merge']],
     ['playlists:create', [SD, 'Set']],
   ])('%s refuses a pedal path', async (channel, args) => {
     app = await startApp();
     await expect(app.invoke(channel, ...args)).rejects.toThrow(
       /not available for a pedal connected over USB yet/,
     );
+  });
+
+  it.each([
+    ['patches:update', [{ basePath: SD, directory: 'Patch01', phrases: [] }]],
+    ['patches:delete', [SD, 'Patch01']],
+    ['patches:deleteBatch', [SD, ['Patch01']]],
+    ['patches:reorder', [SD, ['Patch01']]],
+  ])('%s goes to the pedal', async (channel, args) => {
+    app = await startApp();
+    await expect(app.invoke(channel, ...args)).rejects.toThrow(/No pedal is connected/);
+  });
+
+  it('answers undo requests for a pedal bank with a result, not an error', async () => {
+    app = await startApp();
+    expect(
+      await app.invoke('undo:createSnapshot', SD, { kind: 'patches', patches: ['Patch01'] }),
+    ).toMatchObject({ ok: false, code: 'FAILED', message: expect.stringMatching(/No pedal/) });
+    expect(await app.invoke('undo:restoreSnapshot', 'pedal-x', SD, 'add')).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await app.invoke('undo:createSnapshot', 'jamman-pedal://usr', { kind: 'all' }),
+    ).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
+    await app.invoke('undo:discardSnapshot', 'pedal-unknown'); // never throws
   });
 
   it('rejects a malformed pedal folder', async () => {

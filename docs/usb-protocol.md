@@ -127,11 +127,17 @@ Todo en `/mnt/sdfs/greenglass-test/`, fuera de `JamManStereo/`, y borrado al ter
 | Abrir en modo "crear o truncar" sobre un archivo de 2 MB y escribir 10 bytes                | OK, queda de 10 bytes                                        |
 | Nombre de archivo UTF-8 (`canción ñ.txt`)                                                   | OK, si la longitud del string se cuenta en bytes             |
 | Escribir `target.xml.tmp` y moverlo sobre `target.xml` existente (`8`, `overwriteExisting`) | OK, el temporal desaparece                                   |
-| Renombrar una carpeta con contenido (`8`, `isFolder`)                                       | OK                                                           |
+| Renombrar una carpeta que solo tiene archivos (`8`, `isFolder`)                             | OK                                                           |
+| Mover o renombrar una carpeta que contiene carpetas (aunque estén vacías)                   | **Falla**: `The folder could not be copied.`                 |
+| Mover un archivo a otra carpeta del mismo medio                                             | OK, instantáneo (es un renombre)                             |
+| Copiar una carpeta o un archivo dentro del pedal (`8`, `keepOriginal`)                      | OK, ~1.2 MB/s (4 MB en 3.3 s): igual de lento que por USB    |
+| Borrar una carpeta vacía sin `recursive`                                                    | OK                                                           |
 | Borrar un archivo y borrar la carpeta de forma recursiva (`9`)                              | OK                                                           |
 | Leer un archivo que no existe                                                               | `FailureResponse` con el mensaje `No such file or directory` |
 
-No se probaron `SetInfo` (6), `Seek` (15), `SetProperty` (21) ni los comandos del loop engine, ni escribir dentro de `JamManStereo/`.
+No se probaron `SetInfo` (6), `SetProperty` (21) ni los comandos del loop engine.
+
+**Mover carpetas.** Como el pedal no mueve carpetas con subcarpetas, y un `PatchNN/` siempre tiene `PhraseX/`, mover un patch se hace recreando las carpetas en el destino y moviendo los archivos uno por uno (`PedalFiles.moveTree`). JamManager tampoco movía carpetas: solo archivos. El pedal procesa las peticiones en orden aunque una tarde mucho: una copia de 20 MB dentro del pedal superó los 3 s de timeout de una prueba, y las peticiones que llegaron después se ejecutaron igual, más tarde.
 
 Ojo: JamManager calculaba el campo de longitud con `string.Length` (caracteres, no bytes), así que con nombres no ASCII enviaba tramas mal formadas. El cliente de prueba cuenta bytes.
 
@@ -149,7 +155,7 @@ La app trabaja en vivo sobre el pedal. No hay copia local: lo único que guarda 
 | Etapa | Alcance                                     | Estado    |
 | ----- | ------------------------------------------- | --------- |
 | 1     | Conectar, listar patches y reproducir       | Hecha     |
-| 2     | Editar metadatos, borrar y reordenar        | Pendiente |
+| 2     | Editar metadatos, borrar y reordenar        | Hecha     |
 | 3     | Agregar o reemplazar frases                 | Pendiente |
 | 4     | Backup, restore y "Descargar todo el banco" | Pendiente |
 
@@ -162,7 +168,15 @@ Decisiones de la etapa 1:
 - **El audio se transmite en vez de descargarse antes de reproducir.** `jamman://pedal/…` lee del pedal con `FileSeek` + `FileRead`, así que la reproducción empieza enseguida: un WAV de 155 s (27 MB) de la SD sonó en ~1 s. Si la petición cubre el archivo entero (lo normal en la primera reproducción), se escribe a la caché a medida que pasa, y se conserva solo si se leyó completo. Una reproducción cortada no deja nada en caché, y la siguiente vuelve a transmitir.
 - **La caché se valida** con el tamaño y la fecha de modificación que reporta el pedal, en `userData/pedal-cache/<guid>/<banco>/PatchNN/PhraseX/phrase.wav`.
 - **Tiempos medidos** con el pedal real: el banco interno (10 patches) carga en ~0.8 s y la SD (86 patches) en ~6 s.
-- **Pruebas de hardware:** `JAMMAN_USB=1 npx vitest run packages/main/src/usb/PedalManager.hardware.test.ts` (solo lectura).
+- **Pruebas de hardware:** `JAMMAN_USB=1 npx vitest run --no-file-parallelism packages/main/src/usb/*.hardware.test.ts`. `PedalManager` solo lee. `PedalEditor` escribe únicamente en un banco de prueba en `/mnt/sdfs/.jamman-manager/hwtest/` y lo borra al terminar. `--no-file-parallelism` hace falta porque el puerto no se puede abrir dos veces.
+
+Decisiones de la etapa 2:
+
+- **Zona de escritura acotada.** Toda escritura, borrado o movimiento pasa por un guardia (`createWriteGuard` en `PedalFiles.ts`). Solo acepta `<banco>/PatchNN/…` y la carpeta de trabajo de la app en el mismo medio, `<medio>/.jamman-manager/`. La raíz de la memoria interna también tiene `usr/`, `lib/`, `boot/` y `jamStereo.xml`, que nunca se tocan.
+- **Editar** reescribe `patch.xml` y los `phrase.xml` (temporal + mover) y conserva los IDs de cada frase. Las frases no se pueden agregar, quitar ni cambiar de WAV en esta etapa: el handler lo rechaza y el formulario oculta esos controles.
+- **Reordenar** solo mueve los patches que cambian de nombre, y cada uno va directo a su nombre nuevo en cuanto está libre. Solo pasan por `.jamman-manager/reorder/` los que forman un ciclo, uno por ciclo. Cada paso cae en un nombre libre, así que un fallo se deshace repitiendo los pasos al revés. Si encuentra patches de un reordenamiento interrumpido en esa carpeta, se niega a empezar.
+- **Deshacer sin mover audio por el cable.** La instantánea de un patch guarda localmente solo sus XML (unos KB), y eso alcanza para deshacer una edición. Si se borra un patch que tiene instantánea, su carpeta se mueve a `.jamman-manager/undo/<id>/PatchNN/` en el mismo medio. Deshacer la vuelve a mover, y un rehacer la estaciona de nuevo en la misma instantánea, así que el ciclo deshacer/rehacer funciona las veces que haga falta. Descartar la instantánea borra lo estacionado. Al conectar se borra lo que haya quedado de una sesión anterior, porque el historial vive en la memoria del renderer.
+- **Tiempos medidos** con el pedal real, desde la app: editar ~0.8 s, deshacer o rehacer ~0.8 s, borrar ~1 s, recuperar un borrado ~0.8 s. Cada petición de escritura tarda ~22 ms, así que reordenar depende de cuántos patches cambian de lugar.
 
 ## Uso del cliente de prueba
 

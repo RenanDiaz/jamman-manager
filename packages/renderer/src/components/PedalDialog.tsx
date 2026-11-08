@@ -66,10 +66,10 @@ export default function PedalDialog({
               );
             })}
           </ul>
-          <Notice title="Read only for now">
+          <Notice title="What works over USB">
             <p>
-              Over USB you can browse and play the patches. Editing, sorting, backups and playlists
-              still need the SD card in a card reader.
+              Browse, play, edit, sort and delete patches, with undo. New patches, new or changed
+              WAV files, backups and playlists still need the SD card in a card reader.
             </p>
           </Notice>
         </>
