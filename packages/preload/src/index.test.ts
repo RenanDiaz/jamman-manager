@@ -67,6 +67,9 @@ const CHANNEL_OF: Record<Exclude<keyof ElectronAPI, (typeof EVENT_METHODS)[numbe
   connectPedal: 'pedal:connect',
   disconnectPedal: 'pedal:disconnect',
   getPedalStatus: 'pedal:status',
+  getPedalAudioStatus: 'pedal:audioStatus',
+  downloadPedalAudio: 'pedal:downloadAudio',
+  cancelPedalOperation: 'pedal:cancel',
 };
 
 describe('window.electronAPI', () => {

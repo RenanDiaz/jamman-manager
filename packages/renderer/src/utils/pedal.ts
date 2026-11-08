@@ -25,3 +25,19 @@ export function pedalFolderLabel(path: string | null, pedal: PedalInfo | null): 
   const bankLabel = bank ? BANK_LABELS[bank.id] : path;
   return `${pedal?.name ?? 'JamMan'} (USB), ${bankLabel}`;
 }
+
+/** Measured on a JamMan Stereo: reading ~1.3 MB/s, writing ~1.5 MB/s. */
+const BYTES_PER_SECOND = { download: 1.3e6, upload: 1.5e6 } as const;
+
+/** "about 3 minutes", "less than a minute": how long a transfer over USB takes. */
+export function transferTime(bytes: number, direction: keyof typeof BYTES_PER_SECOND): string {
+  const minutes = bytes / BYTES_PER_SECOND[direction] / 60;
+  if (minutes < 1) return 'less than a minute';
+  const rounded = Math.round(minutes);
+  return `about ${rounded} minute${rounded === 1 ? '' : 's'}`;
+}
+
+/** Whether an IPC error is the user stopping a pedal operation. */
+export function isCanceled(error: unknown): boolean {
+  return error instanceof Error && /\bCanceled\b/.test(error.message);
+}

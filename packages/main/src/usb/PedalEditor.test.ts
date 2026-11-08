@@ -11,7 +11,7 @@ import { PatchRestoreError } from '../PatchRestore.js';
 import { SecureXMLParser } from '../SecureXMLParser.js';
 import { GreenglassClient } from './GreenglassClient.js';
 import { MessageID } from './greenglassCodec.js';
-import { PedalEditor, type PedalProgress } from './PedalEditor.js';
+import { PedalEditor, type LocalPatch, type PedalProgress } from './PedalEditor.js';
 import { createWriteGuard } from './PedalFiles.js';
 import { wavPath } from './pedalPaths.js';
 
@@ -200,6 +200,25 @@ describe('create', () => {
     expect(progress.map(p => p.label)).toContain('Uploading PhraseB');
   });
 
+  it('reuses a slot that only holds what an interrupted upload left', async () => {
+    pedal.setFile(`${ROOT}Patch12/PhraseA/phrase.wav.tmp`, Buffer.alloc(100));
+    await editor.createPatch(
+      'internal',
+      form('Patch12', { phrases: [phrase('Patch12', 'PhraseA', '/Users/me/other.wav')] }),
+    );
+    expect(wavAt('Patch12')).toEqual(LOCAL['/Users/me/other.wav']);
+    expect(pedal.files.has(`${ROOT}Patch12/PhraseA/phrase.wav.tmp`)).toBe(false);
+
+    // A folder with any real file is someone's patch, even without patch.xml
+    pedal.setFile(`${ROOT}Patch13/PhraseA/phrase.wav`, Buffer.alloc(100));
+    await expect(
+      editor.createPatch(
+        'internal',
+        form('Patch13', { phrases: [phrase('Patch13', 'PhraseA', '/Users/me/other.wav')] }),
+      ),
+    ).rejects.toThrow(/already exists/);
+  });
+
   it('refuses a slot in use, and removes a half-created patch', async () => {
     await expect(
       editor.createPatch(
@@ -364,9 +383,9 @@ describe('delete and undo', () => {
   });
 
   it('rejects snapshots it cannot take or use', async () => {
-    await expect(editor.createSnapshot('internal', { kind: 'all' })).rejects.toBeInstanceOf(
-      PatchRestoreError,
-    );
+    await expect(
+      editor.createSnapshot('internal', { kind: 'nope' } as unknown as { kind: 'all' }),
+    ).rejects.toBeInstanceOf(PatchRestoreError);
     await expect(
       editor.createSnapshot('internal', { kind: 'patches', patches: ['Patch09'] }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -387,7 +406,89 @@ describe('delete and undo', () => {
     pedal.setFile(`${UNDO}old.wav`, 'x');
     await editor.purgeUndoData(['internal']);
     expect(pedal.folderExists(UNDO)).toBe(false);
-    expect(pedal.folderExists('/mnt/nandfs/.jamman-manager/')).toBe(true);
+    expect(pedal.folderExists('/mnt/nandfs/.jamman-manager/')).toBe(false);
+
+    // A work folder that still holds something (an interrupted reorder) stays
+    pedal.setFile('/mnt/nandfs/.jamman-manager/reorder/Patch04/patch.xml', '<p/>');
+    await editor.purgeUndoData(['internal']);
+    expect(pedal.files.has('/mnt/nandfs/.jamman-manager/reorder/Patch04/patch.xml')).toBe(true);
+  });
+});
+
+describe('whole bank', () => {
+  const PLAYLISTS = `${ROOT}.jamman-playlists.json`;
+  const localPatch = (name: string): LocalPatch => ({
+    patchXml: Buffer.from(patchXml(name)),
+    phrases: [{ name: 'PhraseA', xml: Buffer.from(phraseXml(90)), wavPath: '/Users/me/other.wav' }],
+  });
+
+  it('uploads a whole patch into a free slot, and refuses a taken one', async () => {
+    await editor.uploadPatch('internal', 'Patch05', localPatch('Five'));
+    expect(await nameOf('Patch05')).toBe('Five');
+    expect(wavAt('Patch05')).toEqual(LOCAL['/Users/me/other.wav']);
+    await expect(editor.uploadPatch('internal', 'Patch01', localPatch('X'))).rejects.toThrow(
+      /in use/,
+    );
+
+    const broken: LocalPatch = {
+      ...localPatch('Broken'),
+      phrases: [{ name: 'PhraseA', xml: null, wavPath: '/Users/me/missing.wav' }],
+    };
+    await expect(editor.uploadPatch('internal', 'Patch06', broken)).rejects.toThrow(/ENOENT/);
+    expect(pedal.folderExists(`${ROOT}Patch06/`)).toBe(false);
+  });
+
+  it('reads, writes and deletes the playlists file', async () => {
+    expect(await editor.readPlaylists('internal')).toBeNull();
+    await editor.writePlaylists('internal', Buffer.from('{"v":1}'));
+    expect((await editor.readPlaylists('internal'))?.toString()).toBe('{"v":1}');
+    await editor.writePlaylists('internal', null);
+    expect(pedal.files.has(PLAYLISTS)).toBe(false);
+  });
+
+  it('puts the whole bank back as the snapshot had it', async () => {
+    pedal.setFile(PLAYLISTS, '{"before":true}');
+    const snapshot = await editor.createSnapshot('internal', { kind: 'all' });
+    expect(snapshot).toMatchObject({
+      scope: 'all',
+      patches: ['Patch01', 'Patch02', 'Patch03'],
+      hasPlaylists: true,
+    });
+
+    // A "replace" restore of a backup: everything goes, other patches come in
+    await editor.deletePatches('internal', ['Patch01', 'Patch02', 'Patch03']);
+    await editor.uploadPatch('internal', 'Patch01', localPatch('From backup'));
+    await editor.uploadPatch('internal', 'Patch07', localPatch('Seven'));
+    await editor.writePlaylists('internal', Buffer.from('{"after":true}'));
+
+    const result = await editor.restoreSnapshot(snapshot.id, 'internal', 'replace');
+    expect(result.removed).toEqual(['Patch07']);
+    expect([await nameOf('Patch01'), await nameOf('Patch02'), await nameOf('Patch03')]).toEqual([
+      'One',
+      'Two',
+      'Three',
+    ]);
+    expect(wavAt('Patch02')).toEqual(wavOf('Patch02', 'PhraseA'));
+    expect(pedal.folderExists(`${ROOT}Patch07/`)).toBe(false);
+    expect(pedal.files.get(PLAYLISTS)?.toString()).toBe('{"before":true}');
+    expect(pedal.reads.filter(p => p.endsWith('.wav'))).toEqual([]);
+
+    await expect(
+      editor.restoreSnapshot(snapshot.id, 'internal', 'replace', ['Patch01']),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('reports which patches it touched, once', async () => {
+    await editor.updatePatch('internal', form('Patch01'));
+    await editor.reorderPatches('internal', ['Patch01', 'Patch03', 'Patch02']);
+    expect(editor.takeTouched().sort()).toEqual([
+      'internal/Patch01',
+      'internal/Patch02',
+      'internal/Patch03',
+    ]);
+    expect(editor.takeTouched()).toEqual([]);
   });
 });
 

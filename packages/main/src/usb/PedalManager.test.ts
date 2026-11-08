@@ -13,7 +13,8 @@ import {
   wavBytes,
 } from '../test-utils/fakePedal.js';
 import { MessageID, PropertyID } from './greenglassCodec.js';
-import { PedalManager, PedalNotConnectedError } from './PedalManager.js';
+import { PedalCanceledError, PedalManager, PedalNotConnectedError } from './PedalManager.js';
+import { BackupManager } from '../BackupManager.js';
 import { parseWavPath } from './pedalPaths.js';
 
 const silentLog = { info: () => {}, warn: () => {}, error: () => {} };
@@ -47,6 +48,7 @@ function setup(options: { sdPresent?: boolean; ports?: string[] } = {}) {
     openTransport,
     cacheRoot,
     log: silentLog,
+    workRoot: path.join(cacheRoot, 'work'),
     clientOptions: { requestTimeoutMs: 500 },
   });
   return { fake, manager, openTransport };
@@ -303,11 +305,142 @@ describe('PedalManager changes', () => {
     expect(fake.folderExists(`${FAKE_INTERNAL_ROOT}Patch02/`)).toBe(true);
   });
 
+  it('frees parked audio when it disconnects', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    await manager.createSnapshot('internal', { kind: 'patches', patches: ['Patch01'] });
+    await manager.deletePatches('internal', ['Patch01']);
+    expect(fake.folderExists('/mnt/nandfs/.jamman-manager/undo/')).toBe(true);
+    await manager.disconnect();
+    expect(fake.folderExists('/mnt/nandfs/.jamman-manager/undo/')).toBe(false);
+  });
+
   it('discards snapshots quietly when no pedal is connected', async () => {
     const { manager } = setup();
     await expect(manager.discardSnapshot('pedal-x')).resolves.toBeUndefined();
     await expect(manager.deletePatches('internal', ['Patch01'])).rejects.toBeInstanceOf(
       PedalNotConnectedError,
+    );
+  });
+});
+
+describe('PedalManager audio cache and backups', () => {
+  const internalWav = `${FAKE_INTERNAL_ROOT}Patch01/PhraseA/phrase.wav`;
+  const wavReads = (fake: FakePedal) => fake.reads.filter(p => p.endsWith('.wav')).length;
+
+  it('reports what is cached and downloads the rest', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    // Patch02's phrase has a WAV but no phrase.xml: a backup keeps it, so it counts
+    expect(await manager.audioStatus('internal')).toEqual({
+      files: 2,
+      totalBytes: 2 * WAV.length,
+      cachedFiles: 0,
+      cachedBytes: 0,
+    });
+    const progress: unknown[] = [];
+    manager.on('progress', p => progress.push(p));
+    await manager.downloadAudio('internal');
+    expect(await manager.audioStatus('internal')).toMatchObject({
+      cachedFiles: 2,
+      cachedBytes: 2 * WAV.length,
+    });
+    expect(progress.at(-2)).toEqual({
+      label: 'Downloading audio',
+      done: 2 * WAV.length,
+      total: 2 * WAV.length,
+    });
+    expect(progress.at(-1)).toBeNull();
+
+    // Nothing left to download
+    const reads = wavReads(fake);
+    await manager.downloadAudio('internal');
+    expect(wavReads(fake)).toBe(reads);
+  });
+
+  it('stops a download when canceled, keeping only complete files', async () => {
+    const { manager, fake } = setup();
+    fake.setFile(`${FAKE_INTERNAL_ROOT}Patch02/PhraseA/phrase.xml`, phraseXml(90));
+    await manager.connect();
+    manager.on('progress', p => {
+      if (p && p.done > 0) manager.cancel(); // after the first block
+    });
+    await expect(manager.downloadAudio('internal')).rejects.toBeInstanceOf(PedalCanceledError);
+    expect(fake.openFiles.size).toBe(0);
+    const cached = fs.readdirSync(cacheRoot, { recursive: true }) as string[];
+    expect(cached.filter(f => f.endsWith('.part'))).toEqual([]);
+
+    manager.removeAllListeners('progress');
+    const status = await manager.downloadAudio('internal');
+    expect(status.cachedFiles).toBe(status.files);
+  });
+
+  it('forgets cached audio of a patch the app changes', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    await manager.readWav(REF);
+    expect(wavReads(fake)).toBe(1);
+
+    // Same size, same minute: only the app knows the content changed
+    const sameSize = Buffer.from(WAV);
+    sameSize[100] ^= 0xff;
+    fake.setFile(internalWav, sameSize);
+    await manager.reorderPatches('internal', ['Patch01', 'Patch02']); // touches nothing that moves
+    await manager.updatePatch('internal', {
+      basePath: 'jamman-pedal://internal',
+      directory: 'Patch01',
+      patchName: 'Rock',
+      rhythmType: 'Silence',
+      stopMode: 'StopInstantly',
+      phrases: [
+        {
+          name: 'PhraseA',
+          wavPath: WAV_PATH,
+          beatsPerMinute: 120,
+          beatsPerMeasure: 4,
+          isLoop: true,
+          isReversed: false,
+        },
+      ],
+    });
+    expect((await manager.readWav(REF)).equals(sameSize)).toBe(true);
+  });
+
+  it('backs a bank up to a ZIP and restores it onto another bank', async () => {
+    const { manager, fake } = setup();
+    fake.setFile(`${FAKE_INTERNAL_ROOT}.jamman-playlists.json`, '{"playlists":[]}');
+    await manager.connect();
+
+    const zip = path.join(cacheRoot, 'backup.zip');
+    await manager.withLocalWorkDir(async dir => {
+      const exported = await manager.exportBank('internal', undefined, true, dir);
+      expect(exported).toEqual(['Patch01', 'Patch02']);
+      expect(fs.readFileSync(path.join(dir, 'Patch01', 'PhraseA', 'phrase.wav')).equals(WAV)).toBe(
+        true,
+      );
+      expect(fs.existsSync(path.join(dir, '.jamman-playlists.json'))).toBe(true);
+      await BackupManager.createBackup({
+        basePath: dir,
+        outputPath: zip,
+        patches: exported,
+        includePlaylist: true,
+      });
+    });
+    expect(fs.readdirSync(path.join(cacheRoot, 'work'))).toEqual([]); // the job folder is gone
+
+    // Merge into the SD bank, which already has Patch10: the backup keeps its numbers
+    await manager.withLocalWorkDir(async dir => {
+      for (const used of await manager.listPatchDirs('sd')) fs.mkdirSync(path.join(dir, used));
+      await BackupManager.restoreBackup({ backupPath: zip, targetPath: dir, mode: 'merge' });
+      const restored = fs
+        .readdirSync(dir)
+        .filter(d => fs.existsSync(path.join(dir, d, 'patch.xml')));
+      await manager.importPatches('sd', dir, restored, false);
+    });
+    expect(fake.files.get(`${FAKE_SD_ROOT}Patch01/PhraseA/phrase.wav`)?.equals(WAV)).toBe(true);
+    expect(fake.files.has(`${FAKE_SD_ROOT}Patch10/patch.xml`)).toBe(true);
+    expect(fake.files.get(`${FAKE_SD_ROOT}.jamman-playlists.json`)?.toString()).toBe(
+      '{"playlists":[]}',
     );
   });
 });

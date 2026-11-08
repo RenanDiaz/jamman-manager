@@ -53,7 +53,9 @@ You can also leave the card in the pedal and connect the pedal to the computer w
 3. Browse and play the patches. Audio streams from the pedal, so playback starts right away; a WAV that was played to the end is kept in a local cache and not downloaded again until it changes on the pedal.
 4. Create, edit, delete and sort patches, including adding phrases and replacing their WAV files. New WAVs are uploaded at about 1.5 MB per second, with a progress bar. Undo and redo work as with a card: audio that an undo may need is kept on the pedal itself, so it never crosses the cable twice.
 
-Backups and playlists are not available over USB yet: for those, put the card in a card reader. The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
+5. Back up the bank to a ZIP file or restore one onto it. Audio that is not on this computer yet is downloaded first; the **Audio** key in the pedal dialog downloads a whole bank ahead of time. Both can be stopped and resumed. A large bank takes a long time over USB (about 50 minutes for 4 GB), so the app recommends a card reader for those.
+
+Playlists are not available over USB yet: for those, put the card in a card reader. The protocol is documented in [docs/usb-protocol.md](docs/usb-protocol.md).
 
 ### WAV files
 

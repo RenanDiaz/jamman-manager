@@ -5,7 +5,7 @@ import {
   GreenglassConnectionError,
   GreenglassRequestError,
 } from './GreenglassClient.js';
-import { MessageID, PropertyID } from './greenglassCodec.js';
+import { encodeRequest, MessageID, PayloadWriter, PropertyID } from './greenglassCodec.js';
 
 const FILE = '/mnt/nandfs/JamManStereo/Patch01/PhraseA/phrase.wav';
 const CONTENT = Buffer.from(Array.from({ length: 20_000 }, (_, i) => i % 256));
@@ -203,5 +203,50 @@ describe('GreenglassClient', () => {
     expect(pedal.files.get(FILE)?.equals(CONTENT)).toBe(true);
     await client.delete('/mnt/nandfs/JamManStereo/Patch01/', true, true);
     expect(pedal.folderExists('/mnt/nandfs/JamManStereo/Patch01/')).toBe(false);
+  });
+
+  it('times the answer from when the request is out', async () => {
+    const pedal = new FakePedal();
+    const transport = {
+      ...pedal.transport,
+      // The pedal holds the line for 300 ms before taking the bytes
+      write: async (data: Buffer) => {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await pedal.transport.write(data);
+      },
+    };
+    const client = new GreenglassClient(transport, { requestTimeoutMs: 100 });
+    expect((await client.whoAmI()).name).toBe('JamMan Stereo');
+  });
+
+  it('waits longer for requests that change storage', async () => {
+    const { client, pedal } = setup({}, 100);
+    pedal.replyDelay.set(MessageID.FileSystemEntryCreateRequest, 300); // flash busy
+    await client.createFolder('/mnt/nandfs/slow/');
+    expect(pedal.folderExists('/mnt/nandfs/slow/')).toBe(true);
+
+    pedal.replyDelay.set(MessageID.WhoAmIRequest, 300); // a read that slow means trouble
+    await expect(client.whoAmI()).rejects.toThrow(/did not answer request 0 within 100 ms/);
+  });
+
+  it('gets back in step with a pedal waiting for the rest of a cut-off request', async () => {
+    const pedal = new FakePedal({ files: { [FILE]: CONTENT } });
+    // An earlier session sent only the start of a 2 KB write before it ended
+    const body = new PayloadWriter().i64(5n).i32(2000).bytes(Buffer.alloc(2000, 7)).build();
+    const cut = encodeRequest(MessageID.FileWriteRequest, 99, body).subarray(0, 700);
+    await pedal.transport.write(cut);
+
+    const client = new GreenglassClient(pedal.transport, { requestTimeoutMs: 500 });
+    await client.resync({ probeMs: 100 });
+    expect((await client.whoAmI()).name).toBe('JamMan Stereo');
+  });
+
+  it('gives up resyncing a pedal that never answers', async () => {
+    const pedal = new FakePedal();
+    pedal.silent = true;
+    const client = new GreenglassClient(pedal.transport);
+    await expect(client.resync({ probeMs: 20, maxFillBytes: 20 })).rejects.toThrow(
+      /does not answer/,
+    );
   });
 });

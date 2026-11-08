@@ -43,6 +43,7 @@ export async function initApp(initConfig: AppInitConfig) {
     findPorts: () => findJamManPorts(),
     openTransport: portPath => openSerialTransport(portPath),
     cacheRoot: path.join(app.getPath('userData'), 'pedal-cache'),
+    workRoot: path.join(app.getPath('userData'), 'pedal-work'),
     log,
   });
   const sendToWindows = (channel: 'pedal:changed' | 'pedal:progress', payload: unknown) => {

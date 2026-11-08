@@ -52,6 +52,11 @@ export const PEDAL_AWARE_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>
   'pedal:connect',
   'pedal:disconnect',
   'pedal:status',
+  'pedal:audioStatus',
+  'pedal:downloadAudio',
+  'pedal:cancel',
+  'backup:create',
+  'backup:restore',
 ]);
 
 /** Whether a pedal path appears anywhere in the arguments (forms nest paths). */

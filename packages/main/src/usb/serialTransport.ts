@@ -11,6 +11,9 @@
 import { SerialPort } from 'serialport';
 import type { GreenglassTransport } from './GreenglassClient.js';
 
+/** Largest piece handed to the OS at once: well under the serial output queue (about 1 KB). */
+export const WRITE_PIECE_BYTES = 512;
+
 /** USB IDs of the JamMan Stereo (and of the JamMan family that shares its USB stack). */
 export const JAMMAN_USB_VENDOR_ID = '1210';
 export const JAMMAN_USB_PRODUCT_ID = '0020';
@@ -66,16 +69,26 @@ export async function openSerialTransport(path: string): Promise<GreenglassTrans
   port.on('error', (error: Error) => notifyClose(error));
 
   return {
-    write: data =>
-      new Promise<void>((resolve, reject) => {
-        port.write(data, error => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          port.drain(drainError => (drainError ? reject(drainError) : resolve()));
+    write: async data => {
+      // Piece by piece, each one transmitted before the next. A write larger
+      // than the OS output queue is accepted only in part, and serialport then
+      // waits for a "writable" event to send the rest; inside the app that
+      // event was seen to never come, leaving a frame half sent for good (and
+      // the pedal's parser waiting for the rest). Pieces that fit the queue
+      // never take that path.
+      for (let offset = 0; offset < data.length; offset += WRITE_PIECE_BYTES) {
+        const piece = data.subarray(offset, offset + WRITE_PIECE_BYTES);
+        await new Promise<void>((resolve, reject) => {
+          port.write(piece, error => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            port.drain(drainError => (drainError ? reject(drainError) : resolve()));
+          });
         });
-      }),
+      }
+    },
     close: () =>
       new Promise<void>(resolve => {
         if (!port.isOpen) {

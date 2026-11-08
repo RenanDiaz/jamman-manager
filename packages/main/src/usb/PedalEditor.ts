@@ -37,7 +37,7 @@ import {
   GreenglassRequestError,
   type GreenglassClient,
 } from './GreenglassClient.js';
-import { PedalFiles, workRootFor } from './PedalFiles.js';
+import { PedalFiles, PLAYLISTS_FILE, workRootFor } from './PedalFiles.js';
 import { bankPath, isPedalPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath } from './pedalPaths.js';
 
 export type PedalEditorLogger = {
@@ -75,6 +75,16 @@ type PedalSnapshot = {
   bank: PedalBankId;
   createdAt: number;
   patches: Map<string, SnapshotPatch>;
+  /** A snapshot of the whole bank: restoring it also removes patches it does not have. */
+  all: boolean;
+  /** The bank's playlists file, when the snapshot is of the whole bank (null: there was none). */
+  playlists: Buffer | null;
+};
+
+/** A patch to upload from the computer (e.g. restored from a backup). */
+export type LocalPatch = {
+  patchXml: Buffer;
+  phrases: Array<{ name: string; xml: Buffer | null; wavPath: string | null }>;
 };
 
 export const PEDAL_SNAPSHOT_PREFIX = 'pedal-';
@@ -93,6 +103,8 @@ export class PedalEditor {
   readonly #files: PedalFiles;
   readonly #snapshots = new Map<string, PedalSnapshot>();
   readonly #refs = new Set<WavRef>();
+  /** Patch folders changed since the last `takeTouched`, as `bank/PatchNN`. */
+  readonly #touched = new Set<string>();
 
   constructor(
     private readonly client: GreenglassClient,
@@ -110,6 +122,21 @@ export class PedalEditor {
   #patchFolder(bank: PedalBankId, dir: string): string {
     if (!PATCH_DIR_RE.test(dir)) throw new Error(`Invalid patch directory name: ${dir}`);
     return `${this.bankRoot(bank)}${dir}/`;
+  }
+
+  /**
+   * The patch folders whose files changed since the last call, as
+   * `bank/PatchNN`. A local copy of their audio may be stale: the pedal's file
+   * times have minute resolution, so size and time alone cannot tell.
+   */
+  takeTouched(): string[] {
+    const touched = [...this.#touched];
+    this.#touched.clear();
+    return touched;
+  }
+
+  #touch(bank: PedalBankId, dir: string): void {
+    this.#touched.add(`${bank}/${dir}`);
   }
 
   #poolRoot(bank: PedalBankId): string {
@@ -219,14 +246,29 @@ export class PedalEditor {
     }
   }
 
+  /**
+   * Whether a slot is free. A folder left by an upload that was cut off (only
+   * `.tmp` files and empty folders: what an interrupted upload leaves) counts
+   * as free and is removed.
+   */
+  async #slotIsFree(folder: string): Promise<boolean> {
+    if (!(await this.#files.exists(folder, true))) return true;
+    const tree = await this.#files.listTree(folder);
+    if (!tree.files.every(file => file.endsWith('.tmp'))) return false;
+    this.log.warn(`Removing what an interrupted upload left in ${folder}`);
+    await this.#files.removeTree(folder);
+    return true;
+  }
+
   /** Creates a patch in an empty slot, uploading each phrase's WAV. */
   async createPatch(bank: PedalBankId, form: PatchForm): Promise<void> {
     const folder = this.#patchFolder(bank, form.directory);
     this.#checkPhrases(form, () => '');
-    if (await this.#files.exists(folder, true)) {
+    if (!(await this.#slotIsFree(folder))) {
       throw new Error(`Failed to create patch: Patch directory ${form.directory} already exists`);
     }
 
+    this.#touch(bank, form.directory);
     await this.client.createFolder(folder);
     try {
       for (const phrase of form.phrases) {
@@ -282,6 +324,7 @@ export class PedalEditor {
     }
     const ownWav = (phrase: string) => wavPath(bank, form.directory, phrase);
     this.#checkPhrases(form, ownWav);
+    this.#touch(bank, form.directory);
 
     const onPedal = contents.folders.filter(d => PHRASE_DIR_RE.test(d));
     const listed = new Set(form.phrases.map(p => p.name));
@@ -345,6 +388,76 @@ export class PedalEditor {
     this.log.info(`Updated ${form.directory} on the pedal's ${bank} bank`);
   }
 
+  // ==================== Whole patches and playlists ====================
+
+  /** The patch folders of a bank (`PatchNN`), sorted. */
+  async listPatchDirs(bank: PedalBankId): Promise<string[]> {
+    try {
+      const contents = await this.client.folderContents(this.bankRoot(bank));
+      return contents.folders.filter(d => PATCH_DIR_RE.test(d)).sort();
+    } catch (error) {
+      if (error instanceof GreenglassRequestError) return [];
+      throw error;
+    }
+  }
+
+  /**
+   * Uploads a whole patch into an empty slot (a patch restored from a backup).
+   * patch.xml goes last; a failure removes the half-uploaded folder.
+   */
+  async uploadPatch(bank: PedalBankId, dir: string, patch: LocalPatch): Promise<void> {
+    const folder = this.#patchFolder(bank, dir);
+    if (!(await this.#slotIsFree(folder))) {
+      throw new Error(`Cannot restore ${dir}: the slot is in use on the pedal`);
+    }
+    this.#touch(bank, dir);
+    await this.client.createFolder(folder);
+    try {
+      for (const phrase of patch.phrases) {
+        if (!PHRASE_DIR_RE.test(phrase.name)) continue;
+        const phraseFolder = `${folder}${phrase.name}/`;
+        await this.client.createFolder(phraseFolder);
+        if (phrase.wavPath) {
+          const temp = await this.#uploadNextTo(
+            `${phraseFolder}phrase.wav`,
+            phrase.wavPath,
+            `Uploading ${dir} ${phrase.name}`,
+          );
+          await this.#files.moveFile(temp, `${phraseFolder}phrase.wav`);
+        }
+        if (phrase.xml) await this.#files.writeFileAtomic(`${phraseFolder}phrase.xml`, phrase.xml);
+      }
+      await this.#files.writeFileAtomic(`${folder}patch.xml`, patch.patchXml);
+    } catch (error) {
+      await this.#files
+        .removeTree(folder)
+        .catch(rollbackError =>
+          this.log.warn(`Could not remove the half-uploaded ${dir}:`, rollbackError),
+        );
+      throw error;
+    }
+  }
+
+  /** The bank's playlists file, or null when it has none. */
+  async readPlaylists(bank: PedalBankId): Promise<Buffer | null> {
+    try {
+      return await this.client.readFile(`${this.bankRoot(bank)}${PLAYLISTS_FILE}`);
+    } catch (error) {
+      if (error instanceof GreenglassRequestError) return null;
+      throw error;
+    }
+  }
+
+  /** Writes the bank's playlists file, or deletes it for null. */
+  async writePlaylists(bank: PedalBankId, data: Buffer | null): Promise<void> {
+    const path = `${this.bankRoot(bank)}${PLAYLISTS_FILE}`;
+    if (data) {
+      await this.#files.writeFileAtomic(path, data);
+    } else if ((await this.client.entryInfo(path, false)).exists) {
+      await this.#files.deleteFile(path);
+    }
+  }
+
   // ==================== Delete ====================
 
   /**
@@ -368,6 +481,7 @@ export class PedalEditor {
         failed++;
         continue;
       }
+      this.#touch(bank, dir);
       for (const phrase of contents.folders) {
         const path = `${folder}${phrase}/phrase.wav`;
         if (this.#liveRef(path)) await this.#park(this.#liveRef(path)!);
@@ -416,6 +530,8 @@ export class PedalEditor {
     });
     if (pending.size === 0) return;
 
+    for (const target of pending.keys()) this.#touch(bank, target);
+    for (const dir of newOrder) this.#touch(bank, dir);
     const steps: Array<{ from: string; to: string }> = [];
     const step = async (from: string, to: string) => {
       await this.#moveTree(from, to);
@@ -461,57 +577,30 @@ export class PedalEditor {
   // ==================== Undo snapshots ====================
 
   async createSnapshot(bank: PedalBankId, scope: SnapshotScope): Promise<UndoSnapshotInfo> {
-    if (scope?.kind !== 'patches') {
-      throw new PatchRestoreError('FAILED', 'This action cannot be undone over USB yet');
-    }
-    if (!Array.isArray(scope.patches) || scope.patches.length === 0) {
-      throw new PatchRestoreError('INVALID_ARGUMENT', 'No patches to snapshot');
+    let dirs: string[];
+    if (scope?.kind === 'all') {
+      dirs = await this.listPatchDirs(bank);
+    } else if (scope?.kind === 'patches') {
+      if (!Array.isArray(scope.patches) || scope.patches.length === 0) {
+        throw new PatchRestoreError('INVALID_ARGUMENT', 'No patches to snapshot');
+      }
+      dirs = scope.patches;
+    } else {
+      throw new PatchRestoreError('INVALID_ARGUMENT', 'Unknown snapshot scope');
     }
 
+    const all = scope.kind === 'all';
     const snapshot: PedalSnapshot = {
       id: `${PEDAL_SNAPSHOT_PREFIX}${randomUUID()}`,
       bank,
       createdAt: Date.now(),
       patches: new Map(),
+      all,
+      playlists: all ? await this.readPlaylists(bank) : null,
     };
-    let sizeBytes = 0;
-    for (const dir of scope.patches) {
-      if (!PATCH_DIR_RE.test(dir)) {
-        throw new PatchRestoreError('INVALID_ARGUMENT', `Invalid patch directory name: ${dir}`);
-      }
-      const folder = this.#patchFolder(bank, dir);
-      let contents;
-      try {
-        contents = await this.client.folderContents(folder);
-      } catch (error) {
-        if (error instanceof GreenglassRequestError) {
-          throw new PatchRestoreError('NOT_FOUND', `Patch not found: ${dir}`);
-        }
-        throw error;
-      }
-      const patch: SnapshotPatch = { xml: new Map(), wavs: new Map() };
-      if (contents.files.includes('patch.xml')) {
-        patch.xml.set('patch.xml', await this.client.readFile(`${folder}patch.xml`));
-      }
-      for (const phrase of contents.folders.filter(d => PHRASE_DIR_RE.test(d))) {
-        try {
-          patch.xml.set(
-            `${phrase}/phrase.xml`,
-            await this.client.readFile(`${folder}${phrase}/phrase.xml`),
-          );
-        } catch (error) {
-          if (!(error instanceof GreenglassRequestError)) throw error;
-        }
-        const path = `${folder}${phrase}/phrase.wav`;
-        if ((await this.client.entryInfo(path, false)).exists) {
-          let ref = this.#liveRef(path);
-          if (!ref) {
-            ref = { id: randomUUID(), bank, at: path, parked: false };
-            this.#refs.add(ref);
-          }
-          patch.wavs.set(phrase, ref);
-        }
-      }
+    let sizeBytes = snapshot.playlists?.length ?? 0;
+    for (const dir of dirs) {
+      const patch = await this.#snapshotPatch(bank, dir);
       for (const data of patch.xml.values()) sizeBytes += data.length;
       snapshot.patches.set(dir, patch);
     }
@@ -520,12 +609,52 @@ export class PedalEditor {
     return {
       id: snapshot.id,
       basePath: bankPath(bank),
-      scope: 'patches',
+      scope: all ? 'all' : 'patches',
       patches: [...snapshot.patches.keys()],
-      hasPlaylists: false,
+      hasPlaylists: snapshot.playlists !== null,
       sizeBytes,
       createdAt: snapshot.createdAt,
     };
+  }
+
+  async #snapshotPatch(bank: PedalBankId, dir: string): Promise<SnapshotPatch> {
+    if (!PATCH_DIR_RE.test(dir)) {
+      throw new PatchRestoreError('INVALID_ARGUMENT', `Invalid patch directory name: ${dir}`);
+    }
+    const folder = this.#patchFolder(bank, dir);
+    let contents;
+    try {
+      contents = await this.client.folderContents(folder);
+    } catch (error) {
+      if (error instanceof GreenglassRequestError) {
+        throw new PatchRestoreError('NOT_FOUND', `Patch not found: ${dir}`);
+      }
+      throw error;
+    }
+    const patch: SnapshotPatch = { xml: new Map(), wavs: new Map() };
+    if (contents.files.includes('patch.xml')) {
+      patch.xml.set('patch.xml', await this.client.readFile(`${folder}patch.xml`));
+    }
+    for (const phrase of contents.folders.filter(d => PHRASE_DIR_RE.test(d))) {
+      try {
+        patch.xml.set(
+          `${phrase}/phrase.xml`,
+          await this.client.readFile(`${folder}${phrase}/phrase.xml`),
+        );
+      } catch (error) {
+        if (!(error instanceof GreenglassRequestError)) throw error;
+      }
+      const path = `${folder}${phrase}/phrase.wav`;
+      if ((await this.client.entryInfo(path, false)).exists) {
+        let ref = this.#liveRef(path);
+        if (!ref) {
+          ref = { id: randomUUID(), bank, at: path, parked: false };
+          this.#refs.add(ref);
+        }
+        patch.wavs.set(phrase, ref);
+      }
+    }
+    return patch;
   }
 
   /**
@@ -551,9 +680,10 @@ export class PedalEditor {
     }
 
     let dirs = [...snapshot.patches.keys()];
+    const wholeBank = snapshot.all && mode === 'replace';
     if (only !== undefined) {
-      if (!Array.isArray(only)) {
-        throw new PatchRestoreError('INVALID_ARGUMENT', 'Invalid patch list');
+      if (!Array.isArray(only) || wholeBank) {
+        throw new PatchRestoreError('INVALID_ARGUMENT', 'Cannot restore a subset of this snapshot');
       }
       for (const dir of only) {
         if (!snapshot.patches.has(dir)) {
@@ -563,11 +693,15 @@ export class PedalEditor {
       dirs = dirs.filter(d => only.includes(d));
     }
 
-    // Check everything first so a refusal changes nothing.
+    // Check everything first so a refusal changes nothing. Restoring a whole
+    // bank brings back the patches that are gone and resets the others.
+    const plan = new Map<string, 'add' | 'replace'>();
     for (const dir of dirs) {
       const patch = snapshot.patches.get(dir)!;
       const exists = await this.#files.exists(this.#patchFolder(bank, dir), true);
-      if (mode === 'add') {
+      const how = wholeBank ? (exists ? 'replace' : 'add') : mode;
+      plan.set(dir, how);
+      if (how === 'add') {
         if ([...patch.wavs.values()].some(ref => !ref.parked)) {
           throw new PatchRestoreError('NOT_FOUND', 'Undo data no longer exists');
         }
@@ -585,18 +719,27 @@ export class PedalEditor {
       }
     }
 
+    for (const dir of dirs) this.#touch(bank, dir);
+    const removed: string[] = [];
     try {
+      if (wholeBank) {
+        // Patches the snapshot does not have go first, so their slots are free.
+        const extra = (await this.listPatchDirs(bank)).filter(d => !snapshot.patches.has(d));
+        removed.push(...(await this.deletePatches(bank, extra)).deleted);
+      }
       for (const dir of dirs) {
-        if (mode === 'add') await this.#restoreDeleted(bank, dir, snapshot.patches.get(dir)!);
+        if (plan.get(dir) === 'add')
+          await this.#restoreDeleted(bank, dir, snapshot.patches.get(dir)!);
         else await this.#restoreInPlace(bank, dir, snapshot.patches.get(dir)!);
       }
+      if (wholeBank) await this.writePlaylists(bank, snapshot.playlists);
     } catch (error) {
       if (error instanceof PatchRestoreError) throw error;
       throw new PatchRestoreError('FAILED', `Could not restore: ${errorText(error)}`);
     } finally {
       await this.#tidyPool(bank);
     }
-    return { restored: dirs, removed: [] };
+    return { restored: dirs, removed };
   }
 
   async #restoreDeleted(bank: PedalBankId, dir: string, patch: SnapshotPatch): Promise<void> {
@@ -685,6 +828,12 @@ export class PedalEditor {
       if (await this.#files.exists(root, true)) {
         await this.#files.removeTree(root);
         this.log.info(`Purged old undo data on the pedal's ${bank} bank`);
+      }
+      // The work folder too once it is empty (never recursive: an interrupted
+      // reorder may have left patches in it).
+      const work = workRootFor(this.bankRoot(bank));
+      if (await this.#files.exists(work, true)) {
+        await this.#files.deleteEmptyFolder(work).catch(() => undefined);
       }
     }
   }

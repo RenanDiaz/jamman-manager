@@ -1,4 +1,5 @@
-import { FC, useState } from 'react';
+import { FC, useEffect, useState } from 'react';
+import type { PedalAudioStatus } from '@app/preload/ipc-contract';
 import { toast } from 'react-toastify';
 import type { Patch } from '../types';
 import { usePatchStore } from '../store/usePatchStore';
@@ -13,7 +14,9 @@ import {
   PanelKey,
   Well,
 } from '../ui';
-import { fileName } from '../utils/format';
+import { fileName, formatBytes } from '../utils/format';
+import { isCanceled, isPedalPath, transferTime } from '../utils/pedal';
+import PedalTransfer from './PedalTransfer';
 import s from './BackupRestoreModal.module.css';
 
 interface BackupInfo {
@@ -58,6 +61,32 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
   const [restoreMode, setRestoreMode] = useState<'replace' | 'merge'>('merge');
   const [validatingBackup, setValidatingBackup] = useState(false);
 
+  // Over USB: how much of the audio to back up is already on this computer
+  const pedalMode = isPedalPath(currentFolder);
+  const source = pedalMode ? 'bank' : 'card';
+  const selectionKey = backupType === 'selected' ? selectedPatchDirs.join() : '';
+  const audioKey = `${currentFolder}|${selectionKey}`;
+  /** The answer for one folder + selection; a different key means it is not in yet. */
+  const [audioResult, setAudioResult] = useState<{
+    key: string;
+    status: PedalAudioStatus | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!isOpen || !pedalMode || !currentFolder || activeTab !== 'backup') return;
+    let stale = false;
+    const dirs = selectionKey ? selectionKey.split(',') : undefined;
+    window.electronAPI
+      .getPedalAudioStatus(currentFolder, dirs)
+      .then(status => !stale && setAudioResult({ key: audioKey, status }))
+      .catch(() => !stale && setAudioResult({ key: audioKey, status: null }));
+    return () => {
+      stale = true;
+    };
+  }, [isOpen, pedalMode, currentFolder, activeTab, selectionKey, audioKey]);
+  const audioReady = audioResult?.key === audioKey;
+  const audio = audioReady ? audioResult.status : null;
+  const audioError = audioReady && audioResult.status === null;
+
   const handleToggleTab = (tab: 'backup' | 'restore') => {
     setActiveTab(tab);
     // Reset state when switching tabs
@@ -96,6 +125,10 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
         onClose();
       }
     } catch (error) {
+      if (isCanceled(error)) {
+        toast.info('Backup stopped. The audio downloaded so far is kept for next time.');
+        return;
+      }
       console.error('Error creating backup:', error);
       toast.error('Failed to create backup. Please try again.');
     } finally {
@@ -145,6 +178,11 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
         onClose();
       }
     } catch (error) {
+      if (isCanceled(error)) {
+        toast.info('Restore stopped. Undo brings the bank back as it was.');
+        if (onRestoreComplete) onRestoreComplete();
+        return;
+      }
       console.error('Error restoring backup:', error);
       toast.error('Failed to restore backup. Please try again.');
     } finally {
@@ -191,6 +229,8 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
         </Notice>
       )}
 
+      {loading && <PedalTransfer />}
+
       <ModeKeys
         label="Mode"
         idPrefix={tabPrefix}
@@ -218,7 +258,7 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
             options={[
               {
                 value: 'full',
-                label: 'The whole card',
+                label: `The whole ${source}`,
                 description: `${patches.length} patches`,
               },
               {
@@ -232,6 +272,29 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
               },
             ]}
           />
+
+          {pedalMode &&
+            (audioError ? null : !audio ? (
+              <p className={s.status} role="status">
+                <Led color="red" on blinkSeconds={0.4} />
+                Checking which audio is already on this computer…
+              </p>
+            ) : audio.totalBytes > audio.cachedBytes ? (
+              <Notice
+                tone="warning"
+                title={`${formatBytes(audio.totalBytes - audio.cachedBytes)} of audio has to come from the pedal first: ${transferTime(audio.totalBytes - audio.cachedBytes, 'download')}.`}
+              >
+                <p>
+                  Audio already downloaded is kept, so a stopped backup picks up where it left off.
+                  For a large bank it is much faster to take the SD card out and back it up from a
+                  card reader.
+                </p>
+              </Notice>
+            ) : (
+              <Notice tone="success" title="All the audio is already on this computer.">
+                <p>The backup only needs the patch files from the pedal: it is quick.</p>
+              </Notice>
+            ))}
 
           {backupType === 'selected' && selectedPatchDirs.length > 0 && (
             <Well aria-label="Patches to back up">
@@ -294,13 +357,12 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
                     {
                       value: 'merge',
                       label: 'Merge',
-                      description:
-                        'Keeps the patches on the card. Backup patches whose slot is taken get a new number.',
+                      description: `Keeps the patches on the ${source}. Backup patches whose slot is taken get a new number.`,
                     },
                     {
                       value: 'replace',
                       label: 'Replace all',
-                      description: 'Deletes every patch on the card, then restores the backup.',
+                      description: `Deletes every patch on the ${source}, then restores the backup.`,
                     },
                   ]}
                 />
@@ -308,9 +370,18 @@ export const BackupRestoreModal: FC<BackupRestoreModalProps> = ({
                 {restoreMode === 'replace' && (
                   <Notice
                     tone="warning"
-                    title={`The ${patches.length} patches on the card are deleted first.`}
+                    title={`The ${patches.length} patches on the ${source} are deleted first.`}
                   >
-                    <p>Undo can bring them back while this card stays open.</p>
+                    <p>Undo can bring them back while this {source} stays open.</p>
+                  </Notice>
+                )}
+
+                {pedalMode && (
+                  <Notice title="The backup's audio is uploaded to the pedal.">
+                    <p>
+                      About 1.5 MB per second, so a large backup takes a while. You can stop it;
+                      undo then brings the bank back as it was.
+                    </p>
                   </Notice>
                 )}
               </>

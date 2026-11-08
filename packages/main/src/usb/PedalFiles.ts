@@ -4,8 +4,9 @@
  *
  * The guard: the pedal's internal memory also holds its software (`usr/`,
  * `lib/`, `boot/`) and settings (`jamStereo.xml`). Writes may only touch a
- * patch folder of a bank (`<bank root>PatchNN/…`) or the app's own work area
- * on the same medium (`<medium>/.jamman-manager/`). Anything else throws
+ * patch folder of a bank (`<bank root>PatchNN/…`), the bank's playlists file
+ * (`<bank root>.jamman-playlists.json`) or the app's own work area on the same
+ * medium (`<medium>/.jamman-manager/`). Anything else throws
  * before a request is sent.
  *
  * Folder moves: the pedal cannot move a folder that contains folders (it
@@ -21,6 +22,8 @@ import { GreenglassRequestError, type GreenglassClient } from './GreenglassClien
 
 /** The app's work area on a medium, next to the bank folder. */
 export const WORK_FOLDER = '.jamman-manager/';
+/** Playlists of a bank, in its root (as on a card). */
+export const PLAYLISTS_FILE = '.jamman-playlists.json';
 
 export type PedalTree = {
   /** Sub-folders, relative, each ending in `/`, parents before children. */
@@ -55,6 +58,10 @@ function escapeRegExp(text: string): string {
 export function createWriteGuard(bankRoots: string[]): (path: string) => void {
   const patchAreas = bankRoots.map(root => new RegExp(`^${escapeRegExp(root)}Patch\\d{2}(/.*)?$`));
   const workAreas = bankRoots.map(workRootFor);
+  const playlistFiles = bankRoots.flatMap(root => [
+    `${root}${PLAYLISTS_FILE}`,
+    `${root}${PLAYLISTS_FILE}.tmp`,
+  ]);
   return path => {
     const segments = path.split('/');
     const malformed =
@@ -69,7 +76,9 @@ export function createWriteGuard(bankRoots: string[]): (path: string) => void {
     if (malformed) throw new PedalPathNotAllowedError(path);
 
     const allowed =
-      patchAreas.some(re => re.test(path)) || workAreas.some(area => path.startsWith(area));
+      patchAreas.some(re => re.test(path)) ||
+      playlistFiles.includes(path) ||
+      workAreas.some(area => path.startsWith(area));
     if (!allowed) throw new PedalPathNotAllowedError(path);
   };
 }

@@ -6,6 +6,17 @@
   list-style: none;
 }
 
+.bankItem {
+  display: grid;
+  gap: var(--jm-space-3);
+}
+
+.keys {
+  display: flex;
+  gap: var(--jm-space-3);
+  align-items: center;
+}
+
 .bank {
   display: flex;
   align-items: center;

@@ -61,15 +61,37 @@ export class GreenglassConnectionError extends Error {
 }
 
 export type GreenglassClientOptions = {
-  /** How long to wait for each response. */
+  /** How long to wait for the response to a read, counted once the request is sent. */
   requestTimeoutMs?: number;
+  /**
+   * The same for requests that change the pedal's storage. Writing to its
+   * internal memory can stall for seconds (the flash erases blocks), so these
+   * get more time.
+   */
+  slowRequestTimeoutMs?: number;
+  /**
+   * How long sending one request may take. The pedal holds the USB line while
+   * it is busy; giving up mid-frame desyncs its parser, so this is generous.
+   */
+  writeTimeoutMs?: number;
 };
+
+/** Requests that change storage: they can be slow to answer while the flash is busy. */
+const SLOW_REQUESTS = new Set<number>([
+  MessageID.FileWriteRequest,
+  MessageID.FileCloseRequest,
+  MessageID.FileOpenRequest,
+  MessageID.FileSystemEntryCreateRequest,
+  MessageID.FileSystemEntryMoveRequest,
+  MessageID.FileSystemEntryDeleteRequest,
+]);
 
 type Pending = {
   serial: number;
   resolve: (frame: Frame) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
+  settled: boolean;
 };
 
 type ClientEvents = {
@@ -81,6 +103,8 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
   readonly #transport: GreenglassTransport;
   readonly #parser = new FrameParser();
   readonly #timeoutMs: number;
+  readonly #slowTimeoutMs: number;
+  readonly #writeTimeoutMs: number;
   #nextSerial = 1;
   #pending: Pending | null = null;
   #queue: Promise<unknown> = Promise.resolve();
@@ -95,6 +119,8 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
     super();
     this.#transport = transport;
     this.#timeoutMs = options.requestTimeoutMs ?? 5000;
+    this.#slowTimeoutMs = options.slowRequestTimeoutMs ?? Math.max(30_000, this.#timeoutMs);
+    this.#writeTimeoutMs = options.writeTimeoutMs ?? 60_000;
     transport.onData(chunk => this.#onData(chunk));
     transport.onClose(error =>
       this.#fail(new GreenglassConnectionError('The pedal was disconnected', { cause: error })),
@@ -139,6 +165,52 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
       while (Date.now() - this.#lastDataAt < quietMs && Date.now() - started < maxMs) {
         await new Promise(resolve => setTimeout(resolve, Math.min(quietMs, 50)));
       }
+    } finally {
+      this.#discarding = false;
+      this.#parser.reset();
+    }
+  }
+
+  /**
+   * Gets back in step with a pedal whose state is unknown, before the first
+   * request. Drops what it is sending, then checks that it answers a probe. If
+   * it does not, it is probably waiting for the rest of a request an earlier
+   * session cut off: it is fed zero bytes, one at a time, until that request is
+   * complete and it answers. (If the cut request was a file write, the zeros
+   * end up in that file, which is always a temporary `.tmp` file.)
+   */
+  async resync({ probeMs = 1500, maxFillBytes = 10_000 } = {}): Promise<void> {
+    await this.discardStaleInput();
+    for (let round = 0; round < 3; round++) {
+      if (await this.#answers(encodeRequest(MessageID.WhoAmIRequest, 0xfffffff0), probeMs)) {
+        await this.discardStaleInput();
+        return;
+      }
+      // Feed zeros until anything comes back. A header of six zeros is a
+      // WhoAmI with no payload, which the pedal answers too, so this also
+      // ends on a frame boundary.
+      let answered = false;
+      for (let fed = 0; fed < maxFillBytes && !answered; fed++) {
+        answered = await this.#answers(Buffer.alloc(1), fed % 64 === 63 ? 50 : 4);
+      }
+      if (!answered) break;
+      await this.discardStaleInput();
+    }
+    throw new GreenglassConnectionError('The pedal does not answer');
+  }
+
+  /** Sends raw bytes and tells whether anything comes back within `waitMs`. */
+  async #answers(bytes: Buffer, waitMs: number): Promise<boolean> {
+    this.#discarding = true;
+    const before = Date.now();
+    this.#lastDataAt = 0;
+    try {
+      await this.#transport.write(bytes);
+      const deadline = Date.now() + waitMs;
+      while (this.#lastDataAt < before && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(10, waitMs)));
+      }
+      return this.#lastDataAt >= before;
     } finally {
       this.#discarding = false;
       this.#parser.reset();
@@ -311,21 +383,39 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
       const serial = this.#nextSerial;
       this.#nextSerial = (this.#nextSerial + 1) >>> 0;
 
+      let pending!: Pending;
       const response = new Promise<Frame>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          this.#fail(
-            new GreenglassConnectionError(
-              `The pedal did not answer request ${id} within ${this.#timeoutMs} ms`,
-            ),
-          );
-        }, this.#timeoutMs);
-        this.#pending = { serial, resolve, reject, timer };
+        pending = { serial, resolve, reject, settled: false };
+        this.#pending = pending;
       });
 
+      // The answer is timed from the moment the request is out: while the pedal
+      // is busy it can hold the line, and the time that takes is not lost.
+      let writeTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await this.#transport.write(encodeRequest(id, serial, body));
+        await Promise.race([
+          this.#transport.write(encodeRequest(id, serial, body)),
+          new Promise((_, reject) => {
+            writeTimer = setTimeout(
+              () => reject(new Error(`sending took over ${this.#writeTimeoutMs} ms`)),
+              this.#writeTimeoutMs,
+            );
+          }),
+        ]);
       } catch (error) {
         this.#fail(new GreenglassConnectionError('Could not write to the pedal', { cause: error }));
+      } finally {
+        clearTimeout(writeTimer);
+      }
+      if (!pending.settled && this.#pending === pending) {
+        const limit = SLOW_REQUESTS.has(id) ? this.#slowTimeoutMs : this.#timeoutMs;
+        pending.timer = setTimeout(() => {
+          this.#fail(
+            new GreenglassConnectionError(
+              `The pedal did not answer request ${id} within ${limit} ms`,
+            ),
+          );
+        }, limit);
       }
 
       const frame = await response;
@@ -370,6 +460,7 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
       const serial = frame.payload.readUInt32LE(0);
       if (pending && pending.serial === serial) {
         clearTimeout(pending.timer);
+        pending.settled = true;
         this.#pending = null;
         pending.resolve(frame);
       }
@@ -393,6 +484,7 @@ export class GreenglassClient extends EventEmitter<ClientEvents> {
     this.#pending = null;
     if (pending) {
       clearTimeout(pending.timer);
+      pending.settled = true;
       pending.reject(error);
     }
     this.#parser.reset();

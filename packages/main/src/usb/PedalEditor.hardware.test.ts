@@ -230,4 +230,23 @@ describe.skipIf(!enabled)('PedalEditor on a real JamMan (sandbox bank)', () => {
     await editor.reorderPatches('internal', ['Patch02', 'Patch01']);
     expect([await nameOf('Patch01'), await nameOf('Patch02')]).toEqual(['One', 'Three']);
   }, 60_000);
+
+  it('restores the whole bank as a snapshot had it', async () => {
+    const snapshot = await editor.createSnapshot('internal', { kind: 'all' });
+    const before = await editor.listPatchDirs('internal');
+    // What a "replace" restore does: delete everything, upload other patches
+    await editor.deletePatches('internal', before);
+    await editor.uploadPatch('internal', 'Patch09', {
+      patchXml: Buffer.from(patchXml('From backup')),
+      phrases: [{ name: 'PhraseA', xml: Buffer.from(phraseXml(100)), wavPath: '/local/extra.wav' }],
+    });
+    expect(await editor.listPatchDirs('internal')).toEqual(['Patch09']);
+
+    const result = await editor.restoreSnapshot(snapshot.id, 'internal', 'replace');
+    expect(result.removed).toEqual(['Patch09']);
+    expect(await editor.listPatchDirs('internal')).toEqual(before);
+    expect(await nameOf('Patch01')).toBe('One');
+    await editor.discardSnapshot(snapshot.id);
+    expect(await exists(`${SANDBOX}.jamman-manager/undo/`)).toBe(false);
+  }, 120_000);
 });

@@ -77,6 +77,13 @@ export type Pedal = Pick<
   | 'createSnapshot'
   | 'restoreSnapshot'
   | 'discardSnapshot'
+  | 'listPatchDirs'
+  | 'audioStatus'
+  | 'downloadAudio'
+  | 'cancel'
+  | 'withLocalWorkDir'
+  | 'exportBank'
+  | 'importPatches'
 >;
 
 /** Everything `registerIpcHandlers` needs. Each domain module takes the subset it uses. */

@@ -41,7 +41,7 @@ import {
   type PropertyValue,
 } from './greenglassCodec.js';
 import { PedalEditor, type PedalProgress } from './PedalEditor.js';
-import { createWriteGuard } from './PedalFiles.js';
+import { createWriteGuard, PLAYLISTS_FILE } from './PedalFiles.js';
 import { bankPath, PATCH_DIR_RE, PHRASE_DIR_RE, wavPath, type PedalWavRef } from './pedalPaths.js';
 
 /** Family ID every JamMan reports in WhoAmI. */
@@ -58,6 +58,8 @@ export type PedalManagerDeps = {
   openTransport: (portPath: string) => Promise<GreenglassTransport>;
   /** Where downloaded WAVs are kept (one folder per pedal). */
   cacheRoot: string;
+  /** Where temporary folders for backups and restores are made (default: next to the cache). */
+  workRoot?: string;
   log: PedalManagerLogger;
   clientOptions?: GreenglassClientOptions;
   fs?: typeof nodeFs.promises;
@@ -79,6 +81,24 @@ type ManagerEvents = {
   progress: [PedalProgress | null];
 };
 
+/** The user canceled a long operation (a download or an upload). */
+export class PedalCanceledError extends Error {
+  constructor() {
+    super('Canceled');
+    this.name = 'PedalCanceledError';
+  }
+}
+
+/** How much of a bank's audio is in the local cache. */
+export type PedalAudioStatus = {
+  files: number;
+  totalBytes: number;
+  cachedFiles: number;
+  cachedBytes: number;
+};
+
+type BankWav = { ref: PedalWavRef; remote: RemoteWav };
+
 export class PedalNotConnectedError extends Error {
   constructor() {
     super('No pedal is connected over USB');
@@ -95,6 +115,8 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   readonly #bankBytes = new Map<PedalBankId, number>();
   /** Operations that change the pedal run one after another, never interleaved. */
   #exclusive: Promise<unknown> = Promise.resolve();
+  /** Set by `cancel()`; the long operation running checks it between blocks. */
+  #canceled = false;
 
   constructor(deps: PedalManagerDeps) {
     super();
@@ -130,7 +152,7 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     const client = new GreenglassClient(transport, this.#deps.clientOptions);
 
     try {
-      await client.discardStaleInput();
+      await client.resync();
       const who = await client.whoAmI();
       if (who.familyId !== JAMMAN_FAMILY_ID) {
         throw new Error(`The device on ${portPath} is not a JamMan (family ${who.familyId})`);
@@ -152,7 +174,11 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
         this.#deps.log,
         {
           readLocalFile: path => this.#fs.readFile(path),
-          onProgress: progress => this.emit('progress', progress),
+          onProgress: progress => {
+            // Throwing here stops an upload between blocks; the editor cleans up.
+            this.#throwIfCanceled();
+            this.emit('progress', progress);
+          },
         },
       );
       // Undo data from an earlier session can never be used: the history lived in the renderer.
@@ -196,6 +222,12 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   async disconnect(): Promise<void> {
     const connection = this.#connection;
     if (!connection) return;
+    // No undo snapshot survives the connection: free the audio parked for them now
+    // (the internal memory is small). Whatever is left is purged on the next connect.
+    const banks = connection.info.banks.filter(b => b.available).map(b => b.id);
+    await this.#change(editor => editor.purgeUndoData(banks)).catch(error =>
+      this.#deps.log.warn('Could not purge undo data before disconnecting:', error),
+    );
     // The client's close event clears #connection and emits the change.
     await connection.client.close();
   }
@@ -287,6 +319,11 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     return patches;
   }
 
+  /** The patch folders of a bank. */
+  listPatchDirs(bank: PedalBankId): Promise<string[]> {
+    return this.#requireConnection().editor.listPatchDirs(bank);
+  }
+
   /** Bytes used by a bank's patches, as counted by the last `readPatches`. */
   async bankSize(bank: PedalBankId): Promise<number> {
     this.#requireConnection();
@@ -299,14 +336,40 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   // ==================== Changes ====================
 
   /** Runs `fn` with the editor, after every earlier change has finished. */
-  #change<T>(fn: (editor: PedalEditor) => Promise<T>): Promise<T> {
-    const run = () => fn(this.#requireConnection().editor);
+  #change<T>(fn: (editor: PedalEditor, connection: Connection) => Promise<T>): Promise<T> {
+    const run = async () => {
+      const connection = this.#requireConnection();
+      this.#canceled = false;
+      try {
+        return await fn(connection.editor, connection);
+      } finally {
+        await this.#forgetCachedAudio(connection, connection.editor.takeTouched());
+      }
+    };
     const result = this.#exclusive.then(run, run);
     this.#exclusive = result.catch(() => undefined);
     return result.finally(() => {
       this.#bankBytes.clear();
       this.emit('progress', null);
     });
+  }
+
+  /** Stops the long operation that is running (download or upload), if any. */
+  cancel(): void {
+    this.#canceled = true;
+  }
+
+  #throwIfCanceled(): void {
+    if (this.#canceled) throw new PedalCanceledError();
+  }
+
+  /** Drops the cached audio of patches the app just changed (see `PedalEditor.takeTouched`). */
+  async #forgetCachedAudio(connection: Connection, touched: string[]): Promise<void> {
+    for (const entry of touched) {
+      const [bank, dir] = entry.split('/');
+      const folder = path.join(this.#cacheFolder(connection), bank, dir);
+      await this.#fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   createPatch(bank: PedalBankId, form: PatchForm): Promise<void> {
@@ -344,6 +407,257 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     await this.#change(editor => editor.discardSnapshot(id)).catch(() => undefined);
   }
 
+  // ==================== Whole banks: download, backup, restore ====================
+
+  /** Every phrase WAV of a bank (or of some of its patches), with what the pedal reports for it. */
+  async #bankWavs(connection: Connection, bank: PedalBankId, dirs?: string[]): Promise<BankWav[]> {
+    const root = this.#bankRoot(connection, bank);
+    const patchDirs = dirs ?? (await connection.editor.listPatchDirs(bank));
+    const wavs: BankWav[] = [];
+    for (const patch of patchDirs) {
+      if (!PATCH_DIR_RE.test(patch)) throw new Error(`Invalid patch directory name: ${patch}`);
+      let contents;
+      try {
+        contents = await connection.client.folderContents(`${root}${patch}/`);
+      } catch (error) {
+        if (error instanceof GreenglassRequestError) continue;
+        throw error;
+      }
+      for (const phrase of contents.folders.filter(d => PHRASE_DIR_RE.test(d)).sort()) {
+        const ref = { bank, patch, phrase };
+        try {
+          wavs.push({ ref, remote: await this.#remoteWav(connection, ref) });
+        } catch (error) {
+          if (!(error instanceof GreenglassRequestError)) throw error;
+        }
+      }
+    }
+    return wavs;
+  }
+
+  /** How much of a bank's audio is already cached here. Reads no audio. */
+  async audioStatus(bank: PedalBankId, dirs?: string[]): Promise<PedalAudioStatus> {
+    const connection = this.#requireConnection();
+    const status: PedalAudioStatus = { files: 0, totalBytes: 0, cachedFiles: 0, cachedBytes: 0 };
+    for (const { ref, remote } of await this.#bankWavs(connection, bank, dirs)) {
+      status.files++;
+      status.totalBytes += remote.size;
+      if (await this.#cachedCopy(connection, ref, remote)) {
+        status.cachedFiles++;
+        status.cachedBytes += remote.size;
+      }
+    }
+    return status;
+  }
+
+  /**
+   * Downloads a WAV into the cache. The copy is kept only when complete, so a
+   * canceled download leaves nothing behind and the next attempt starts over
+   * for that file (finished files are kept: a bank download resumes).
+   */
+  async #download(
+    connection: Connection,
+    { ref, remote }: BankWav,
+    onBytes: (count: number) => void,
+  ): Promise<string> {
+    const cached = await this.#cachedCopy(connection, ref, remote);
+    if (cached) return cached;
+
+    const { client } = connection;
+    const paths = this.#cachePaths(connection, ref);
+    await this.#fs.mkdir(path.dirname(paths.file), { recursive: true });
+    await this.#fs.rm(paths.meta, { force: true });
+    const out = await this.#fs.open(paths.partial, 'w');
+    const { handle } = await client.openForRead(remote.remotePath);
+    let complete = false;
+    try {
+      let done = 0;
+      while (done < remote.size) {
+        this.#throwIfCanceled();
+        const chunk = await client.read(handle, Math.min(MAX_READ_CHUNK, remote.size - done));
+        if (chunk.length === 0) throw new Error('The file on the pedal is shorter than reported');
+        await out.write(chunk);
+        done += chunk.length;
+        onBytes(chunk.length);
+      }
+      complete = true;
+    } finally {
+      await out.close().catch(() => undefined);
+      if (client.isOpen) await client.closeFile(handle).catch(() => undefined);
+      if (complete) {
+        await this.#fs.rename(paths.partial, paths.file);
+        await this.#fs.writeFile(
+          paths.meta,
+          JSON.stringify({ size: remote.size, modified: remote.modified }),
+        );
+      } else {
+        await this.#fs.rm(paths.partial, { force: true });
+      }
+    }
+    return paths.file;
+  }
+
+  /** Downloads every WAV that is not cached yet, reporting progress over all of them. */
+  async #downloadAll(
+    connection: Connection,
+    wavs: BankWav[],
+    label: string,
+  ): Promise<Map<BankWav, string>> {
+    const files = new Map<BankWav, string>();
+    const missing: BankWav[] = [];
+    for (const wav of wavs) {
+      const cached = await this.#cachedCopy(connection, wav.ref, wav.remote);
+      if (cached) files.set(wav, cached);
+      else missing.push(wav);
+    }
+    const total = missing.reduce((sum, wav) => sum + wav.remote.size, 0);
+    let done = 0;
+    if (missing.length > 0) this.emit('progress', { label, done, total });
+    for (const wav of missing) {
+      files.set(
+        wav,
+        await this.#download(connection, wav, count => {
+          done += count;
+          this.emit('progress', { label, done, total });
+        }),
+      );
+    }
+    return files;
+  }
+
+  /** Downloads a bank's audio into the cache: playback and backups no longer wait on USB. */
+  downloadAudio(bank: PedalBankId): Promise<PedalAudioStatus> {
+    return this.#change(async (_editor, connection) => {
+      const wavs = await this.#bankWavs(connection, bank);
+      await this.#downloadAll(connection, wavs, 'Downloading audio');
+      return {
+        files: wavs.length,
+        totalBytes: wavs.reduce((sum, w) => sum + w.remote.size, 0),
+        cachedFiles: wavs.length,
+        cachedBytes: wavs.reduce((sum, w) => sum + w.remote.size, 0),
+      };
+    });
+  }
+
+  /** Runs `fn` with a fresh local folder that is deleted afterwards. */
+  async withLocalWorkDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+    const root = this.#deps.workRoot ?? path.join(path.dirname(this.#deps.cacheRoot), 'pedal-work');
+    await this.#fs.mkdir(root, { recursive: true });
+    const dir = await this.#fs.mkdtemp(path.join(root, 'job-'));
+    try {
+      return await fn(dir);
+    } finally {
+      await this.#fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Copies patches of a bank into a local folder laid out like a card, for a
+   * backup. WAVs come from the cache (downloaded first when missing) and are
+   * hard-linked when possible. Returns the patch folders written.
+   */
+  exportBank(
+    bank: PedalBankId,
+    dirs: string[] | undefined,
+    includePlaylists: boolean,
+    target: string,
+  ): Promise<string[]> {
+    return this.#change(async (editor, connection) => {
+      const { client } = connection;
+      const root = this.#bankRoot(connection, bank);
+      const patchDirs = dirs && dirs.length > 0 ? dirs : await editor.listPatchDirs(bank);
+      const wavs = await this.#bankWavs(connection, bank, patchDirs);
+      const cached = await this.#downloadAll(connection, wavs, 'Downloading audio for the backup');
+
+      const exported: string[] = [];
+      for (const dir of patchDirs) {
+        this.#throwIfCanceled();
+        let contents;
+        try {
+          contents = await client.folderContents(`${root}${dir}/`);
+        } catch (error) {
+          if (error instanceof GreenglassRequestError) continue;
+          throw error;
+        }
+        if (!contents.files.includes('patch.xml')) continue;
+        const local = path.join(target, dir);
+        await this.#fs.mkdir(local, { recursive: true });
+        await this.#fs.writeFile(
+          path.join(local, 'patch.xml'),
+          await client.readFile(`${root}${dir}/patch.xml`),
+        );
+        for (const phrase of contents.folders.filter(d => PHRASE_DIR_RE.test(d))) {
+          await this.#fs.mkdir(path.join(local, phrase), { recursive: true });
+          try {
+            const xml = await client.readFile(`${root}${dir}/${phrase}/phrase.xml`);
+            await this.#fs.writeFile(path.join(local, phrase, 'phrase.xml'), xml);
+          } catch (error) {
+            if (!(error instanceof GreenglassRequestError)) throw error;
+          }
+          const wav = wavs.find(w => w.ref.patch === dir && w.ref.phrase === phrase);
+          const source = wav && cached.get(wav);
+          if (source) {
+            const destination = path.join(local, phrase, 'phrase.wav');
+            await this.#fs
+              .link(source, destination)
+              .catch(() => this.#fs.copyFile(source, destination));
+          }
+        }
+        exported.push(dir);
+      }
+
+      if (includePlaylists) {
+        const playlists = await editor.readPlaylists(bank);
+        if (playlists) await this.#fs.writeFile(path.join(target, PLAYLISTS_FILE), playlists);
+      }
+      return exported;
+    });
+  }
+
+  /**
+   * Uploads patches laid out like a card in a local folder (a restored backup)
+   * into a bank. With `replaceAll` every patch on the pedal is deleted first
+   * (WAVs an undo snapshot needs are parked, as for any delete). The folder's
+   * playlists file, if any, replaces the bank's.
+   */
+  importPatches(
+    bank: PedalBankId,
+    source: string,
+    dirs: string[],
+    replaceAll: boolean,
+  ): Promise<void> {
+    return this.#change(async editor => {
+      if (replaceAll) await editor.deletePatches(bank, await editor.listPatchDirs(bank));
+      for (const dir of dirs) {
+        this.#throwIfCanceled();
+        if (!PATCH_DIR_RE.test(dir)) throw new Error(`Invalid patch directory name: ${dir}`);
+        const local = path.join(source, dir);
+        const entries = await this.#fs.readdir(local, { withFileTypes: true });
+        const phrases = [];
+        for (const entry of entries.filter(e => e.isDirectory() && PHRASE_DIR_RE.test(e.name))) {
+          const xmlPath = path.join(local, entry.name, 'phrase.xml');
+          const wavPath = path.join(local, entry.name, 'phrase.wav');
+          phrases.push({
+            name: entry.name,
+            xml: await this.#fs.readFile(xmlPath).catch(() => null),
+            wavPath: await this.#fs.access(wavPath).then(
+              () => wavPath,
+              () => null,
+            ),
+          });
+        }
+        await editor.uploadPatch(bank, dir, {
+          patchXml: await this.#fs.readFile(path.join(local, 'patch.xml')),
+          phrases,
+        });
+      }
+      const playlists = await this.#fs
+        .readFile(path.join(source, PLAYLISTS_FILE))
+        .catch(() => null);
+      if (playlists) await editor.writePlaylists(bank, playlists);
+    });
+  }
+
   // ==================== Audio ====================
 
   async #remoteWav(connection: Connection, ref: PedalWavRef): Promise<RemoteWav> {
@@ -355,12 +669,15 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     return { remotePath, size: info.size, modified: info.modified.getTime() };
   }
 
-  #cachePaths(connection: Connection, ref: PedalWavRef) {
+  #cacheFolder(connection: Connection): string {
     // The guid comes from the device: keep only characters that are safe in a folder name.
     const pedalFolder = connection.info.guid.replace(/[^0-9a-zA-Z-]/g, '') || 'unknown';
+    return path.join(this.#deps.cacheRoot, pedalFolder);
+  }
+
+  #cachePaths(connection: Connection, ref: PedalWavRef) {
     const file = path.join(
-      this.#deps.cacheRoot,
-      pedalFolder,
+      this.#cacheFolder(connection),
       ref.bank,
       ref.patch,
       ref.phrase,

@@ -44,9 +44,8 @@ describe('pedal paths over IPC', () => {
   });
 
   it.each([
-    ['backup:create', [SD]],
-    ['backup:restore', ['/tmp/x.zip', SD, 'merge']],
     ['playlists:create', [SD, 'Set']],
+    ['playlists:update', [SD, 'id', { name: 'x' }]],
   ])('%s refuses a pedal path', async (channel, args) => {
     app = await startApp();
     await expect(app.invoke(channel, ...args)).rejects.toThrow(
@@ -84,6 +83,30 @@ describe('pedal paths over IPC', () => {
       expect(error).toBeInstanceOf(Error);
       expect(error.message).not.toMatch(/No pedal is connected/);
     }
+  });
+
+  it('asks where to save a pedal backup before touching the pedal', async () => {
+    app = await startApp();
+    app.nextSavePath(undefined); // the user cancels the save dialog
+    expect(await app.invoke('backup:create', SD)).toEqual({ success: false, canceled: true });
+    await expect(app.invoke('backup:create', SD, ['../x'])).rejects.toThrow(/Invalid patch/);
+  });
+
+  it('restores onto a pedal only from a backup the user picked', async () => {
+    app = await startApp();
+    const error = await app.invoke('backup:restore', '/tmp/x.zip', SD, 'merge').catch(e => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toMatch(/not available for a pedal/);
+  });
+
+  it('checks the arguments of the audio channels', async () => {
+    app = await startApp();
+    await expect(app.invoke('pedal:audioStatus', SD, ['../x'])).rejects.toThrow(/Invalid patch/);
+    await expect(app.invoke('pedal:audioStatus', 'jamman-pedal://usr')).rejects.toThrow(
+      /Invalid pedal folder/,
+    );
+    await expect(app.invoke('pedal:downloadAudio', SD)).rejects.toThrow(/No pedal is connected/);
+    await app.invoke('pedal:cancel'); // nothing running: no-op
   });
 
   it('answers undo requests for a pedal bank with a result, not an error', async () => {

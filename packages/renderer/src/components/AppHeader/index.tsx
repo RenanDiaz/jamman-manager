@@ -7,7 +7,7 @@ interface Props {
   currentFolder: string | null;
   /** How to show the open source when it is not a plain folder (a pedal bank over USB). */
   sourceLabel: string | null;
-  /** The open source is a pedal over USB: no backups or playlists yet. */
+  /** The open source is a pedal over USB: no playlists yet. */
   pedalMode: boolean;
   pedalConnected: boolean;
   pedalBusy: boolean;
@@ -128,21 +128,23 @@ export const AppHeader: FC<Props> = ({
               { label: 'Export as PDF', onSelect: onExportPDF },
             ]}
           />
+          <PanelKey
+            label="Backup"
+            hint="Restore"
+            title={
+              pedalMode
+                ? 'Back up the pedal to a ZIP file, or restore one onto it. Audio not on this computer yet is downloaded first.'
+                : 'Create ZIP backups of patches, or restore one'
+            }
+            onClick={onBackup}
+          />
           {!pedalMode && (
-            <>
-              <PanelKey
-                label="Backup"
-                hint="Restore"
-                title="Create ZIP backups of patches, or restore one"
-                onClick={onBackup}
-              />
-              <PanelKey
-                label="Playlists"
-                hint="Move to top"
-                title="Organize patches into setlists for live performance"
-                onClick={onPlaylists}
-              />
-            </>
+            <PanelKey
+              label="Playlists"
+              hint="Move to top"
+              title="Organize patches into setlists for live performance"
+              onClick={onPlaylists}
+            />
           )}
           <span className={s.divider} />
           <PanelKey label="New patch" hint="Store" led onClick={onNewPatch} />

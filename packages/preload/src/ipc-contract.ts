@@ -251,6 +251,14 @@ export interface PedalBankInfo {
   freeBytes: number;
 }
 
+/** How much of a pedal bank's audio is already on this computer (in the cache). */
+export interface PedalAudioStatus {
+  files: number;
+  totalBytes: number;
+  cachedFiles: number;
+  cachedBytes: number;
+}
+
 /** Progress of a long step on the pedal, e.g. uploading a WAV. */
 export interface PedalProgress {
   label: string;
@@ -392,6 +400,15 @@ export interface IpcChannels {
   'pedal:connect': { args: []; result: PedalInfo };
   'pedal:disconnect': { args: []; result: void };
   'pedal:status': { args: []; result: PedalInfo | null };
+  /** How much of a bank's audio (or some of its patches') is already cached. Reads no audio. */
+  'pedal:audioStatus': {
+    args: [bankPath: string, patches?: string[]];
+    result: PedalAudioStatus;
+  };
+  /** Downloads a bank's audio into the cache (resumes where an earlier download stopped). */
+  'pedal:downloadAudio': { args: [bankPath: string]; result: PedalAudioStatus };
+  /** Stops the download or upload running on the pedal; it fails with "Canceled". */
+  'pedal:cancel': { args: []; result: void };
 
   // Operation queue
   'operation-queue:status': { args: []; result: OperationQueueStatus };
@@ -478,6 +495,9 @@ export interface ElectronAPI {
   connectPedal: IpcInvoker<'pedal:connect'>;
   disconnectPedal: IpcInvoker<'pedal:disconnect'>;
   getPedalStatus: IpcInvoker<'pedal:status'>;
+  getPedalAudioStatus: IpcInvoker<'pedal:audioStatus'>;
+  downloadPedalAudio: IpcInvoker<'pedal:downloadAudio'>;
+  cancelPedalOperation: IpcInvoker<'pedal:cancel'>;
   /** Calls `listener` whenever the pedal connects, disconnects or changes. Returns an unsubscribe function. */
   onPedalChanged: (listener: (info: IpcEvents['pedal:changed']) => void) => () => void;
   /** Calls `listener` with the progress of uploads to the pedal. Returns an unsubscribe function. */

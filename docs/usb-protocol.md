@@ -186,6 +186,21 @@ Decisiones de la etapa 3:
 - **Progreso.** Las subidas avisan su avance (`pedal:progress`), que se muestra en el formulario y en el panel de trabajo.
 - **Tiempos medidos** con el pedal real: subir un WAV va a ~1.5 MB/s. Crear un patch con un WAV de 4.6 MB tardó 4.1 s desde la app; deshacer el reemplazo de un WAV, 0.3 s.
 
+Decisiones de la etapa 4:
+
+- **Backup.** La app pregunta primero dónde guardar. Después baja a la caché los WAV del banco que aún no estén (con progreso y botón para detener), arma una carpeta temporal con la misma estructura que la tarjeta (XML del pedal y WAV enlazados desde la caché) y se la pasa al mismo `BackupManager` del modo local. El ZIP es idéntico al de una tarjeta.
+- **Restore.** `BackupManager` restaura en una carpeta temporal donde cada puesto ocupado del pedal tiene una carpeta vacía de relleno, así que el modo merge numera igual que en una tarjeta. Después los patches restaurados se suben al pedal. En el modo replace, antes se borran los del pedal (sus WAV quedan estacionados para el deshacer). El deshacer usa una instantánea de todo el banco, que incluye el archivo de playlists.
+- **Descargar todo el banco** (botón "Audio" en el diálogo del pedal). Primero muestra cuánto falta y cuánto tardará, y recomienda el lector de tarjetas si el banco es grande: la SD de prueba, con 3.68 GB, tardaría unos 51 minutos. Se puede detener: los archivos completos quedan en la caché y la descarga sigue donde quedó. Un archivo a medias no se guarda.
+- **La caché se invalida al cambiar un patch.** Las fechas del pedal tienen resolución de minutos, y dos loops del mismo tempo y largo pesan exactamente lo mismo. Por eso, tamaño y fecha no bastan para detectar un WAV reemplazado. El editor registra qué patches tocó (`takeTouched`) y la caché de esos patches se borra.
+- **Desconectar vacía la papelera** de los dos bancos (y la carpeta `.jamman-manager/` si queda vacía), porque ninguna instantánea sobrevive a la conexión. La memoria interna tiene solo ~500 MB.
+
+Lo que apareció al probar la etapa 4 con el pedal real:
+
+- **Una escritura de `serialport` puede quedar a medias para siempre dentro de la app.** Si el sistema acepta solo parte de una trama (~1 KB de 8 KB), `serialport` espera un aviso de "puerto listo para escribir" para mandar el resto. Dentro de la app ese aviso a veces no llegó, y la trama quedó cortada en 1063 bytes. Pasó dos veces en tres restores; en Node y en un proceso de Electron aislado no se reprodujo. El pedal sí podía recibir: al mandarle los 7117 bytes que faltaban, los aceptó en el acto. **Solución:** `serialTransport` manda cada trama en trozos de 512 bytes y espera a que cada uno se transmita (`drain`) antes del siguiente, así nunca hay una escritura parcial. Cuesta un 15% de velocidad (1.5 → 1.3 MB/s). Después del cambio, tres restores seguidos pasaron.
+- **Timeouts.** El de la respuesta cuenta desde que la trama terminó de salir, no desde que se encoló. Las peticiones que cambian el almacenamiento esperan hasta 30 s, porque la memoria flash puede tardar en borrar bloques, y enviar una trama tiene un límite de 60 s.
+- **Resincronizar al conectar** (`GreenglassClient.resync`). Si el pedal no contesta una sonda `WhoAmI`, se le mandan ceros de a uno hasta que responda: así termina la trama que una sesión anterior dejó cortada. Si esa trama era una escritura de archivo, los ceros van a parar a ese `.tmp`. Una carpeta que solo tiene archivos `.tmp` cuenta como puesto libre al crear o restaurar un patch ahí.
+- **Tiempos medidos desde la app**, con el banco interno (10 patches, 32 MB): backup 17.7 s, incluida la descarga; restore en modo merge 27.5 s, subiendo 24 MB; deshacer el restore 2.9 s. Con el audio ya en caché, exportar el banco tarda ~1.3 s.
+
 ## Uso del cliente de prueba
 
 ```bash

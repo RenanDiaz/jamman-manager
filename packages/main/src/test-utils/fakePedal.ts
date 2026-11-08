@@ -90,6 +90,8 @@ export class FakePedal {
   readonly reads: string[] = [];
   /** When true the pedal stops answering (simulates a desynced or hung pedal). */
   silent = false;
+  /** Milliseconds to wait before answering, by request ID (a busy pedal). */
+  readonly replyDelay = new Map<number, number>();
   /** Request IDs that get a FailureResponse with this message. */
   readonly failures = new Map<number, string>();
   readonly openFiles = new Map<bigint, OpenFile>();
@@ -149,8 +151,20 @@ export class FakePedal {
       for (const frame of this.#parser.push(data)) {
         this.requests.push(frame.id);
         if (this.silent) continue;
-        const reply = this.#handle(frame.id, new PayloadReader(frame.payload));
-        if (reply) this.#send(reply);
+        let reply: Buffer | null;
+        try {
+          reply = this.#handle(frame.id, new PayloadReader(frame.payload));
+        } catch {
+          // Like the pedal: a malformed request gets a failure, when its serial can be read
+          reply =
+            frame.payload.length >= 4
+              ? encodeFrame(
+                  MessageID.FailureResponse,
+                  new PayloadWriter().u32(frame.payload.readUInt32LE(0)).str('Bad request').build(),
+                )
+              : null;
+        }
+        if (reply) this.#send(reply, this.replyDelay.get(frame.id) ?? 0);
       }
     },
     close: async () => this.unplug(),
@@ -174,15 +188,17 @@ export class FakePedal {
     for (const listener of this.#closeListeners) listener(error);
   }
 
-  #send(frame: Buffer) {
+  #send(frame: Buffer, delayMs = 0) {
     const chunks: Buffer[] = [];
     for (let i = 0; i < frame.length; i += Math.min(this.#chunkSize, frame.length)) {
       chunks.push(frame.subarray(i, i + Math.min(this.#chunkSize, frame.length)));
     }
     // Deliver later, like a real port: the client may still be inside write().
-    setImmediate(() => {
+    const deliver = () => {
       for (const chunk of chunks) for (const listener of this.#dataListeners) listener(chunk);
-    });
+    };
+    if (delayMs > 0) setTimeout(deliver, delayMs);
+    else setImmediate(deliver);
   }
 
   #folderContents(path: string) {

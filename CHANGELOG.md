@@ -14,7 +14,10 @@ so everything so far is listed under "Unreleased".
   streams from the pedal and is cached locally once played to the end.
 - Over USB, create, edit, delete and sort patches, add phrases and replace their WAV files (with
   upload progress), with undo and redo. Audio an undo may need is parked on the pedal itself, so
-  it never crosses the cable twice. Backups and playlists still need the card in a card reader.
+  it never crosses the cable twice.
+- Over USB, back up a bank to a ZIP file and restore one onto it (merge or replace, with undo), and
+  download a bank's audio ahead of time. Downloads and uploads show progress and can be stopped;
+  a download resumes where it stopped. Playlists still need the card in a card reader.
 - `docs/usb-protocol.md`: the pedal's USB protocol, and `tools/greenglass.py`, a small client to
   try it from a terminal.
 - `npm run verify` (typecheck + lint + unit tests) and a Husky `pre-push` hook that runs it.

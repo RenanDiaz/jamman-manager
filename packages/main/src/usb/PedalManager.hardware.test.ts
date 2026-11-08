@@ -15,6 +15,7 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { PatchRecord } from '@app/preload/ipc-contract';
 import { PedalManager } from './PedalManager.js';
+import { BackupManager } from '../BackupManager.js';
 import { parseWavPath } from './pedalPaths.js';
 import { findJamManPorts, openSerialTransport } from './serialTransport.js';
 
@@ -108,4 +109,43 @@ describe.skipIf(!enabled)('PedalManager on a real JamMan', () => {
     expect(bytes.length).toBe(100);
     expect(size).toBeGreaterThan(100);
   }, 60_000);
+
+  it('downloads a bank, stops when canceled and resumes', async () => {
+    fs.rmSync(cacheRoot, { recursive: true, force: true });
+    const before = await pedal.audioStatus('internal');
+    expect(before.cachedFiles).toBe(0);
+
+    const stopAfter = (bytes: number) => (p: { done: number } | null) => {
+      if (p && p.done > bytes) pedal.cancel();
+    };
+    const listener = stopAfter(3_000_000);
+    pedal.on('progress', listener);
+    await expect(pedal.downloadAudio('internal')).rejects.toThrow('Canceled');
+    pedal.off('progress', listener);
+    const partial = await pedal.audioStatus('internal');
+    console.log(`after cancel: ${partial.cachedFiles}/${partial.files} files cached`);
+    expect(partial.cachedFiles).toBeGreaterThan(0);
+    expect(partial.cachedFiles).toBeLessThan(partial.files);
+
+    const started = Date.now();
+    const done = await pedal.downloadAudio('internal');
+    console.log(
+      `resumed: ${((done.totalBytes - partial.cachedBytes) / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+    );
+    expect((await pedal.audioStatus('internal')).cachedFiles).toBe(done.files);
+  }, 180_000);
+
+  it('exports the internal bank to a ZIP backup', async () => {
+    const zip = path.join(cacheRoot, 'internal.jamman-backup.zip');
+    await pedal.withLocalWorkDir(async dir => {
+      const exported = await pedal.exportBank('internal', undefined, false, dir);
+      expect(exported.length).toBeGreaterThan(0);
+      await BackupManager.createBackup({ basePath: dir, outputPath: zip, patches: exported });
+    });
+    const info = await BackupManager.validateBackup(zip);
+    console.log(
+      `backup: ${info.manifest?.patchCount} patches, ${(fs.statSync(zip).size / 1e6).toFixed(1)} MB`,
+    );
+    expect(info.valid).toBe(true);
+  }, 180_000);
 });
