@@ -143,8 +143,8 @@ export default function PedalDialog({
           </ul>
           <Notice title="What works over USB">
             <p>
-              Everything except playlists, which still need the SD card in a card reader. Audio
-              moves at about 1.3 MB per second from the pedal and 1.5 MB per second to it.
+              Everything the app does with a card. Audio moves at about 1.3 MB per second from the
+              pedal and 1.5 MB per second to it, so for a large bank a card reader is faster.
             </p>
           </Notice>
         </>

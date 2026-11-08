@@ -76,7 +76,7 @@ function App() {
   const [pedalDialogIsOpen, setPedalDialogIsOpen] = useState<boolean>(false);
   /** A pedal bank is being read, so the loading panel says where from. */
   const [readingPedal, setReadingPedal] = useState<boolean>(false);
-  /** A pedal over USB: everything but backups and playlists. */
+  /** A pedal over USB: everything works; some texts and empty states differ. */
   const pedalMode = isPedalPath(currentFolder);
 
   /** Closes the pedal bank, and the player if it is playing audio from the pedal. */

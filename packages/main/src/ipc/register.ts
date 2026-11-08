@@ -46,6 +46,13 @@ export const PEDAL_AWARE_CHANNELS: ReadonlySet<IpcChannel> = new Set<IpcChannel>
   'audio:validateWav',
   'audio:readFile',
   'playlists:load',
+  'playlists:create',
+  'playlists:update',
+  'playlists:delete',
+  'playlists:addPatches',
+  'playlists:removePatches',
+  'playlists:reorderPatches',
+  'playlists:export',
   // The export handlers never touch the folder: basePath is unused.
   'patches:exportTXT',
   'patches:exportPDF',

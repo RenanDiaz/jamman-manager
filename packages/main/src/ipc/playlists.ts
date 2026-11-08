@@ -1,6 +1,6 @@
 /**
- * Playlists stored in `.jamman-playlists.json` in the SD folder, and their
- * export as a printable setlist.
+ * Playlists stored in `.jamman-playlists.json` in the SD folder (or in the bank
+ * folder of a pedal over USB), and their export as a printable setlist.
  *
  * Channels: `playlists:load|create|update|delete|addPatches|removePatches|reorderPatches|export`.
  *
@@ -15,7 +15,8 @@ import type {
 import { SecureXMLParser } from '../SecureXMLParser.js';
 import type { IpcDeps } from './deps.js';
 import { ipcError } from './errors.js';
-import { isPedalPath } from '../usb/pedalPaths.js';
+import { isPedalPath, parseBankPath } from '../usb/pedalPaths.js';
+import type { PlaylistBase } from '../PlaylistManager.js';
 
 export type PlaylistChannel =
   | 'playlists:load'
@@ -42,10 +43,25 @@ export function createPlaylistHandlers({
   app,
   folderAccess,
   playlistManager,
+  pedal,
 }: Pick<
   IpcDeps,
-  'fs' | 'log' | 'dialog' | 'app' | 'folderAccess' | 'playlistManager'
+  'fs' | 'log' | 'dialog' | 'app' | 'folderAccess' | 'playlistManager' | 'pedal'
 >): IpcHandlers<PlaylistChannel> {
+  /**
+   * Where the playlists of `basePath` live: the approved card folder
+   * (Security: only that one), or a pedal bank over USB.
+   */
+  const resolveBase = (basePath: string): PlaylistBase => {
+    if (isPedalPath(basePath)) {
+      const bank = parseBankPath(basePath);
+      if (!bank) throw new Error('Invalid pedal folder path');
+      return pedal.playlistStore(bank);
+    }
+    folderAccess.assertRoot(basePath);
+    return basePath;
+  };
+
   /** Patch name of each folder, or '' when it cannot be read. */
   const readPatchName = async (basePath: string, patchDir: string) => {
     const patchXmlPath = path.join(basePath, patchDir, 'patch.xml');
@@ -64,15 +80,10 @@ export function createPlaylistHandlers({
 
   return {
     'playlists:load': async basePath => {
-      if (isPedalPath(basePath)) {
-        // Playlists on a pedal connected over USB are not read yet (a later stage).
-        return { version: '2.0', playlists: [], patches: [] };
-      }
-      // Security: approved folder only
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Loading playlists:', basePath);
-        const data = asDataView(await playlistManager.loadPlaylists(basePath));
+        const data = asDataView(await playlistManager.loadPlaylists(base));
         log.info('Playlists loaded:', data.playlists.length);
         return data;
       } catch (error) {
@@ -81,10 +92,10 @@ export function createPlaylistHandlers({
     },
 
     'playlists:create': async (basePath, name, patches) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Creating playlist:', { basePath, name, patchCount: patches?.length });
-        const playlist = asView(await playlistManager.createPlaylist(basePath, name, patches));
+        const playlist = asView(await playlistManager.createPlaylist(base, name, patches));
         log.info('Playlist created:', playlist.id);
         return playlist;
       } catch (error) {
@@ -93,12 +104,10 @@ export function createPlaylistHandlers({
     },
 
     'playlists:update': async (basePath, playlistId, updates) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Updating playlist:', { basePath, playlistId, updates });
-        const playlist = asView(
-          await playlistManager.updatePlaylist(basePath, playlistId, updates),
-        );
+        const playlist = asView(await playlistManager.updatePlaylist(base, playlistId, updates));
         log.info('Playlist updated:', playlist.id);
         return playlist;
       } catch (error) {
@@ -107,10 +116,10 @@ export function createPlaylistHandlers({
     },
 
     'playlists:delete': async (basePath, playlistId) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Deleting playlist:', { basePath, playlistId });
-        await playlistManager.deletePlaylist(basePath, playlistId);
+        await playlistManager.deletePlaylist(base, playlistId);
         log.info('Playlist deleted:', playlistId);
         return { success: true } as const;
       } catch (error) {
@@ -119,7 +128,7 @@ export function createPlaylistHandlers({
     },
 
     'playlists:addPatches': async (basePath, playlistId, patchDirs) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Adding patches to playlist:', {
           basePath,
@@ -127,7 +136,7 @@ export function createPlaylistHandlers({
           patchCount: patchDirs.length,
         });
         const playlist = asView(
-          await playlistManager.addPatchesToPlaylist(basePath, playlistId, patchDirs),
+          await playlistManager.addPatchesToPlaylist(base, playlistId, patchDirs),
         );
         log.info('Patches added to playlist:', playlist.id);
         return playlist;
@@ -142,7 +151,7 @@ export function createPlaylistHandlers({
     },
 
     'playlists:removePatches': async (basePath, playlistId, patchDirs) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Removing patches from playlist:', {
           basePath,
@@ -150,7 +159,7 @@ export function createPlaylistHandlers({
           patchCount: patchDirs.length,
         });
         const playlist = asView(
-          await playlistManager.removePatchesFromPlaylist(basePath, playlistId, patchDirs),
+          await playlistManager.removePatchesFromPlaylist(base, playlistId, patchDirs),
         );
         log.info('Patches removed from playlist:', playlist.id);
         return playlist;
@@ -165,7 +174,7 @@ export function createPlaylistHandlers({
     },
 
     'playlists:reorderPatches': async (basePath, playlistId, newOrder) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Reordering patches in playlist:', {
           basePath,
@@ -173,7 +182,7 @@ export function createPlaylistHandlers({
           patchCount: newOrder.length,
         });
         const playlist = asView(
-          await playlistManager.reorderPlaylistPatches(basePath, playlistId, newOrder),
+          await playlistManager.reorderPlaylistPatches(base, playlistId, newOrder),
         );
         log.info('Playlist patches reordered:', playlist.id);
         return playlist;
@@ -188,11 +197,11 @@ export function createPlaylistHandlers({
     },
 
     'playlists:export': async (basePath, playlistId) => {
-      folderAccess.assertRoot(basePath);
+      const base = resolveBase(basePath);
       try {
         log.info('Exporting playlist:', { basePath, playlistId });
 
-        const data = asDataView(await playlistManager.loadPlaylists(basePath));
+        const data = asDataView(await playlistManager.loadPlaylists(base));
         const playlist = data.playlists.find(p => p.id === playlistId);
         if (!playlist) {
           throw new Error(`Playlist not found: ${playlistId}`);
@@ -213,7 +222,12 @@ export function createPlaylistHandlers({
         }
 
         const patches = await Promise.all(
-          (playlist.patches || []).map(patchDir => readPatchName(basePath, patchDir)),
+          (playlist.patches || []).map(async patchDir => {
+            const bank = parseBankPath(basePath);
+            return bank
+              ? { dir: patchDir, name: await pedal.patchName(bank, patchDir) }
+              : readPatchName(basePath, patchDir);
+          }),
         );
 
         let content = `${playlist.name}\n`;

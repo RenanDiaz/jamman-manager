@@ -15,6 +15,7 @@ import {
 import { MessageID, PropertyID } from './greenglassCodec.js';
 import { PedalCanceledError, PedalManager, PedalNotConnectedError } from './PedalManager.js';
 import { BackupManager } from '../BackupManager.js';
+import { PlaylistManager } from '../PlaylistManager.js';
 import { parseWavPath } from './pedalPaths.js';
 
 const silentLog = { info: () => {}, warn: () => {}, error: () => {} };
@@ -442,5 +443,51 @@ describe('PedalManager audio cache and backups', () => {
     expect(fake.files.get(`${FAKE_SD_ROOT}.jamman-playlists.json`)?.toString()).toBe(
       '{"playlists":[]}',
     );
+  });
+});
+
+describe('PedalManager playlists', () => {
+  const PLAYLISTS = `${FAKE_INTERNAL_ROOT}.jamman-playlists.json`;
+  const patchXmlReads = (fake: FakePedal) => fake.reads.filter(p => p.endsWith('patch.xml')).length;
+
+  it('keeps playlists in the bank folder, by patch ID, without re-reading patches', async () => {
+    const { manager, fake } = setup();
+    await manager.connect();
+    await manager.readPatches('internal');
+    const store = manager.playlistStore('internal');
+    const reads = patchXmlReads(fake);
+
+    const created = await PlaylistManager.createPlaylist(store, 'Gig', ['Patch02', 'Patch01']);
+    expect(created.patches).toEqual(['Patch02', 'Patch01']);
+    const saved = JSON.parse(fake.files.get(PLAYLISTS)!.toString());
+    expect(saved.playlists[0]).toMatchObject({ name: 'Gig', patchIds: ['id-Blues', 'id-Rock'] });
+    expect((await PlaylistManager.loadPlaylists(store)).playlists[0].patches).toEqual([
+      'Patch02',
+      'Patch01',
+    ]);
+    expect(patchXmlReads(fake)).toBe(reads); // the index from readPatches was enough
+
+    // Patches move: the playlist follows them by ID
+    await manager.reorderPatches('internal', ['Patch02', 'Patch01']);
+    expect((await PlaylistManager.loadPlaylists(store)).playlists[0].patches).toEqual([
+      'Patch01',
+      'Patch02',
+    ]);
+    expect(await manager.patchName('internal', 'Patch01')).toBe('Blues');
+  });
+
+  it('reads the IDs from the pedal when the patches were not read yet', async () => {
+    const { manager, fake } = setup();
+    fake.setFile(
+      PLAYLISTS,
+      JSON.stringify({
+        schemaVersion: 2,
+        version: '2.0',
+        playlists: [{ id: 'p', name: 'Set', patchIds: ['id-Rock'], createdAt: '', updatedAt: '' }],
+      }),
+    );
+    await manager.connect();
+    const data = await PlaylistManager.loadPlaylists(manager.playlistStore('internal'));
+    expect(data.playlists[0].patches).toEqual(['Patch01']);
   });
 });

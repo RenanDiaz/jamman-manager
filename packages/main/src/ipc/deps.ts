@@ -84,6 +84,8 @@ export type Pedal = Pick<
   | 'withLocalWorkDir'
   | 'exportBank'
   | 'importPatches'
+  | 'playlistStore'
+  | 'patchName'
 >;
 
 /** Everything `registerIpcHandlers` needs. Each domain module takes the subset it uses. */

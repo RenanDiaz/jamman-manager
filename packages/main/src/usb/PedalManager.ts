@@ -27,6 +27,7 @@ import type {
   UndoSnapshotInfo,
 } from '@app/preload/ipc-contract';
 import { SecureXMLParser } from '../SecureXMLParser.js';
+import type { PlaylistStore } from '../PlaylistManager.js';
 import {
   GreenglassClient,
   GreenglassConnectionError,
@@ -113,6 +114,13 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   #connecting: Promise<PedalInfo> | null = null;
   /** Size in bytes of each bank, from the last time its patches were read. */
   readonly #bankBytes = new Map<PedalBankId, number>();
+  /**
+   * `<ID>` and name of each patch folder, per bank: filled for free by
+   * `readPatches`, dropped when a change touches the bank's patches. Playlists
+   * refer to patches by ID; without this every playlist action would read
+   * every patch.xml again (seconds on a full card).
+   */
+  readonly #patchIndex = new Map<PedalBankId, Map<string, { id: string | null; name: string }>>();
   /** Operations that change the pedal run one after another, never interleaved. */
   #exclusive: Promise<unknown> = Promise.resolve();
   /** Set by `cancel()`; the long operation running checks it between blocks. */
@@ -315,6 +323,15 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
     }
 
     this.#bankBytes.set(bank, totalBytes);
+    this.#patchIndex.set(
+      bank,
+      new Map(
+        patches.map(p => [
+          p.dir,
+          { id: p.data.JamManPatch.ID?.[0] || null, name: p.data.JamManPatch.PatchName?.[0] ?? '' },
+        ]),
+      ),
+    );
     log.info(`Read ${patches.length} patches from the pedal's ${bank} bank`);
     return patches;
   }
@@ -343,7 +360,9 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
       try {
         return await fn(connection.editor, connection);
       } finally {
-        await this.#forgetCachedAudio(connection, connection.editor.takeTouched());
+        const touched = connection.editor.takeTouched();
+        for (const entry of touched) this.#patchIndex.delete(entry.split('/')[0] as PedalBankId);
+        await this.#forgetCachedAudio(connection, touched);
       }
     };
     const result = this.#exclusive.then(run, run);
@@ -405,6 +424,54 @@ export class PedalManager extends EventEmitter<ManagerEvents> {
   async discardSnapshot(id: string): Promise<void> {
     if (!this.#connection) return;
     await this.#change(editor => editor.discardSnapshot(id)).catch(() => undefined);
+  }
+
+  // ==================== Playlists ====================
+
+  /** ID and name of every patch of a bank, from `readPatches` or read now. */
+  async #index(bank: PedalBankId): Promise<Map<string, { id: string | null; name: string }>> {
+    const known = this.#patchIndex.get(bank);
+    if (known) return known;
+    const { client, editor } = this.#requireConnection();
+    const root = this.#bankRoot(this.#requireConnection(), bank);
+    const index = new Map<string, { id: string | null; name: string }>();
+    for (const dir of await editor.listPatchDirs(bank)) {
+      try {
+        const xml = await client.readFile(`${root}${dir}/patch.xml`);
+        const data = await SecureXMLParser.parsePatchXML(xml.toString('utf8'));
+        index.set(dir, {
+          id: data.JamManPatch.ID?.[0] || null,
+          name: data.JamManPatch.PatchName?.[0] ?? '',
+        });
+      } catch (error) {
+        if (isConnectionError(error)) throw error;
+      }
+    }
+    this.#patchIndex.set(bank, index);
+    return index;
+  }
+
+  /** The playlists of a bank, for PlaylistManager: the same JSON file as on a card. */
+  playlistStore(bank: PedalBankId): PlaylistStore {
+    const connection = this.#requireConnection();
+    return {
+      key: `pedal:${connection.info.guid}:${bank}`,
+      read: async () =>
+        (await this.#requireConnection().editor.readPlaylists(bank))?.toString('utf8') ?? null,
+      write: content =>
+        this.#change(editor => editor.writePlaylists(bank, Buffer.from(content, 'utf8'))),
+      patchId: async dir => (await this.#index(bank)).get(dir)?.id ?? null,
+      allPatchIds: async () => {
+        const ids = new Map<string, string>();
+        for (const [dir, { id }] of await this.#index(bank)) if (id) ids.set(id, dir);
+        return ids;
+      },
+    };
+  }
+
+  /** A patch's name, for a printed setlist. */
+  async patchName(bank: PedalBankId, dir: string): Promise<string> {
+    return (await this.#index(bank)).get(dir)?.name ?? '';
   }
 
   // ==================== Whole banks: download, backup, restore ====================

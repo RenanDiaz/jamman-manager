@@ -152,12 +152,14 @@ Ojo: JamManager calculaba el campo de longitud con `string.Length` (caracteres, 
 
 La app trabaja en vivo sobre el pedal. No hay copia local: lo único que guarda es una caché de los WAV ya descargados. El código está en `packages/main/src/usb/`.
 
-| Etapa | Alcance                                            | Estado    |
-| ----- | -------------------------------------------------- | --------- |
-| 1     | Conectar, listar patches y reproducir              | Hecha     |
-| 2     | Editar metadatos, borrar y reordenar               | Hecha     |
-| 3     | Agregar, reemplazar y quitar frases; crear patches | Hecha     |
-| 4     | Backup, restore y "Descargar todo el banco"        | Pendiente |
+| Etapa | Alcance                                               | Estado    |
+| ----- | ----------------------------------------------------- | --------- |
+| 1     | Conectar, listar patches y reproducir                 | Hecha     |
+| 2     | Editar metadatos, borrar y reordenar                  | Hecha     |
+| 3     | Agregar, reemplazar y quitar frases; crear patches    | Hecha     |
+| 4     | Backup, restore y "Descargar todo el banco"           | Hecha     |
+| 4b    | Playlists                                             | Hecha     |
+| 5     | Control en vivo del pedal (fase adicional, ver abajo) | Pendiente |
 
 Decisiones de la etapa 1:
 
@@ -198,8 +200,70 @@ Lo que apareció al probar la etapa 4 con el pedal real:
 
 - **Una escritura de `serialport` puede quedar a medias para siempre dentro de la app.** Si el sistema acepta solo parte de una trama (~1 KB de 8 KB), `serialport` espera un aviso de "puerto listo para escribir" para mandar el resto. Dentro de la app ese aviso a veces no llegó, y la trama quedó cortada en 1063 bytes. Pasó dos veces en tres restores; en Node y en un proceso de Electron aislado no se reprodujo. El pedal sí podía recibir: al mandarle los 7117 bytes que faltaban, los aceptó en el acto. **Solución:** `serialTransport` manda cada trama en trozos de 512 bytes y espera a que cada uno se transmita (`drain`) antes del siguiente, así nunca hay una escritura parcial. Cuesta un 15% de velocidad (1.5 → 1.3 MB/s). Después del cambio, tres restores seguidos pasaron.
 - **Timeouts.** El de la respuesta cuenta desde que la trama terminó de salir, no desde que se encoló. Las peticiones que cambian el almacenamiento esperan hasta 30 s, porque la memoria flash puede tardar en borrar bloques, y enviar una trama tiene un límite de 60 s.
-- **Resincronizar al conectar** (`GreenglassClient.resync`). Si el pedal no contesta una sonda `WhoAmI`, se le mandan ceros de a uno hasta que responda: así termina la trama que una sesión anterior dejó cortada. Si esa trama era una escritura de archivo, los ceros van a parar a ese `.tmp`. Una carpeta que solo tiene archivos `.tmp` cuenta como puesto libre al crear o restaurar un patch ahí.
+- **Resincronizar al conectar** (`GreenglassClient.resync`). Si el pedal no contesta una sonda `WhoAmI`, probablemente está esperando el resto de una trama que una sesión anterior dejó cortada. Primero se le mandan ceros en bloques de 256 bytes hasta que responda: eso completa la trama pendiente, y si era una escritura de archivo, los ceros van a parar a ese `.tmp`. Después se mandan ceros de a uno, como mucho seis: seis ceros son un `WhoAmI` vacío y el pedal lo responde, así que la primera respuesta marca el límite de una trama aunque el paso anterior haya mandado ceros de más. Lo medí en el pedal: responde a cada trama vacía y sigue funcionando normalmente. Con una trama de 8 KB cortada a propósito, se recuperó solo en 4.5 s. Una carpeta que solo tiene archivos `.tmp` cuenta como puesto libre al crear o restaurar un patch ahí.
 - **Tiempos medidos desde la app**, con el banco interno (10 patches, 32 MB): backup 17.7 s, incluida la descarga; restore en modo merge 27.5 s, subiendo 24 MB; deshacer el restore 2.9 s. Con el audio ya en caché, exportar el banco tarda ~1.3 s.
+
+Decisiones de las playlists (etapa 4b):
+
+- **El mismo archivo que en una tarjeta:** `.jamman-playlists.json` en la carpeta del banco (`<banco>/.jamman-playlists.json`). La validación de rutas permite ese archivo exacto y su `.tmp`, nada más de la raíz del banco.
+- **La misma lógica.** `PlaylistManager` ahora trabaja sobre un `PlaylistStore`: leer y escribir el archivo, el `<ID>` de un patch y todos los IDs. Hay una implementación local, que es el comportamiento anterior y pasa sus 74 tests sin cambios, y otra del pedal (`PedalManager.playlistStore`).
+- **IDs sin releer el banco.** Las playlists guardan patches por `<ID>`. El pedal arma un índice carpeta → ID y nombre con lo que ya parsea `readPatches`, y solo lo descarta cuando un cambio toca patches. Sin ese índice, cada acción de playlists releería todos los `patch.xml` de la SD (~3 s).
+- **Probado desde la app** con el banco interno: crear una playlist, agregarle patches, exportar el setlist (con los nombres leídos del pedal), leerla de vuelta al reabrir y borrarla.
+
+## Fase adicional: control en vivo del pedal
+
+Se hace después de la fase de escritura. Además de archivos, Greenglass ofrece propiedades, avisos en vivo y unos pocos comandos del motor de loops, y esta fase los aprovecha. Todo sale del código descompilado de JamManager 1.1.12 y de `tools/greenglass.py`.
+
+### Ya probado en el pedal (bajo riesgo)
+
+- `WhoAmI` (msg 0): modelo, firmware, GUID y nombre.
+- `GetProperties` (msg 19): firmware, sample rate y bits, si hay SD, espacio libre y capacidad de la memoria interna y la SD, `DiskState`, `CurrentBankAndPatch`, `AudioIsDirty`, `SettingsAreDirty` y la configuración de los botones.
+- `PropertyChanged` (notificación 0x8006): el pedal la envía sin que se le pida cuando cambia una propiedad. Formato: `u8 n`, después `n × u16` (ruta), `u16 propId` y el valor. El valor es `i32` si `propId ≤ 17`; si no, es un string.
+
+### Alcance
+
+1. **Escuchar notificaciones.** `PedalManager` mantiene un lector que separa las notificaciones (ID ≥ 0x8000) de las respuestas y las reenvía al renderer por IPC.
+2. **Mostrar el estado en vivo:**
+   - qué patch está activo en el pedal (`CurrentBankAndPatch`);
+   - si se metió o se sacó la SD (`RemovableMediaIsPresent`); si se saca, se cierra o se refresca la vista de la SD;
+   - el espacio libre (`KilobytesAvailableOn*`).
+3. **Protección al escribir.** Antes de escribir en el patch activo, o si `AudioIsDirty` o `SettingsAreDirty` están activos, mostrar una advertencia: "el pedal tiene un loop sin guardar o está usando este patch".
+4. **Recargar después de editar.** Al escribir en el patch activo, mandar `IssueCommand` (msg 22) con `LoopEngineReloadCurrentPatch` (0x1001) para que el pedal tome los cambios. Opcionalmente, mandar antes `LoopEngineStopImmediately` (0x1002).
+5. **(Opcional, al final) Configuración global con `SetProperty` (msg 21):**
+   - qué hace cada botón: `LeftButtonCommand`, `MiddleButtonCommand` y `RightButtonCommand` (32790–32792), con valores como `UndoRedo`, `Reverse` o `Tempo`;
+   - el comportamiento de la cola: `QueueCurrentBehavior` y `QueueEmptyBehavior` (32788–32789).
+
+### Sin probar: hay que validarlo con el pedal antes de implementarlo
+
+- `SetProperty` e `IssueCommand` nunca se han enviado. Hay que probarlos primero con un script en `tools/`, igual que se hizo con la escritura: un cambio, leer el valor de vuelta y restaurarlo.
+- `LoopEngineTest` (0x1000) no se usa.
+- `SetInfo` (msg 6) tiene un error en el cálculo de la longitud en el serializador original. Fuera de alcance.
+
+### Restricciones que siguen vigentes
+
+- No escribir nunca en `/mnt/nandfs/usr/`. Ahí está el software del pedal, y así es como se actualiza el firmware.
+- Cada frame debe enviarse completo. Si un frame queda a medias, el parser del pedal se desincroniza.
+- Las notificaciones pueden llegar en medio de cualquier respuesta. El lector debe saltarlas sin perder la respuesta pendiente.
+
+### Fuera de alcance (el protocolo no lo permite)
+
+- Reproducir, grabar u overdub desde la app.
+- Audio en tiempo real.
+- MIDI.
+- Ajustes de entrada y salida.
+
+### Criterios de aceptación
+
+- Al cambiar de patch con el pie, la app lo refleja en menos de 1 s.
+- Al sacar la SD, la app lo indica sin errores.
+- Al editar el patch activo, la app pide confirmación y después el pedal suena con los cambios sin tener que cambiar de patch.
+- Si se implementa la configuración global: al cambiar un botón desde la app, el cambio persiste tras reiniciar el pedal.
+
+### Lo que ya existe hoy (de las etapas 1 a 4b)
+
+- **Lector de notificaciones.** `GreenglassClient` ya separa las notificaciones de las respuestas, también cuando llegan en medio de una, y emite cada `PropertyChanged` como evento `property` (punto 1, parte del lector). Hay tests de eso con tramas reales del pedal.
+- **SD y espacio libre.** `PedalManager` ya actualiza la información de los bancos con `RemovableMediaIsPresent` y `KilobytesAvailableOn*`, y la reenvía al renderer como `pedal:changed`. Si se saca la SD con su banco abierto, la app cierra la vista y avisa "The SD card was removed from the pedal" (punto 2, parcial). Esto se probó con el pedal simulado, todavía no sacando la tarjeta del pedal real.
+- **Falta:** reenviar y mostrar `CurrentBankAndPatch`, `AudioIsDirty` y `SettingsAreDirty`, la advertencia al escribir, los comandos del motor de loops y `SetProperty`.
 
 ## Uso del cliente de prueba
 

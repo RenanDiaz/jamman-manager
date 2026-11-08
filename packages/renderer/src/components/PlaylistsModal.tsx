@@ -30,6 +30,7 @@ import {
   PanelKey,
   SevenSegment,
 } from '../ui';
+import { isPedalPath } from '../utils/pedal';
 import s from './PlaylistsModal.module.css';
 
 interface Playlist {
@@ -127,6 +128,8 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
   // current folder, the first load is still in flight.
   const [fetchedFolder, setFetchedFolder] = useState<string | null>(null);
   const initialLoading = isOpen && !!currentFolder && fetchedFolder !== currentFolder;
+  /** What the open folder is called in texts: a card, or a bank of a pedal over USB. */
+  const source = isPedalPath(currentFolder) ? 'bank' : 'card';
   const busy = loading || initialLoading;
 
   const applyPlaylists = useCallback((list: Playlist[]) => {
@@ -366,7 +369,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
       dismissible={!busy}
       size="xl"
       title="Playlists"
-      subtitle="Group patches into setlists, then move a setlist to the first slots of the card."
+      subtitle={`Group patches into setlists, then move a setlist to the first slots of the ${source}.`}
       footer={<PanelKey label="Close" onClick={onClose} disabled={busy} />}
     >
       {!currentFolder ? (
@@ -512,7 +515,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
 
                 {confirmingDelete && (
                   <Notice tone="warning" title={`Delete the playlist “${selectedPlaylist.name}”?`}>
-                    <p>Its patches stay on the card.</p>
+                    <p>Its patches stay on the {source}.</p>
                     <div className={s.keys}>
                       <PanelKey
                         label="Keep it"
@@ -543,7 +546,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                       <PanelKey label="Export setlist" onClick={handleExportPlaylist} />
                       <PanelKey
                         label="Move to top"
-                        hint="Renumbers the card"
+                        hint={`Renumbers the ${source}`}
                         led
                         onClick={handleMoveToTop}
                       />

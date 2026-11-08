@@ -34,21 +34,19 @@ describe('pedal paths over IPC', () => {
     });
   });
 
-  it('returns no playlists for a pedal bank', async () => {
-    app = await startApp();
-    expect(await app.invoke('playlists:load', SD)).toEqual({
-      version: '2.0',
-      playlists: [],
-      patches: [],
-    });
-  });
-
   it.each([
+    ['playlists:load', [SD]],
     ['playlists:create', [SD, 'Set']],
     ['playlists:update', [SD, 'id', { name: 'x' }]],
-  ])('%s refuses a pedal path', async (channel, args) => {
+    ['playlists:export', [SD, 'id']],
+  ])('%s goes to the pedal', async (channel, args) => {
     app = await startApp();
-    await expect(app.invoke(channel, ...args)).rejects.toThrow(
+    await expect(app.invoke(channel, ...args)).rejects.toThrow(/No pedal is connected/);
+  });
+
+  it('refuses a pedal path on a channel that does not know about pedals', async () => {
+    app = await startApp();
+    await expect(app.invoke('operation-queue:status', SD)).rejects.toThrow(
       /not available for a pedal connected over USB yet/,
     );
   });

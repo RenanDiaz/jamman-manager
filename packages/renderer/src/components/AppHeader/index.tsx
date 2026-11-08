@@ -7,7 +7,7 @@ interface Props {
   currentFolder: string | null;
   /** How to show the open source when it is not a plain folder (a pedal bank over USB). */
   sourceLabel: string | null;
-  /** The open source is a pedal over USB: no playlists yet. */
+  /** The open source is a pedal over USB (some texts change). */
   pedalMode: boolean;
   pedalConnected: boolean;
   pedalBusy: boolean;
@@ -138,14 +138,12 @@ export const AppHeader: FC<Props> = ({
             }
             onClick={onBackup}
           />
-          {!pedalMode && (
-            <PanelKey
-              label="Playlists"
-              hint="Move to top"
-              title="Organize patches into setlists for live performance"
-              onClick={onPlaylists}
-            />
-          )}
+          <PanelKey
+            label="Playlists"
+            hint="Move to top"
+            title="Organize patches into setlists for live performance"
+            onClick={onPlaylists}
+          />
           <span className={s.divider} />
           <PanelKey label="New patch" hint="Store" led onClick={onNewPatch} />
         </>
