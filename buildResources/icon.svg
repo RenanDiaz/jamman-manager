@@ -1,75 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Gradient definitions -->
-  <defs>
-    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#4A90E2;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#357ABD;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#50C878;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#3FA965;stop-opacity:1" />
-    </linearGradient>
-    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" style="stop-color:#2C3E50;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#1A252F;stop-opacity:1" />
-    </radialGradient>
-    <!-- Shadow filter -->
-    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
-      <feOffset dx="0" dy="4" result="offsetblur"/>
-      <feComponentTransfer>
-        <feFuncA type="linear" slope="0.3"/>
-      </feComponentTransfer>
-      <feMerge>
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<title>JamMan Manager</title>
+<defs>
+<filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+  <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#020617" flood-opacity="0.38"/>
+</filter>
+<filter id="segGlow" x="-50%" y="-50%" width="200%" height="200%">
+  <feGaussianBlur stdDeviation="0.45" result="b"/>
+  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+<filter id="ledGlow" x="-100%" y="-100%" width="300%" height="300%">
+  <feGaussianBlur stdDeviation="14" result="b"/>
+  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+<linearGradient id="chassis" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#2a4fb0"/><stop offset="0.45" stop-color="#1f3d93"/><stop offset="1" stop-color="#18337f"/>
+</linearGradient>
+<pattern id="flake" width="9" height="9" patternUnits="userSpaceOnUse">
+  <circle cx="2" cy="2" r="0.9" fill="#fff" opacity="0.10"/>
+  <circle cx="6.5" cy="6" r="1" fill="#0a1440" opacity="0.22"/>
+</pattern>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#fff" stop-opacity="0.35"/><stop offset="0.12" stop-color="#fff" stop-opacity="0"/>
+  <stop offset="0.9" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.35"/>
+</linearGradient>
+<linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#24262c"/><stop offset="1" stop-color="#131417"/>
+</linearGradient>
+<radialGradient id="chrome" cx="0.38" cy="0.32" r="0.75">
+  <stop offset="0" stop-color="#ffffff"/><stop offset="0.45" stop-color="#d3d0c8"/><stop offset="1" stop-color="#7f7c75"/>
+</radialGradient>
+<radialGradient id="screw" cx="0.35" cy="0.35" r="0.7">
+  <stop offset="0" stop-color="#55585f"/><stop offset="1" stop-color="#0c0d0f"/>
+</radialGradient>
+</defs>
+<g filter="url(#drop)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#chassis)"/></g>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#flake)"/>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="url(#rim)" stroke-width="6"/>
+<rect x="176" y="268" width="672" height="488" rx="58" fill="url(#panel)" stroke="#050506" stroke-width="4"/>
+<rect x="178" y="270" width="668" height="484" rx="56" fill="none" stroke="#fff" stroke-opacity="0.07" stroke-width="2"/>
+<rect x="232" y="324" width="560" height="376" rx="18" fill="#0b0d0a"/>
+<rect x="232" y="324" width="560" height="376" rx="18" fill="none" stroke="#000" stroke-width="10" opacity="0.9"/>
+<g transform="translate(294.0 352.0) scale(16.000) skewX(-6) translate(1 0)">
+<rect x="2.6" y="0.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="17.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="0.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#1d2713"/>
+<rect x="0.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="8.9" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+</g>
+<g transform="translate(538.0 352.0) scale(16.000) skewX(-6) translate(1 0)">
+<rect x="2.6" y="0.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="17.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="0.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#1d2713"/>
+<rect x="0.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="8.9" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+</g>
 
-  <!-- Background circle -->
-  <circle cx="256" cy="256" r="240" fill="url(#bgGradient)"/>
-
-  <!-- Outer loop ring -->
-  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#mainGradient)" stroke-width="16" opacity="0.4"/>
-
-  <!-- Main circular loop with arrows (representing loop/repeat) -->
-  <g filter="url(#shadow)">
-    <!-- Top arc with arrow -->
-    <path d="M 256 96 A 160 160 0 1 1 96 256"
-          fill="none"
-          stroke="url(#mainGradient)"
-          stroke-width="28"
-          stroke-linecap="round"/>
-    <!-- Arrow head for top -->
-    <polygon points="96,256 70,240 70,272" fill="url(#mainGradient)"/>
-
-    <!-- Bottom arc with arrow -->
-    <path d="M 96 256 A 160 160 0 1 1 256 96"
-          fill="none"
-          stroke="url(#accentGradient)"
-          stroke-width="28"
-          stroke-linecap="round"
-          opacity="0.9"/>
-    <!-- Arrow head for bottom -->
-    <polygon points="256,96 240,70 272,70" fill="url(#accentGradient)"/>
-  </g>
-
-  <!-- Center waveform/audio representation -->
-  <g transform="translate(256, 256)" filter="url(#shadow)">
-    <!-- Stylized waveform bars -->
-    <rect x="-60" y="-40" width="12" height="80" rx="6" fill="url(#accentGradient)"/>
-    <rect x="-35" y="-60" width="12" height="120" rx="6" fill="url(#accentGradient)"/>
-    <rect x="-10" y="-30" width="12" height="60" rx="6" fill="url(#accentGradient)"/>
-    <rect x="15" y="-55" width="12" height="110" rx="6" fill="url(#accentGradient)"/>
-    <rect x="40" y="-45" width="12" height="90" rx="6" fill="url(#accentGradient)"/>
-  </g>
-
-  <!-- Decorative sound wave rings -->
-  <circle cx="256" cy="256" r="80" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.3"/>
-  <circle cx="256" cy="256" r="90" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.2"/>
-  <circle cx="256" cy="256" r="100" fill="none" stroke="url(#accentGradient)" stroke-width="2" opacity="0.1"/>
-
-  <!-- Outer highlight -->
-  <circle cx="256" cy="256" r="235" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.1"/>
 </svg>

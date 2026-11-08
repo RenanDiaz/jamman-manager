@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<title>JamMan Manager, option 3: loop LEDs</title>
+<defs>
+<filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+  <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#020617" flood-opacity="0.38"/>
+</filter>
+<filter id="segGlow" x="-50%" y="-50%" width="200%" height="200%">
+  <feGaussianBlur stdDeviation="0.45" result="b"/>
+  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+<filter id="ledGlow" x="-100%" y="-100%" width="300%" height="300%">
+  <feGaussianBlur stdDeviation="14" result="b"/>
+  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+</filter>
+<linearGradient id="chassis" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#2a4fb0"/><stop offset="0.45" stop-color="#1f3d93"/><stop offset="1" stop-color="#18337f"/>
+</linearGradient>
+<pattern id="flake" width="9" height="9" patternUnits="userSpaceOnUse">
+  <circle cx="2" cy="2" r="0.9" fill="#fff" opacity="0.10"/>
+  <circle cx="6.5" cy="6" r="1" fill="#0a1440" opacity="0.22"/>
+</pattern>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#fff" stop-opacity="0.35"/><stop offset="0.12" stop-color="#fff" stop-opacity="0"/>
+  <stop offset="0.9" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.35"/>
+</linearGradient>
+<linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#24262c"/><stop offset="1" stop-color="#131417"/>
+</linearGradient>
+<radialGradient id="chrome" cx="0.38" cy="0.32" r="0.75">
+  <stop offset="0" stop-color="#ffffff"/><stop offset="0.45" stop-color="#d3d0c8"/><stop offset="1" stop-color="#7f7c75"/>
+</radialGradient>
+<radialGradient id="screw" cx="0.35" cy="0.35" r="0.7">
+  <stop offset="0" stop-color="#55585f"/><stop offset="1" stop-color="#0c0d0f"/>
+</radialGradient>
+</defs>
+<g filter="url(#drop)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#panel)"/></g>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="4"/>
+<circle cx="180" cy="180" r="20" fill="url(#screw)" stroke="#000" stroke-width="2"/><rect x="165" y="178.5" width="30" height="3" fill="#000" transform="rotate(35 180 180)"/><circle cx="844" cy="180" r="20" fill="url(#screw)" stroke="#000" stroke-width="2"/><rect x="829" y="178.5" width="30" height="3" fill="#000" transform="rotate(35 844 180)"/><circle cx="180" cy="844" r="20" fill="url(#screw)" stroke="#000" stroke-width="2"/><rect x="165" y="842.5" width="30" height="3" fill="#000" transform="rotate(35 180 844)"/><circle cx="844" cy="844" r="20" fill="url(#screw)" stroke="#000" stroke-width="2"/><rect x="829" y="842.5" width="30" height="3" fill="#000" transform="rotate(35 844 844)"/>
+<g transform="rotate(0.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(22.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(45.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(67.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(90.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(112.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(135.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(157.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(180.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(202.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(225.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#8fe43c" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(247.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#f3e12b" stroke="#000" stroke-width="4" filter="url(#ledGlow)"/></g><g transform="rotate(270.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#2b2d31" stroke="#000" stroke-width="4"/></g><g transform="rotate(292.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#2b2d31" stroke="#000" stroke-width="4"/></g><g transform="rotate(315.00 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#2b2d31" stroke="#000" stroke-width="4"/></g><g transform="rotate(337.50 512 512)"><rect x="478" y="226" width="68" height="48" rx="10" fill="#2b2d31" stroke="#000" stroke-width="4"/></g>
+<rect x="372" y="412" width="280" height="200" rx="14" fill="#0b0d0a" stroke="#2c2f35" stroke-width="4"/>
+<g transform="translate(404.0 432.0) scale(8.000) skewX(-6) translate(1 0)">
+<rect x="2.6" y="0.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="17.4" width="6.8" height="2.2" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="0.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="0.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="8.9" width="6.8" height="2.2" rx="1" fill="#1d2713"/>
+</g>
+<g transform="translate(528.0 432.0) scale(8.000) skewX(-6) translate(1 0)">
+<rect x="2.6" y="0.4" width="6.8" height="2.2" rx="1" fill="#1d2713"/>
+<rect x="9.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="9.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#b6f03c" filter="url(#segGlow)"/>
+<rect x="2.6" y="17.4" width="6.8" height="2.2" rx="1" fill="#1d2713"/>
+<rect x="0.4" y="10.7" width="2.2" height="6.9" rx="1" fill="#1d2713"/>
+<rect x="0.4" y="2.4" width="2.2" height="6.9" rx="1" fill="#1d2713"/>
+<rect x="2.6" y="8.9" width="6.8" height="2.2" rx="1" fill="#1d2713"/>
+</g>
+
+</svg>
