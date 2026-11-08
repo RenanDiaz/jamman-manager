@@ -65,8 +65,8 @@ function App() {
   const [playlistsModalIsOpen, setPlaylistsModalIsOpen] = useState<boolean>(false);
 
   // Undo/Redo state
-  const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
-  const [redoAvailable, setRedoAvailable] = useState<boolean>(false);
+  const undoAvailable = useUndoStore(state => state.undoStack.length > 0);
+  const redoAvailable = useUndoStore(state => state.redoStack.length > 0);
 
   const handleLoad = useCallback(async () => {
     try {
@@ -83,16 +83,10 @@ function App() {
   // Undo/Redo handlers
   const handleUndo = useCallback(async () => {
     await executeUndo();
-    // Update undo/redo availability after action
-    setUndoAvailable(canUndo());
-    setRedoAvailable(canRedo());
   }, []);
 
   const handleRedo = useCallback(async () => {
     await executeRedo();
-    // Update undo/redo availability after action
-    setUndoAvailable(canUndo());
-    setRedoAvailable(canRedo());
   }, []);
 
   useEffect(() => {
@@ -138,20 +132,6 @@ function App() {
 
     autoLoad();
   }, [tryLoadLastFolder]);
-
-  // Subscribe to undo store changes
-  useEffect(() => {
-    const unsubscribe = useUndoStore.subscribe(state => {
-      setUndoAvailable(state.undoStack.length > 0);
-      setRedoAvailable(state.redoStack.length > 0);
-    });
-
-    // Initial check
-    setUndoAvailable(canUndo());
-    setRedoAvailable(canRedo());
-
-    return unsubscribe;
-  }, []);
 
   const { deletePatch, deletePatches, reorderPatches, clearSelection } = usePatchStore();
 
@@ -596,6 +576,7 @@ function App() {
           </ModalHeader>
           <ModalBody>
             <PatchForm
+              key={selectedPatch?.dir ?? 'new'}
               formId={PATCH_FORM_ID}
               basePath={currentFolder || ''}
               busyPatches={patches.map(p => p.dir)}

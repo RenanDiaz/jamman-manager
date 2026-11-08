@@ -141,32 +141,59 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
     }),
   );
 
+  // Folder whose playlists were last fetched when the modal opened. Until it matches the
+  // current folder, the first load is still in flight.
+  const [fetchedFolder, setFetchedFolder] = useState<string | null>(null);
+  const initialLoading = isOpen && !!currentFolder && fetchedFolder !== currentFolder;
+  const busy = loading || initialLoading;
+
+  const applyPlaylists = useCallback((list: Playlist[]) => {
+    setPlaylists(list);
+
+    // If a playlist was selected, refresh it
+    setSelectedPlaylist(selected =>
+      selected ? list.find(p => p.id === selected.id) || null : null,
+    );
+  }, []);
+
   const loadPlaylists = useCallback(async () => {
     if (!currentFolder) return;
 
     try {
       setLoading(true);
       const data = await window.electronAPI.loadPlaylists(currentFolder);
-      setPlaylists(data.playlists);
-
-      // If a playlist was selected, refresh it
-      setSelectedPlaylist(selected =>
-        selected ? data.playlists.find(p => p.id === selected.id) || null : null,
-      );
+      applyPlaylists(data.playlists);
     } catch (error) {
       console.error('Error loading playlists:', error);
       toast.error('Failed to load playlists');
     } finally {
       setLoading(false);
     }
-  }, [currentFolder]);
+  }, [currentFolder, applyPlaylists]);
 
-  // Load playlists when modal opens
+  // Load playlists when modal opens. State is only set once the request settles, and a
+  // response for a folder that is no longer current is dropped.
   useEffect(() => {
-    if (isOpen && currentFolder) {
-      loadPlaylists();
-    }
-  }, [isOpen, currentFolder, loadPlaylists]);
+    if (!isOpen || !currentFolder) return;
+
+    let cancelled = false;
+    window.electronAPI.loadPlaylists(currentFolder).then(
+      data => {
+        if (cancelled) return;
+        applyPlaylists(data.playlists);
+        setFetchedFolder(currentFolder);
+      },
+      error => {
+        if (cancelled) return;
+        console.error('Error loading playlists:', error);
+        toast.error('Failed to load playlists');
+        setFetchedFolder(currentFolder);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, currentFolder, applyPlaylists]);
 
   const handleCreatePlaylist = async () => {
     if (!currentFolder || !newPlaylistName.trim()) return;
@@ -400,7 +427,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
                 </div>
               )}
 
-              {loading && playlists.length === 0 ? (
+              {busy && playlists.length === 0 ? (
                 <div className="text-center py-4">
                   <Spinner size="sm" />
                   <p className="text-muted mt-2 mb-0">Loading...</p>
@@ -579,7 +606,7 @@ export const PlaylistsModal: FC<PlaylistsModalProps> = ({
         )}
       </ModalBody>
       <ModalFooter>
-        <Button color="secondary" onClick={onClose} disabled={loading}>
+        <Button color="secondary" onClick={onClose} disabled={busy}>
           Close
         </Button>
       </ModalFooter>
