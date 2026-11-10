@@ -6,6 +6,11 @@ aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Windows portable build is named `...-win-x64-portable.exe`. It had the same name as the
+  installer and overwrote it in the release, so the uploaded `.exe` did not match `latest.yml`.
+
 ## [0.1.0-rc.1] - 2026-11-10
 
 First release candidate. The macOS and Windows installers are **not signed** yet: macOS asks you
