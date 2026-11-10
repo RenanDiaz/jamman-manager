@@ -40,6 +40,6 @@ describe('AutoUpdater', () => {
     });
 
     await expect(updater.runAutoUpdater()).resolves.toBeNull();
-    expect(warn).toHaveBeenCalledWith('Update check failed:', error);
+    expect(warn).toHaveBeenCalledWith(`Update check failed: ${error.message}`);
   });
 });

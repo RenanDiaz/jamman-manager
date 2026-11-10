@@ -45,7 +45,9 @@ export class AutoUpdater implements AppModule {
       // a tag is pushed but its release is still a draft (GitHub's feed already lists the tag,
       // its latest*.yml is a 404), offline, or when GitHub rate-limits the request.
       if (!(error instanceof Error && error.message.includes('No published versions'))) {
-        this.#logger?.warn('Update check failed:', error);
+        this.#logger?.warn(
+          `Update check failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       return null;
     }
