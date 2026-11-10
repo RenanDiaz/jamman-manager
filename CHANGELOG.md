@@ -2,10 +2,15 @@
 
 All notable changes to JamMan Manager are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
-aims to follow [Semantic Versioning](https://semver.org/). No release has been tagged yet,
-so everything so far is listed under "Unreleased".
+aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.1.0-rc.1] - 2026-11-10
+
+First release candidate. The macOS and Windows installers are **not signed** yet: macOS asks you
+to allow the app in System Settings → Privacy & Security the first time, and auto-update does not
+work on macOS until the app is signed and notarized.
 
 ### Added
 
@@ -39,6 +44,9 @@ so everything so far is listed under "Unreleased".
 
 ### Changed
 
+- `release.yml` creates tags with a prerelease suffix (`v0.1.0-rc.1`) as GitHub pre-releases.
+- The E2E job in CI builds with `--publish never`, so pushes to `main` no longer fail trying to
+  publish to GitHub without a token.
 - `release.yml` builds each platform in its own step so signing secrets are only passed to the platform
   that uses them, and installs `rpm` tooling on the Linux runner.
 - CI (`.github/workflows/ci.yml`) is now blocking: typecheck, lint, formatting, tests and the
@@ -65,3 +73,6 @@ so everything so far is listed under "Unreleased".
 
 - Initial version: read, rename, reorder and delete JamMan Stereo patches from an SD card,
   with audio preview, backups (ZIP), playlists, TXT/PDF export and undo for reordering.
+
+[Unreleased]: https://github.com/RenanDiaz/jamman-manager/compare/v0.1.0-rc.1...HEAD
+[0.1.0-rc.1]: https://github.com/RenanDiaz/jamman-manager/releases/tag/v0.1.0-rc.1

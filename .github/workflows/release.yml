@@ -48,8 +48,15 @@ jobs:
             exit 1
           fi
 
+      # A tag with a prerelease suffix (v0.1.0-rc.1, v0.2.0-beta.1) becomes a GitHub pre-release,
+      # so it is never shown as "Latest" and stable users' updaters skip it.
       - name: Create draft release
-        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        run: |
+          PRERELEASE_FLAG=""
+          case "$GITHUB_REF_NAME" in
+            *-*) PRERELEASE_FLAG="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --draft $PRERELEASE_FLAG --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ github.token }}
 
