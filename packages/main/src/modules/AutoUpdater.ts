@@ -41,13 +41,13 @@ export class AutoUpdater implements AppModule {
 
       return await updater.checkForUpdatesAndNotify(this.#notification);
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes('No published versions')) {
-          return null;
-        }
+      // An update check must never break startup. It fails when there is no release yet, when
+      // a tag is pushed but its release is still a draft (GitHub's feed already lists the tag,
+      // its latest*.yml is a 404), offline, or when GitHub rate-limits the request.
+      if (!(error instanceof Error && error.message.includes('No published versions'))) {
+        this.#logger?.warn('Update check failed:', error);
       }
-
-      throw error;
+      return null;
     }
   }
 }
