@@ -44,6 +44,10 @@ work on macOS until the app is signed and notarized.
 
 ### Changed
 
+- A failed update check (offline, rate-limited, or a tag whose release is still a draft) is logged
+  and no longer rejects app startup.
+- The Windows portable build is named `...-win-x64-portable.exe`, so it no longer overwrites the
+  installer in the release.
 - `release.yml` creates tags with a prerelease suffix (`v0.1.0-rc.1`) as GitHub pre-releases.
 - The E2E job in CI builds with `--publish never`, so pushes to `main` no longer fail trying to
   publish to GitHub without a token.

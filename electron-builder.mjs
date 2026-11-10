@@ -103,6 +103,12 @@ export default /** @type import('electron-builder').Configuration */
     // the .pfx in WIN_CSC_LINK / CSC_LINK if present, and leaves the installers unsigned if not.
     ...(signing.win.azureSignOptions ? { azureSignOptions: signing.win.azureSignOptions } : {}),
   },
+  // The NSIS installer and the portable build are both .exe files: without its own name the
+  // portable one overwrites the installer, and latest.yml (which describes the installer) no
+  // longer matches the uploaded file, breaking Windows auto-update.
+  portable: {
+    artifactName: '${productName}-${version}-${os}-${arch}-portable.${ext}',
+  },
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
