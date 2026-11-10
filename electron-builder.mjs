@@ -61,6 +61,12 @@ export default /** @type import('electron-builder').Configuration */
     // with none, electron-builder skips signing. Notarization is on only when credentials exist,
     // otherwise it is skipped explicitly (and logged) instead of failing the build.
     notarize: signing.mac.notarize,
+    // Without a Developer ID certificate, sign ad-hoc instead of skipping signing: a skipped build
+    // keeps the Electron binary's linker signature but not a valid bundle signature, and Apple
+    // Silicon reports such a download as "damaged". Ad-hoc builds still need the user to allow the
+    // app once in Privacy & Security. Hardened runtime is only needed for notarization and makes
+    // ad-hoc builds fail library validation, so it is off for them.
+    ...(signing.mac.adHoc ? { identity: '-', hardenedRuntime: false } : {}),
   },
   dmg: {
     contents: [
@@ -177,8 +183,16 @@ function resolveSigning(env) {
   const azureAll = [...azureCredentials, ...azureSettings];
   const azureComplete = hasAll(...azureAll);
 
+  // Ad-hoc signing when there is explicitly no certificate: in CI without MAC_CSC_LINK, or locally
+  // with CSC_IDENTITY_AUTO_DISCOVERY=false. Otherwise electron-builder looks for a Developer ID in
+  // the keychain as usual.
+  const adHoc =
+    !hasAny('CSC_LINK', 'CSC_NAME') &&
+    (env.CI === 'true' || env.CSC_IDENTITY_AUTO_DISCOVERY === 'false');
+
   return {
     mac: {
+      adHoc,
       notarize: notarizeMethod !== null,
       notarizeMethod,
       partialApple,
@@ -208,6 +222,12 @@ function logSigningStatus(s) {
   const log = message => console.log(`[signing] ${message}`);
   const warn = message => console.warn(`[signing] WARNING: ${message}`);
 
+  if (s.mac.adHoc) {
+    warn(
+      'macOS: no Developer ID certificate, signing AD-HOC (users must allow the app in ' +
+        'Privacy & Security on first launch).',
+    );
+  }
   if (s.mac.notarize) {
     log(`macOS notarization enabled (${s.mac.notarizeMethod}).`);
   } else {

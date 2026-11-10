@@ -1,7 +1,7 @@
 {
   "name": "jamman-manager",
   "description": "JamMan patch editor and loop manager for Digitech JamMan Stereo",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "license": "MIT",
   "private": false,
   "type": "module",

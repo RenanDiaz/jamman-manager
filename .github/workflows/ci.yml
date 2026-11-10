@@ -98,8 +98,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # On a push to main electron-builder would try to publish to GitHub (and fail without a
+      # token); this job only needs the unpacked app, so never publish from here.
       - name: Build installers
-        run: npm run compile
+        run: npm run compile -- --publish never
 
       # The unpacked app ships chrome-sandbox without the setuid bit, which makes Electron
       # refuse to start unless --no-sandbox is passed. Configure it like an installed package
