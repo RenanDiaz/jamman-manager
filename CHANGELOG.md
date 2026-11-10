@@ -6,11 +6,6 @@ aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- The Windows portable build is named `...-win-x64-portable.exe`. It had the same name as the
-  installer and overwrote it in the release, so the uploaded `.exe` did not match `latest.yml`.
-
 ## [0.1.0-rc.1] - 2026-11-10
 
 First release candidate. The macOS and Windows installers are **not signed** yet: macOS asks you
@@ -49,6 +44,8 @@ work on macOS until the app is signed and notarized.
 
 ### Changed
 
+- The Windows portable build is named `...-win-x64-portable.exe`, so it no longer overwrites the
+  installer in the release.
 - `release.yml` creates tags with a prerelease suffix (`v0.1.0-rc.1`) as GitHub pre-releases.
 - The E2E job in CI builds with `--publish never`, so pushes to `main` no longer fail trying to
   publish to GitHub without a token.
